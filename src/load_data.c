@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h> 
 #include <ctype.h>
-#include <toml-c.h>
+#include <toml_c/toml-c.h>
 
 int open_file(FILE **f, const char *file_name){
     *f = fopen(file_name, "r");

@@ -3,7 +3,7 @@
 #include <math.h>
 
 #include "network_generator/network_generator.h"
-#include <toml-c.h>
+#include <toml_c/toml-c.h>
 
 
 void generate_semi_random_synaptic_connections(network_data_t *network_data, configuration_t *conf){ // por ahora n_input_synapse y n_output_synapse no se utilizan, ya que por neurona de entrada/salida hay una unica sinapsis de entrada/salida
