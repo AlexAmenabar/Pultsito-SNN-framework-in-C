@@ -21,6 +21,7 @@ int main(int argc, char *argv[]) {
     int i, j;
     spiking_nn_t snn;
     simulation_configuration_t conf;
+    results_configuration_t results_conf;
     simulation_results_t results;
     network_construction_lists_t lists;
 
@@ -52,7 +53,10 @@ int main(int argc, char *argv[]) {
 
     // initialize struct to store results
     printf("Initializing results struct...\n");
-    initialize_results_struct(&results, &conf, &snn);
+    results_conf.n_neurons = snn.n_neurons;
+    results_conf.n_samples = conf.n_samples;
+    results_conf.time_steps = conf.time_steps;
+    initialize_results_struct(&results, &results_conf);
     printf("Results strcut initialized!\n");
 
 
@@ -213,11 +217,11 @@ int main(int argc, char *argv[]) {
     // free memory
 
     // print execution times
-    printf("Execution time: %f seconds\n", results.elapsed_time);
-    printf(" - Execution time for neurons: %f seconds\n", results.elapsed_time_neurons);
-    printf("    - Execution time for neurons input: %f seconds\n", results.elapsed_time_neurons_input);
-    printf("    - Execution time for neurons output: %f seconds\n", results.elapsed_time_neurons_output);
-    printf(" - Execution time for sybnapses: %f seconds\n", results.elapsed_time_synapses);
+    //printf("Execution time: %f seconds\n", results  elapsed_time);
+    //printf(" - Execution time for neurons: %f seconds\n", results.elapsed_time_neurons);
+    //printf("    - Execution time for neurons input: %f seconds\n", results.elapsed_time_neurons_input);
+    //printf("    - Execution time for neurons output: %f seconds\n", results.elapsed_time_neurons_output);
+    //printf(" - Execution time for sybnapses: %f seconds\n", results.elapsed_time_synapses);
 
     return 0;
 }
