@@ -46,18 +46,18 @@
 
 
 /**
-* Functions to load data from files (input spike trains, network information...)
+* Functions to load data from files: network configuration files, input data...
 */
 
 
 /// @brief Function to open a file
-/// @param f FILE to stream file 
+/// @param f FILE pointer to stream file 
 /// @param file_name File name
 /// @return Execution code
 int open_file(FILE **f, const char *file_name);
 
 
-/// @brief Function to open a file and write on it without overwriting current contents
+/// @brief Function to open a file in write mode without overwriting current contents
 /// @param f File to write in
 /// @param file_name Name of the file to be opened
 /// @return Execution code
@@ -67,6 +67,13 @@ int open_file_w(FILE **f, const char *file_name);
 /// @brief Function to close a file
 /// @param f File to close
 void close_file(FILE **f);
+
+
+// TODO
+void load_network();
+
+// TODO
+void store_network();
 
 
 /// @brief Load network data from file (number of neurons, number of synapses, connections, weights of synapses...)

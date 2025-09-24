@@ -102,11 +102,12 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
 
                 // process learning if it is necessary
                 #ifndef NOLEARN 
-                #pragma omp for schedule(static, 50) private(i)
-                if(learning == 1)
+                if(learning == 1){
+                    #pragma omp for schedule(static, 50) private(i)
                     for(i = 0; i<snn->n_synapses; i++)
-                        snn->synapses[i].learning_rule(&(snn->synapses[i])); 
-                #endif
+                            snn->synapses[i].learning_rule(&(snn->synapses[i])); 
+                    #endif
+                }
             }
             
             clock_gettime(CLOCK_MONOTONIC, &end_synapses);
