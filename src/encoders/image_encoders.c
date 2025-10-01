@@ -31,9 +31,13 @@ void read_labels(FILE *f, char *f_path, int n, int *labels){
 void read_convert_and_store_input_data(FILE *f, char *f_path, image_dataset_t *spk_ds, double **ds){
     
     int i, j, l;
+    spike_image_t spk_image;
 
-    // read dataset data and convert to spikes
-    convert_images_to_spikes_by_poisson_distribution(spk_ds, ds, spk_ds->n_images, spk_ds->image_size, spk_ds->bins);
+    // allocate memory for spk image
+    spk_image.image = malloc(spk_ds->image_size * sizeof(int *));
+    for(i = 0; i<spk_ds->image_size; i++){
+        spk_image.image[i] = malloc(spk_ds->bins * sizeof(int));
+    }
 
     // open file to store data    
     f = fopen(f_path, "w");
@@ -42,16 +46,33 @@ void read_convert_and_store_input_data(FILE *f, char *f_path, image_dataset_t *s
         exit(1);
     }
 
-    // write data in file
+    // read dataset data and convert to spikes
     for(i = 0; i<spk_ds->n_images; i++){
+        
+        if(i % 100 == 0){
+            printf(" > Encoding image %d\n", i);
+            fflush(stdout);
+        }
+
+        // convert image to spikes
+        convert_image_to_spikes_by_poisson_distribution(&spk_image, ds[i], spk_ds->image_size, spk_ds->bins);
+        
+        // write image in file
         for(j = 0; j<spk_ds->image_size; j++){
-            for(l=0; l<spk_ds->images[i].image[j][0]+1; l++){
-                fprintf(f, "%d ", spk_ds->images[i].image[j][l]);
+            for(l=0; l<spk_image.image[j][0]+1; l++){
+                fprintf(f, "%d ", spk_image.image[j][l]);
             }
             fprintf(f, "\n");
         }
-        fprintf(f, "\n");
+        fprintf(f, "\n");    
     }
+
+    for(i = 0; i<spk_ds->image_size; i++)
+        free(spk_image.image[i]);
+    free(spk_image.image);
+
+    // close file
+    fclose(f);
 }
 
 

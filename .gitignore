@@ -38,6 +38,7 @@
 /bin/
 /obj/
 /configuration_files/
+/data/
 
 
 # Debug files
