@@ -106,8 +106,8 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
                     #pragma omp for schedule(static, 50) private(i)
                     for(i = 0; i<snn->n_synapses; i++)
                             snn->synapses[i].learning_rule(&(snn->synapses[i])); 
-                    #endif
                 }
+                #endif
             }
             
             clock_gettime(CLOCK_MONOTONIC, &end_synapses);

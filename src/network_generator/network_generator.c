@@ -58,6 +58,7 @@ void generate_semi_random_synaptic_connections(network_data_t *network_data, con
 }
 
 void generate_random_synaptic_connections(network_data_t *network_data, configuration_t *conf){
+    
     // bigger the number of synapses lower the probability: exponential distribution or pareto distribution
     int i, j;
     int max_synapses_between_neurons = 10;
@@ -466,6 +467,7 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
         exit(1);
     }    
     
+
     /* read TOML file */
     tbl = toml_parse_file(f, errbuf, l_file_names);
 
@@ -474,28 +476,26 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
     tbl_neurons = toml_table_table(tbl, "neurons");
     tbl_synapses = toml_table_table(tbl, "synapses");
 
-    /*
-    GENERAL SECTION
-    */
-    neurons = toml_table_int(tbl_general, "neurons");
-    synapses = toml_table_int(tbl_general, "synapses");
+    // general section
+    neurons = toml_table_int(tbl_general, "neurons"); // the number of neurons is established or not
+    synapses = toml_table_int(tbl_general, "synapses"); // the number of synapses is established or not
 
-    n_neurons = toml_table_int(tbl_general, "n_neurons");
+    // load general data
+    n_neurons = toml_table_int(tbl_general, "n_neurons"); // number of neurons to initialize the network with
     n_input_neurons = toml_table_int(tbl_general, "n_input_neurons");
     n_output_neurons = toml_table_int(tbl_general, "n_output_neurons");
-    n_synapses = toml_table_int(tbl_general, "n_synapses");
+    n_synapses = toml_table_int(tbl_general, "n_synapses"); // number of synapses to initialize the network with
     n_input_synapses = toml_table_int(tbl_general, "n_input_synapses");
     n_output_synapses = toml_table_int(tbl_general, "n_output_synapses");
 
-    output_file_name = toml_table_string(tbl_general, "output_file");
-    output_is_separated = toml_table_int(tbl_general, "output_is_separated");
+    output_file_name = toml_table_string(tbl_general, "output_file"); // file to store the network
+    output_is_separated = toml_table_int(tbl_general, "output_is_separated"); // indicates whether the network should be stored in separated files
 
-    lambda = toml_table_double(tbl_general, "lambda");
-    lambda_delays = toml_table_double(tbl_general, "lambda_delays");
+    lambda = toml_table_double(tbl_general, "lambda"); // connectivity?
+    lambda_delays = toml_table_double(tbl_general, "lambda_delays"); // delays lambda
     integers = toml_table_int(tbl_general, "integers");
-    max_connections_pair_neurons = toml_table_int(tbl_general, "max_connections_pair_neurons");
+    max_connections_pair_neurons = toml_table_int(tbl_general, "max_connections_pair_neurons"); // max number of connections between neurons
 
-    // TODO: Manage neurons and synapses
     
     // if something is missing in configuration file, set default value
     if(!(n_neurons.ok && n_input_neurons.ok && n_output_neurons.ok)){
@@ -529,7 +529,7 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
     }
 
     if(!integers.ok){
-        printf("No value provided to indicate if values are integers, using float by default\n");
+        printf("No value provided to indicate whehter values are integers, using float by default\n");
         integers.u.i = 0;
     }
 
@@ -553,8 +553,11 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
     conf->integers = integers.u.i; // if 0, no integers, else, weights and membrane potentials are integers
     conf->max_connections_pair_neurons = max_connections_pair_neurons.u.i;
 
-    // neurons section
-    v_thres = toml_table_int(tbl_neurons, "v_thres");
+
+
+
+    // Load neurons section
+    v_thres = toml_table_int(tbl_neurons, "v_thres"); // 
     min_v_thres = toml_table_double(tbl_neurons, "v_thres_min");
     max_v_thres = toml_table_double(tbl_neurons, "v_thres_max");
 
@@ -586,7 +589,8 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
     min_weight = toml_table_double(tbl_synapses, "weight_min");
     max_weight = toml_table_double(tbl_synapses, "weight_max");
     
-    // check what parameters are provided to use as intervals in randomization, otherwise
+
+    // check which parameters are provided to use as intervals in randomization, otherwise
     // if 0, default values are used, if 1, random values inside provided interval, else random values
     if(!v_thres.ok){
         conf->v_thres = 0;

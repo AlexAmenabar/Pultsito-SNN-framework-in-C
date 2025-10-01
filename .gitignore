@@ -37,6 +37,7 @@
 *.hex
 /bin/
 /obj/
+/configuration_files/
 
 
 # Debug files

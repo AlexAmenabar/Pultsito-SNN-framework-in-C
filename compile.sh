@@ -12,6 +12,8 @@ COMMANDS=(
     "gcc -Iinclude -Ilib -o bin/main_simulation_reorder src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm  -DINPUT_SYNAPSES=1 -DINPUT_NEURON_BEHAVIOUR=2 -DINPUT_WEIGHTS=1 -DINPUT_DELAYS=2 -DINPUT_TRAINING_ZONES=1 -DOPENMP -DNOLEARN -DREORDER"
 
     "gcc -Iinclude -Ilib -o bin/network_generator src/network_generator/network_generator_main.c src/network_generator/network_generator.c -lm"
+
+    "gcc -Iinclude -Ilib -o bin/image_encoder src/encoders/image_encoder_main.c src/encoders/image_encoders.c -lm"
 )
 
 echo "== Compiling... =="

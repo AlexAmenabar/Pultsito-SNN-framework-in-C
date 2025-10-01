@@ -4,6 +4,8 @@
         "stdp.h": "c",
         "lif_neuron.h": "c",
         "image_encoders.h": "c",
-        "snn_library.h": "c"
+        "snn_library.h": "c",
+        "stdio.h": "c",
+        "mnist.h": "c"
     }
 }

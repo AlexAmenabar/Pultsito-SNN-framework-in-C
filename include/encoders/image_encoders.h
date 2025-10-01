@@ -2,9 +2,11 @@
 #define IMAGE_ENDOERS_H
 
 
+
 /** 
 This file contains the structures and functions to convert different types of input into spike trains and store them.
 */
+
 
 // TODO: this should be generalized for different data types ??? 
 
@@ -12,7 +14,6 @@ This file contains the structures and functions to convert different types of in
 typedef struct {
     int **image; // first dimension is a list of pixels, and the second dimension the spike train for each pixel
 } spike_image_t;
-
 
 /// @brief Image dataset converted into spikes
 typedef struct {
@@ -23,6 +24,21 @@ typedef struct {
     int n_images; // number of images in the dataset
     int bins; // number of bins for each pixel
 } image_dataset_t;
+
+/// @brief Read the labels of a dataset
+/// @param f File to write labels on
+/// @param f_path file path to write labels on
+/// @param n Number of samples in the dataset
+/// @param labels pointer to read the labels from
+void read_labels(FILE *f, char *f_path, int n, int *labels);
+
+
+/// @brief Read input data, convert it to spikes and store in a file
+/// @param f File to store the dataset in spikes format
+/// @param f_path File path of the output file
+/// @param spk_ds Dataset in spikes
+/// @param ds Original dataset
+void read_convert_and_store_input_data(FILE *f, char *f_path, image_dataset_t *spk_ds, double **ds);
 
 
 /// @brief Convert dataset of images into spike images

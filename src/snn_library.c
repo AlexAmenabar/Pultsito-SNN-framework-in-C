@@ -242,10 +242,11 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
     // initialize general information
     snn->neuron_type = conf->neuron_type;
 
+
     // initialize step function depending on neuron type
     switch (snn->neuron_type)
     {
-        case 0: // LIF
+        case 0: // LIF - Leaky-Integrate-and-Fire
             snn->complete_step = &lif_neuron_step;
             snn->neuron_initializer = &initialize_lif_neuron;
             snn->neuron_re_initializer = &re_initialize_lif_neuron;
@@ -259,27 +260,19 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
     }
 
     // initialize neurons of the network
-    printf("    - Initializing neurons...\n");
+    printf(" >> Initializing neurons...\n");
     initialize_network_neurons(snn, lists);
-    printf("    - Neurons initialized!\n");
-
-#ifdef DEBUG
-    printf("Neurons initialized\n");
-#endif
+    printf(" >> Neurons initialized!\n");
 
     // initialize synapses
-    printf("    - Initializing synapses...\n");
+    printf(" >> Initializing synapses...\n");
     initialize_network_synapses(snn, snn->n_synapses, lists);
-    printf("    - Synapses initialized!\n");
-
-#ifdef DEBUG
-    printf("Synapses initilized\n");
-#endif
+    printf(" >> Synapses initialized!\n");
 
     // connect neurons and synapses
-    printf("Connecting neuron...\n");
+    printf(" >> Connecting neurons and synapses...\n");
     connect_neurons_and_synapses(snn, lists->synaptic_connections);
-    printf("Neurons connected!\n");
+    printf(" >> Neurons and synapses connected!\n");
 }
 
 

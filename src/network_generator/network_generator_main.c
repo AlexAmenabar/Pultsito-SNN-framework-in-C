@@ -12,19 +12,22 @@ int main(int argc, char *argv[]) {
     // randomize exection to create different networks each time
     srand(time(NULL));
 
-    printf("Reading configuration file...\n");
+
+    // read configuration file to define the network to be created
+    printf(" > Reading configuration file...\n");
     read_configuration_file(argv[1], &network_data, &conf);
-    printf("Configuration file readed! Printing general information: \n");
+    printf(" > Configuration file readed! Printing general information: \n");
 
-    printf(" - Neurons provided = %d\n", conf.neurons);
-    printf(" - Synapses provided = %d\n", conf.synapses);
+    // print information
+    printf(" >> Neurons provided = %d\n", conf.neurons);
+    printf(" >> Synapses provided = %d\n", conf.synapses);
 
-    printf(" - Neurons = %d\n", network_data.n_neurons);
-    printf(" - Input neurons = %d\n", network_data.n_input_neurons);
-    printf(" - Output neurons = %d\n", network_data.n_output_neurons);
-    printf(" - Synapses = %d\n", network_data.n_synapses);
-    printf(" - Input synapses = %d\n", network_data.n_input_synapses);
-    printf(" - Output synapses = %d\n", network_data.n_output_synapses);
+    printf(" >> Neurons = %d\n", network_data.n_neurons);
+    printf(" >> Input neurons = %d\n", network_data.n_input_neurons);
+    printf(" >> Output neurons = %d\n", network_data.n_output_neurons);
+    printf(" >> Synapses = %d\n", network_data.n_synapses);
+    printf(" >> Input synapses = %d\n", network_data.n_input_synapses);
+    printf(" >> Output synapses = %d\n", network_data.n_output_synapses);
 
     // reserve memory for arrays related to neurons
     network_data.connections = (int **)malloc((network_data.n_neurons+1) * sizeof(int *)); // n + 1 as there are n neurons and 1 network input "layer"
@@ -39,8 +42,6 @@ int main(int argc, char *argv[]) {
 
     // CHOOSE ONE DEPENDING ON COMPILE PARAMETER
     //generate_semi_random_synaptic_connections(synaptic_connections, n, n_input, n_output, &n_synapses, &n_input_synapses, &n_output_synapses);
-
-    // THIS IS RELTATED TO THE IF STATEMENT MENTIONED BEFORE
     network_data.n_synapses = 0;
     network_data.n_input_synapses = 0;
     network_data.n_output_synapses = 0;
