@@ -1,14 +1,17 @@
+
 [general]
     execution_type = 0
     neuron_type = 0
     execution_obj = 0
     n_process = 1
     cuda = 0
-    learn = 1
+    learn = 0
 
 [simulation]
-    time_steps = 10000
-    input_file = "./input_spikes_10_10000.txt"
+    time_steps = 1000
+    input_file = "data/Random_trains/input_1000_10000_10.txt"
+    epochs = 1
+    n_samples = 1
 
 [samples]
     dataset = ""
@@ -17,20 +20,20 @@
     epochs = 1
 
 [output]
-    generated_spikes = "./networks/toml_format/generated_spikes_network8784_lc_reordered.txt"
-    execution_times = "./networks/toml_format/execution_times_network8784_lc_reordered.txt"
-    spikes_per_neuron = "./networks/toml_format/spikes_per_neuron_network8784_lc_reordered.txt"
+    generated_spikes = "./results/generated_spikes_network2000_mc_callgrind.txt"
+    execution_times = "./results/execution_times_network2000_mc_callgrind.txt"
+    spikes_per_neuron = "./results/spikes_per_neuron_network2000_mc_callgrind.txt"
     store_network = 1
-    store_network_file = "./networks/toml_format/network_after_training.txt"
+    store_network_file = "./results/network_after_training.txt"
 
 [network]
-    network_file = "./configuration_files/networks/network8784_lc.toml"
-    network_neurons_file = "./configuration_files/networks/network8784_neurons_lc.toml"
-    network_synapses_file = "./configuration_files/networks/network8784_synapses_lc.toml"
+    network_file = "./configuration_files/networks/network2000_mc.toml"
+    network_neurons_file = "./configuration_files/networks/network2000_mc_neurons.toml"
+    network_synapses_file = "./configuration_files/networks/network2000_mc_synapses.toml"
     behaviours = 1
     delays = 1
     weights = 1
     training_zones = 1
     thresh = 1
-    v_rests = 1;
+    v_rests = 1
     t_refract = 1

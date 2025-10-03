@@ -8,8 +8,8 @@ typedef struct {
     int n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses;
 
     // neurons section
-    int behaviour, *behaviour_list, r, *r_list, refract_time, *refract_time_list, *n_input_synapses_per_neuron, *n_output_synapses_per_neuron;
-    double v_thres, *v_thres_list, v_rest, *v_rest_list;
+    int behaviour, *behaviour_list, refract_time, *refract_time_list, *n_input_synapses_per_neuron, *n_output_synapses_per_neuron;
+    double v_thres, *v_thres_list, v_rest, *v_rest_list, r, *r_list;
 
     // synapses section
     int latency, *latency_list, training_zones, *training_zones_list, **connections;
@@ -29,8 +29,8 @@ typedef struct {
     int behaviour, v_thres, v_rest, R, refract_time, latency, training_zone, weight; // these variables are used to manage what parameters are provided in configuration file for aleatorization
 
     // neurons configuration
-    int min_behaviour, max_behaviour, min_R, max_R, min_refract_time, max_refract_time;
-    double min_v_thres, max_v_thres, min_v_rest, max_v_rest;
+    int min_behaviour, max_behaviour, min_refract_time, max_refract_time;
+    double min_v_thres, max_v_thres, min_v_rest, max_v_rest, min_R, max_R;
 
     int min_latency, max_latency, min_training_zone, max_training_zone;
     double min_weight, max_weight;
@@ -38,6 +38,7 @@ typedef struct {
 
     // the way the output must be generated
     int output_is_separated;
+    
 } configuration_t;
 
 

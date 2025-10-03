@@ -1305,10 +1305,8 @@ toml_table_t *toml_parse(char *toml, char *errbuf, int errbufsz) {
 				break;
 
 			case STRING:
-				//printf("STRING\n");
 				if (parse_keyval(&ctx, ctx.curtab))
 					goto fail;
-				//printf("keyval parsed\n");
 
 				if (ctx.tok.tok != NEWLINE) {
 					e_syntax(&ctx, ctx.tok.lineno, "extra chars after value");

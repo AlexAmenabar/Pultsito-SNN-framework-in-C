@@ -229,42 +229,45 @@ void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construc
  
     int i;
     lif_neuron_t *neuron;
-    
+
     // get neuron from neurons array
     neuron = &(snn->lif_neurons[neuron_index]); 
 
     // initialize neuron parameters from array // TODO: it's not totally correct, i guess
     neuron->v_tresh = lists->v_thres_list[neuron_index];
     neuron->v_rest = lists->v_rest_list[neuron_index]; // this or the next one?
-    neuron->v= neuron->v_rest; 
+    neuron->v = neuron->v_rest; 
     neuron->r = lists->R_list[neuron_index];
     neuron->excitatory = lists->neuron_excitatory[neuron_index];
-    neuron->r_time_rest = 0;
+    neuron->r_time_rest = -1;
     neuron->r_time = lists->r_time_list[neuron_index];
 
-    // check if neuron is input/output neuron 
+    // check if neuron is input
     if(neuron_index < snn->n_input)
         neuron->is_input_neuron = 1;
     else
         neuron->is_input_neuron = 0;
 
+    // check if neuron is output
     if(neuron_index >= (snn->n_neurons - snn->n_output))
         neuron->is_output_neuron = 1;
     else
         neuron->is_output_neuron = 0;
 
 
+    // TODO: I think this does not make sense, so I will remove it
     // TODO: TEMPORAL SOLUTION; TODO BETTER IMPLEMENTATION. This should be 0 only for input synpases,
     // but I don't want to add an IF in the executed function as that will make the execution less
     // efficient
-    if(neuron->is_input_neuron == 1 || neuron->is_output_neuron == 1)
-        neuron->r_time = 0; // TODO: Input neurons do not have refractary time. Is this correct? I'm not sure
+    //if(neuron->is_input_neuron == 1 || neuron->is_output_neuron == 1)
+    //    neuron->r_time = 0; // TODO: Input neurons do not have refractary time. Is this correct? I'm not sure
     
+
     // reserve memory to store input and output synapses indexes
     neuron->input_synapse_indexes = malloc(n_input_synapse * sizeof(int));
     neuron->output_synapse_indexes = malloc(n_output_synapse * sizeof(int));
     
-    // store number of input and output synpases for neuron
+    // store number of input and output synpases for each neuron
     neuron->n_input_synapse = n_input_synapse;
     neuron->n_output_synapse = n_output_synapse;
 

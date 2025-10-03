@@ -64,11 +64,6 @@ int open_file(FILE **f, const char *file_name);
 int open_file_w(FILE **f, const char *file_name);
 
 
-/// @brief Function to close a file
-/// @param f File to close
-void close_file(FILE **f);
-
-
 // TODO
 void load_network();
 
@@ -107,5 +102,10 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
 /// @param conf Structure to read where to store the results
 /// @param snn Spiking neural network structure
 void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
+
+void store_generated_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
+void store_network(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
+void store_number_of_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
+void store_times(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
 
 #endif

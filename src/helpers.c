@@ -57,26 +57,3 @@ void print_array_double(double *array, int length){
     }
     printf("\n");
 }
-
-void random_input_spike_train_generator(int **spike_trains, int *n_spikes, int n_input_spike_trains, int time_steps, int prob){
-    int p, i, t;
-
-    // generate n input spike trains spike train
-    for(i = 0; i<n_input_spike_trains; i++){
-
-        n_spikes[i] = 0;
-
-        // generate spikes for each squence
-        for(t=0; t<time_steps; t++){
-            
-            p = rand() % 100;
-
-            // generate spike on time t if p > prob
-            if(p > prob){
-                
-                spike_trains[i][n_spikes[i]] = t;
-                n_spikes[i] += 1;
-            }
-        }
-    }
-}

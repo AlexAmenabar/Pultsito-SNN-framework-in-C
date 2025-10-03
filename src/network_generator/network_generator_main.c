@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
     // reserve memory for arrays related to neurons
     network_data.connections = (int **)malloc((network_data.n_neurons+1) * sizeof(int *)); // n + 1 as there are n neurons and 1 network input "layer"
     network_data.behaviour_list = (int *)malloc(network_data.n_neurons * sizeof(int));
-    network_data.r_list = (int *)malloc(network_data.n_neurons * sizeof(int));
+    network_data.r_list = (double *)malloc(network_data.n_neurons * sizeof(double));
     network_data.refract_time_list = (int *)malloc(network_data.n_neurons * sizeof(int));
     network_data.v_thres_list = (double *)malloc(network_data.n_neurons * sizeof(double));
     network_data.v_rest_list = (double *)malloc(network_data.n_neurons * sizeof(double));

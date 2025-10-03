@@ -1,27 +1,27 @@
 [general]
     neurons = 1
     synapses = 0
-    n_neurons = 8784
-    n_input_neurons = 784
-    n_output_neurons = 10
+    n_neurons = 2000
+    n_input_neurons = 100
+    n_output_neurons = 50
     n_synapses = 0
     n_input_synapses = 0
     n_output_synapses = 0
-	output_file = "configuration_files/networks/network8784_hc.toml"
+	output_file = "configuration_files/networks/network2000_mc.toml"
     output_is_separated = 1
-	lambda = 2
+	lambda = 1
     lambda_delays = 0.75
     integers = 0
     max_connections_pair_neurons = 8
 
 [neurons]
     v_thres = 1
-    v_thres_min = -50
-    v_thres_max = -40
+    v_thres_min = 5
+    v_thres_max = 10
 
     v_rest = 1
-    v_rest_min = -65
-    v_rest_max = -60
+    v_rest_min = 0
+    v_rest_max = 2
 
     R = 1
     R_min = 1
@@ -45,5 +45,5 @@
     training_zone_max = 1
 
     weight = 1
-    weight_min = 0.5
-    weight_max = 2.5
+    weight_min = 2.5
+    weight_max = 5

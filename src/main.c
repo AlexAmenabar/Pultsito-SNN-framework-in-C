@@ -77,7 +77,19 @@ int main(int argc, char *argv[]) {
     // Run the simulation
 
 #ifndef BY_SAMPLE
-    simulate(&snn, &conf, &results);
+    int reps = 1;
+    for(i=0; i<reps; i++){
+        simulate(&snn, &conf, &results);
+    }
+    // compute means of execution times
+    results.results_per_sample[0].elapsed_time = results.results_per_sample[0].elapsed_time / reps;
+    results.results_per_sample[0].elapsed_time_neurons = results.results_per_sample[0].elapsed_time_neurons / reps;
+    results.results_per_sample[0].elapsed_time_neurons_input = results.results_per_sample[0].elapsed_time_neurons_input / reps;
+    results.results_per_sample[0].elapsed_time_neurons_output = results.results_per_sample[0].elapsed_time_neurons_output / reps;
+    results.results_per_sample[0].elapsed_time_synapses = results.results_per_sample[0].elapsed_time_synapses / reps;
+    results.results_per_sample[0].elapsed_time_synapses_input = results.results_per_sample[0].elapsed_time_synapses_input / reps;
+    results.results_per_sample[0].elapsed_time_synapses_output = results.results_per_sample[0].elapsed_time_synapses_output / reps;
+    results.results_per_sample[0].elapsed_time_learning = results.results_per_sample[0].elapsed_time_learning / reps; 
 #else
     simulate_by_samples();
 #endif

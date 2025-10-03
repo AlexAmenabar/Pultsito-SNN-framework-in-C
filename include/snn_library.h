@@ -7,7 +7,7 @@
 #endif
 
 #ifndef INPUT_MAX_SPIKES
-#define INPUT_MAX_SPIKES 5000
+#define INPUT_MAX_SPIKES 10000
 #endif
 
 
@@ -113,26 +113,26 @@ typedef struct {
 typedef struct{
 
     // general information
-    int simulation_type, neuron_type, n_process, store, cuda, learn; // simulation type (clock, event), neuron type (LIF...), n_process (number of OpenMP processes), whether network will be stored, whether learning will be carried out
+    int simulation_type, neuron_type, simulation_obj, n_process, store, cuda, learn; // simulation type (clock, event), neuron type (LIF...), n_process (number of OpenMP processes), whether network will be stored, whether learning will be carried out
 
-    char *spike_times_file, *weights_file, *times_file, *n_spikes_file, *final_network_file; // file paths to store results // TODO: I'm not very convinced with this now
+    // file paths to store results and load data from
+    char *spike_times_file, *times_file, *n_spikes_file, *final_network_file; // file paths to store results // TODO: I'm not very convinced with this now
     char *network_file, *network_neurons_file, *network_synapses_file; // file paths to load networks
 
-    // biological simulation
+    // simulation
     int time_steps; // time steps of the simulations
     char *input_spikes_file; // file path to load the input spikes from
-
-    // sample simulation
     int epochs; // number of epochs for the training
     int n_samples; // number of samples to simulate
 
     // control variables to indicate what parameters have been provided
-    int behaviours_provided, delays_provided, weights_provided, training_zones_provided, thresholds_provided, v_rests_provided, refract_times_provided; // TODO: add more 
+    int behaviours_provided, delays_provided, weights_provided, training_zones_provided, 
+        thresholds_provided, v_rests_provided, refract_times_provided, res_provided; // TODO: add more 
 
 } simulation_configuration_t;
 
 
-/// @brief Struct for results configuration 
+/// @brief Struct for results configuration // I think this structure is not really necessary
 typedef struct{
 
     int n_neurons; // number of neurons
@@ -145,12 +145,13 @@ typedef struct{
 /// @brief Struct for initializing the network from input data 
 typedef struct{
     
+    // connectivity
     int **synaptic_connections, *neuron_excitatory, *training_zones; // change to uint in the future
     int *delay_list;
     double *weight_list;
 
     // LIF neuron
-    double *v_list, *v_thres_list, *R_list, *v_rest_list; // parameters for all neurons [n_neurons]
+    double *v_list, *v_thres_list, *v_rest_list, *R_list; // parameters for all neurons [n_neurons]
     int *r_time_list; // refractory times for all neurons [n_neurons] 
 
 } network_construction_lists_t;
@@ -159,12 +160,19 @@ typedef struct{
 
 /* Results structs */
 
-/// @brief Struct to store the results of one sample 
+/// @brief Struct to store the results of a sample 
 typedef struct{
     
-    double elapsed_time, elapsed_time_neurons, elapsed_time_neurons_input, elapsed_time_neurons_output, elapsed_time_synapses; // execution times
+    double elapsed_time; // total elapsed time in sample simulation
+    double elapsed_time_neurons; // elapsed time computing neurons
+    double elapsed_time_neurons_input; // elapsed time processing neurons input 
+    double elapsed_time_neurons_output; // elapsed time processing neurons output
+    double elapsed_time_synapses; // elapsed time processing synapses
+    double elapsed_time_synapses_input; // elapsed time processing synapses input
+    double elapsed_time_synapses_output; // elapsed time processing synapses output
+    double elapsed_time_learning; // elapsed time processing learning rules
     unsigned char **generated_spikes; // generated spikes [n_neurons x n_time_steps]
-    int *n_spikes_per_neuron; // number of spikes per each neuron [n_neurons]
+    int *n_spikes_per_neuron; // number of spikes per each neuron [n_samples x n_neurons]
 
 } simulation_results_per_sample_t;
 
@@ -175,9 +183,6 @@ typedef struct{
     simulation_results_per_sample_t *results_per_sample; // results for each samples [n_samples]
 
 } simulation_results_t;
-
-
-
 
 
 

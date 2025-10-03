@@ -6,13 +6,24 @@
 #include <toml_c/toml-c.h>
 
 
+/* generate a random floating point number from min to max */
+double randfrom(double min, double max) 
+{
+    double range = (max - min); 
+    double div = RAND_MAX / range;
+    return min + (rand() / div);
+}
+
+
+
 void generate_semi_random_synaptic_connections(network_data_t *network_data, configuration_t *conf){ // por ahora n_input_synapse y n_output_synapse no se utilizan, ya que por neurona de entrada/salida hay una unica sinapsis de entrada/salida
     // bigger the number of synapses lower the probability: exponential distribution or pareto distribution
     int i, j;
+    int next_pos, neuron_id, connections_per_neuron, generated_connections = 0;
+
 
     // amount of connection per neuron are computed
-    int connections_per_neuron = ((network_data->n_synapses) - (network_data->n_input_synapses) - (network_data->n_output_synapses)) / network_data->n_neurons; // neuronas que hay entre medias en la red
-    int generated_connections = 0; 
+    connections_per_neuron = ((network_data->n_synapses) - (network_data->n_input_synapses) - (network_data->n_output_synapses)) / network_data->n_neurons;
 
     // alocate memory
     network_data->connections[0] = (int *)malloc((network_data->n_input_neurons * 2 +1 ) * sizeof(int));
@@ -25,10 +36,10 @@ void generate_semi_random_synaptic_connections(network_data_t *network_data, con
 
 
     // generate network input synaptic connections
-    int next_pos = 1; 
+    next_pos = 1; 
     network_data->connections[0][0] = network_data->n_input_neurons;
     for(i = 0; i<network_data->n_input_neurons; i++){
-        int neuron_id = i;
+        neuron_id = i;
         network_data->connections[0][next_pos] = neuron_id;
         network_data->connections[0][next_pos + 1] = 1;
         next_pos += 2;
@@ -218,7 +229,8 @@ void generate_random_synaptic_weights(network_data_t *network_data, configuratio
             }
             // use interval
             else{
-                w = (double)(rand() % (int)(max_w));
+                w = randfrom(min_w, max_w);
+                /*w = (double)(rand() % (int)(max_w));
                 
                 if(w > (double)max_w)
                     w = (double)max_w;
@@ -232,7 +244,7 @@ void generate_random_synaptic_weights(network_data_t *network_data, configuratio
                 }
                 else{
                     w = w * 0.99;
-                }
+                }*/
             }
                 //printf("generated w %f\n", w);
 
@@ -259,7 +271,8 @@ void generate_random_synaptic_weights(network_data_t *network_data, configuratio
                 }
                 // use interval
                 else{
-                    w = (double)(rand() % (int)(max_w));
+                    w = randfrom(min_w, max_w);
+                    /*w = (double)(rand() % (int)(max_w));
 
                     if(w > (double)max_w)
                         w = (double)max_w;
@@ -273,7 +286,7 @@ void generate_random_synaptic_weights(network_data_t *network_data, configuratio
                     }
                     else{
                         w = w * 0.99;
-                    }
+                    }*/
                 }                
                 
                 /*while(valid == 0){
@@ -390,7 +403,7 @@ void generate_neurons_data(network_data_t *network_data, configuration_t *conf){
             random_value = rand() % max_value;
             if(random_value < min_value) 
                 random_value = min_value;
-            network_data->v_thres_list[i] = (double)random_value;
+            network_data->v_thres_list[i] = randfrom(conf->min_v_thres, conf->max_v_thres);//(double)random_value;
         }
         else{ // random --> NOT SENSE
             // TODO
@@ -407,7 +420,9 @@ void generate_neurons_data(network_data_t *network_data, configuration_t *conf){
             random_value = rand() % max_value;
             if(random_value < min_value) 
                 random_value = min_value;
-            network_data->v_rest_list[i] = (double)random_value;
+            //network_data->v_rest_list[i] = (double)random_value;
+            network_data->v_rest_list[i] = randfrom(conf->min_v_rest, conf->max_v_rest);//(double)random_value;
+
         }
         else{ // random --> NOT SENSE
             // TODO
@@ -418,10 +433,12 @@ void generate_neurons_data(network_data_t *network_data, configuration_t *conf){
             network_data->r_list[i] = 10;
         }
         else if(conf->R == 1){ // between min and max
-            random_value = rand() % conf->max_R;
+            random_value = rand() % (int)(conf->max_R);
             if(random_value < conf->min_R) 
                 random_value = conf->min_R;
             network_data->r_list[i] = random_value;
+            network_data->r_list[i] = randfrom(conf->min_R, conf->max_R);//(double)random_value;
+
         }
         else{ // random --> NOT SENSE
             // TODO
@@ -617,7 +634,7 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
         conf->R = 0;
     }
     else{
-        conf->R = R.u.i;
+        conf->R = R.u.d;
     }
 
     if(!refract_time.ok){
@@ -681,8 +698,8 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
             printf("Min and max values for neurons resistance must be provided!\n");
         }
 
-        conf->min_R = min_R.u.i;
-        conf->max_R = max_R.u.i;
+        conf->min_R = min_R.u.d;
+        conf->max_R = max_R.u.d;
     }
 
     if(refract_time.ok && refract_time.u.i==1){
@@ -803,7 +820,7 @@ void store_network_in_toml_format(char *file_name, network_data_t *network_data,
     if(conf->output_is_separated != 1){
         fprintf(f, "    v_thres_list = [");
             for(i=0; i<network_data->n_neurons-1; i++){
-                fprintf(f, "%f, ", network_data->v_thres_list[i]);
+                fprintf(f, "%lf, ", network_data->v_thres_list[i]);
             }
         fprintf(f, "%f]\n", network_data->v_thres_list[network_data->n_neurons-1]);
     }
@@ -812,7 +829,7 @@ void store_network_in_toml_format(char *file_name, network_data_t *network_data,
     if(conf->output_is_separated != 1){
         fprintf(f, "    v_rest_list = [");
         for(i=0; i<network_data->n_neurons-1; i++){
-            fprintf(f, "%f, ", network_data->v_rest_list[i]);
+            fprintf(f, "%lf, ", network_data->v_rest_list[i]);
         }
         fprintf(f, "%f]\n", network_data->v_rest_list[network_data->n_neurons-1]);
     }
@@ -853,12 +870,12 @@ void store_network_in_toml_format(char *file_name, network_data_t *network_data,
         fprintf(f_neurons, "\n");
 
         for(i=0; i<network_data->n_neurons; i++){
-            fprintf(f_neurons, "%f ", network_data->v_thres_list[i]);
+            fprintf(f_neurons, "%lf ", network_data->v_thres_list[i]);
         }
         fprintf(f_neurons, "\n");
 
         for(i=0; i<network_data->n_neurons; i++){
-            fprintf(f_neurons, "%f ", network_data->v_rest_list[i]);
+            fprintf(f_neurons, "%lf ", network_data->v_rest_list[i]);
         }
         fprintf(f_neurons, "\n");
 
@@ -900,9 +917,9 @@ void store_network_in_toml_format(char *file_name, network_data_t *network_data,
     if(conf->output_is_separated != 1){
         fprintf(f, "    weights = [");
         for(i=0; i<network_data->n_synapses-1; i++){
-            fprintf(f, "%f, ", network_data->weights[i]);
+            fprintf(f, "%lf, ", network_data->weights[i]);
         }
-        fprintf(f, "%f]\n", network_data->weights[network_data->n_synapses-1]);
+        fprintf(f, "%lf]\n", network_data->weights[network_data->n_synapses-1]);
     }
 
     fprintf(f, "    training_zones = 0\n"); // TODO: THIS IS TEMPORAL
@@ -938,7 +955,7 @@ void store_network_in_toml_format(char *file_name, network_data_t *network_data,
         fprintf(f_synapses, "\n");
 
         for(i=0; i<network_data->n_synapses; i++){
-            fprintf(f_synapses, "%f ", network_data->weights[i]);
+            fprintf(f_synapses, "%lf ", network_data->weights[i]);
         }
         fprintf(f_synapses, "\n");
 

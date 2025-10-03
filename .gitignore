@@ -39,6 +39,7 @@
 /obj/
 /configuration_files/
 /data/
+/performance_profile/
 
 
 # Debug files
