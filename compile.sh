@@ -1,12 +1,12 @@
 #!/bin/bash
 
 COMMANDS=(
-    "gcc -Iinclude -Ilib -o bin/main_parallel_no_learn_simulation src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DOPENMP -DNO_LEARN -fopenmp"
-    "gcc -Iinclude -Ilib -o bin/main_parallel_no_learn_simulation_reorder src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DOPENMP -DREORDER -DNO_LEARN -fopenmp"
-    "gcc -Iinclude -Ilib -o bin/main_no_learn_simulation src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DNO_LEARN -DOPENMP"
-    "gcc -Iinclude -Ilib -o bin/main_no_learn_simulation_reorder src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DREORDER -DNO_LEARN -DOPENMP"
-    "gcc -Iinclude -Ilib -g -O0 -o bin/main_parallel_no_learn_simulation_reorder_g src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DREORDER -DNO_LEARN -DOPENMP"
-    "gcc -Iinclude -Ilib -g -O0 -o bin/main_parallel_no_learn_simulation_g src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DNO_LEARN -DOPENMP"
+    "gcc -Wall -Iinclude -Ilib -o bin/main_parallel_no_learn_simulation src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DOPENMP -DNO_LEARN -fopenmp"
+    "gcc -Wall -Iinclude -Ilib -o bin/main_parallel_no_learn_simulation_reorder src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DOPENMP -DREORDER -DNO_LEARN -fopenmp"
+    "gcc -Wall -Iinclude -Ilib -o bin/main_no_learn_simulation src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DNO_LEARN -DOPENMP"
+    "gcc -Wall -Iinclude -Ilib -o bin/main_no_learn_simulation_reorder src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DREORDER -DNO_LEARN -DOPENMP"
+    "gcc -Wall -Iinclude -Ilib -g -O0 -o bin/main_parallel_no_learn_simulation_reorder_g src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DREORDER -DNO_LEARN -DOPENMP"
+    "gcc -Wall -Iinclude -Ilib -g -O0 -o bin/main_parallel_no_learn_simulation_g src/main.c src/snn_library.c src/load_data.c src/helpers.c src/neuron_models/lif_neuron.c src/training_rules/stdp.c src/simulations/simulations.c -lm -DNO_LEARN -DOPENMP"
 )
 
 #    

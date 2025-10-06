@@ -192,8 +192,6 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
     // if it is separated, read the information from the other file
     else{
         // TODO: I am not handling the case in which some parameter is not provided
-        printf(" > Loading neurons data...\n");
-        fflush(stdout);
         for(i=0; i<snn->n_neurons; i++){
             fscanf(f_neurons, "%d", &((lists->neuron_excitatory)[i]));
         }
@@ -330,7 +328,7 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
 
 
 
-// I THINK THIS SHOULDN'T BE HERE
+// I THINK THIS SHOULDN'T BE HERE // NOW WITH NEURON IT IS NOT CORRECT FOR GENERALIZING
 /// @brief Function to load data into the SNN structure 
 /// @param file_name File name to load spikes from
 /// @param snn SNN structure to load spikes in
@@ -344,17 +342,19 @@ void load_input_spike_trains_on_snn(const char *file_name, spiking_nn_t *snn){
 
 
     // the first synapses of the network are the input ones
-    for(i = 0; i<snn->n_input_synapses; i++){
+    for(i = 0; i<snn->n_input; i++){
 
         // read number of spikes
         fscanf(f, "%d", &n_spikes);
 
         // load spikes for i neuron
-        for(j=0; j<n_spikes; j++)
-            fscanf(f, "%d", &(snn->synapses[i].l_spike_times[j]));
+        for(j=0; j<n_spikes; j++){
+            fscanf(f, "%d", &(snn->input_lif_neurons[i].spike_times_arr[j]));
+        }
 
         // refresh spikes index for synapse // TODO: this should be introduced as stream?
-        snn->synapses[i].last_spike += n_spikes;
+        //snn->input_lif_neurons[i].spike_times_arr += n_spikes;
+        snn->input_lif_neurons[i].last_spike = n_spikes;
     }
 
     // close file
@@ -720,7 +720,7 @@ void store_results(simulation_results_t *results, simulation_configuration_t *co
     // store
     store_generated_spikes(results, conf, snn);
     //store_network();
-    //store_number_of_spikes();
+    store_number_of_spikes(results, conf,snn);
     store_times(results, conf, snn);
 
 }
@@ -759,7 +759,7 @@ void store_network(simulation_results_t *results, simulation_configuration_t *co
     int i,j;
 
     // TODO: In this moment this function only stores the first sample results
-    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[i]);
+    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
     FILE *f;
 
     // file to store generated spikes
@@ -781,17 +781,19 @@ void store_number_of_spikes(simulation_results_t *results, simulation_configurat
     int i,j;
 
     // TODO: In this moment this function only stores the first sample results
-    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[i]);
+    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
     FILE *f;
 
     // file to store generated spikes
-    f = fopen(conf->spike_times_file, "w");
+    f = fopen(conf->n_spikes_file, "w");
     if(f == NULL){
-        printf("Error opening the file %s. \n", conf->spike_times_file);
+        printf("Error opening the file %s. \n", conf->n_spikes_file);
         exit(1);
     }
 
     // store number of spikes
+    for(i = 0; i<snn->n_neurons; i++)
+        fprintf(f, "%d ", results->results_per_sample[0].n_spikes_per_neuron[i]);
 
     // close file
     fclose(f);

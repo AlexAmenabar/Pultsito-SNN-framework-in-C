@@ -75,12 +75,15 @@ void initialize_synapse(synapse_t *synapse, network_construction_lists_t *lists,
     synapse->w = lists->weight_list[synapse_id];
     synapse->delay = lists->delay_list[synapse_id];
 
+    if(synapse_id < snn->n_input_synapses)
+        synapse->delay = 0;
+
     // TODO: REVISE REVISE REVISE REVISE 
     // TODO: IN GENERAL, THE WAY I MANAGE THE INPUT MUST BE REVISED
-    if(synapse_id < snn->n_input_synapses || synapse_id >= snn->n_synapses - snn->n_output_synapses)
-        synapse->max_spikes = INPUT_MAX_SPIKES;
-    else    
-        synapse->max_spikes = MAX_SPIKES;
+    //if(synapse_id < snn->n_input_synapses || synapse_id >= snn->n_synapses - snn->n_output_synapses)
+    //    synapse->max_spikes = INPUT_MAX_SPIKES;
+    //else    
+    //    synapse->max_spikes = MAX_SPIKES;
 
     // initialize control parameters
     synapse->t_last_post_spike = -1;
@@ -89,13 +92,13 @@ void initialize_synapse(synapse_t *synapse, network_construction_lists_t *lists,
     synapse->post_neuron_computed = -1;
     synapse->pre_neuron_computed = -1;
     
-    synapse->last_spike = 0; 
-    synapse->next_spike = 0;
+    //synapse->last_spike = 0; 
+    //synapse->next_spike = 0;
 
     // initialize array of spikes for the synapse
-    synapse->l_spike_times = (int *)malloc(synapse->max_spikes * sizeof(int));
-    for(i = 0; i<synapse->max_spikes; i++)
-        synapse->l_spike_times[i] = -1; // no spikes yet
+    //synapse->l_spike_times = (int *)malloc(synapse->max_spikes * sizeof(int));
+    //for(i = 0; i<synapse->max_spikes; i++)
+    //    synapse->l_spike_times[i] = -1; // no spikes yet
 
 
     // set training rule
@@ -138,8 +141,8 @@ void re_initialize_synapse(synapse_t *synapse){
     synapse->post_neuron_computed = -1;
     synapse->pre_neuron_computed = -1;
     
-    synapse->last_spike = 0; 
-    synapse->next_spike = 0;
+    //synapse->last_spike = 0; 
+    //synapse->next_spike = 0;
 }
 
 
@@ -256,6 +259,8 @@ void initialize_network_function_pointers(spiking_nn_t *snn){
 
 void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, network_construction_lists_t *lists){ //void *neuron_initializer()){
     
+    int i, j;
+
     // initialize general information
     snn->neuron_type = conf->neuron_type;
 
@@ -289,6 +294,58 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
     connect_neurons_and_synapses(snn, lists->synaptic_connections);
     printf(" >> Connected!\n");
     fflush(stdout);
+
+
+
+    // free and reallocate all spikes arrays for neurons
+    for(i = 0; i<snn->n_neurons; i++){
+    
+        int highest_delay = 0;
+
+        // find for each neuron the highest postsynaptic delay value
+        for(j = 0; j<snn->lif_neurons[i].n_output_synapse; j++){
+
+            int d = snn->synapses[snn->lif_neurons[i].output_synapse_indexes[j]].delay;
+            if(d > highest_delay)
+                highest_delay = d;
+        }
+        snn->lif_neurons[i].highest_post_delay = highest_delay;
+
+        
+        int L = highest_delay + 1;
+        L = L*10;
+        // reallocate spike array
+        //if(snn->lif_neurons[i].is_input_neuron != 1){
+            
+        free(snn->lif_neurons[i].spike_times_arr);
+        snn->lif_neurons[i].spike_times_arr = (int *)malloc(L * sizeof(int));
+        snn->lif_neurons[i].max_spikes = L;
+
+        for(j = 0; j<L; j++)
+            snn->lif_neurons[i].spike_times_arr[j] = -1;
+        //}
+    }
+
+    // initialize input spikes
+    snn->input_lif_neurons = (lif_neuron_t *)malloc(snn->n_input * sizeof(lif_neuron_t));
+    for(i = 0; i<snn->n_input; i++){
+        
+        lif_neuron_t *neuron = &(snn->input_lif_neurons[i]);
+
+        neuron->spike_times_arr = (int *)calloc(INPUT_MAX_SPIKES, sizeof(int));
+        neuron->max_spikes = INPUT_MAX_SPIKES;
+
+        // connect input layer neurons with the rest 
+        neuron->n_output_synapse = 1;
+        neuron->output_synapse_indexes = (int *)malloc(neuron->n_output_synapse * sizeof(int));
+        neuron->output_synapse_indexes[0] = i;
+        snn->synapses[i].pre_synaptic_lif_neuron = neuron;
+
+        neuron->r_time = 0;
+        neuron->r_time_rest = 0;
+        neuron->last_spike = 0;
+        neuron->t_last_spike = 0;
+    }
 }
 
 
@@ -641,7 +698,8 @@ void free_lif_neurons(spiking_nn_t *snn){
 }
 
 void free_synapses(spiking_nn_t *snn){
-    for(int i = 0; i<snn->n_synapses; i++){
-        free(snn->synapses[i].l_spike_times);
-    }
+    //for(int i = 0; i<snn->n_synapses; i++){
+    //    free(snn->synapses[i].l_spike_times);
+    //}
+    printf(" Not impelemented yet");
 }

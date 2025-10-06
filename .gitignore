@@ -40,6 +40,7 @@
 /configuration_files/
 /data/
 /performance_profile/
+/tests/
 
 
 # Debug files
