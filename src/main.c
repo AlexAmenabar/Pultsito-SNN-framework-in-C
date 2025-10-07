@@ -4,7 +4,7 @@
 #include "training_rules/stdp.h"
 
 #include "neuron_models/lif_neuron.h"
-//#include "neuron_models/GPU_lif_neuron.cuh"
+#include "neuron_models/GPU_lif_neuron.cuh"
 
 #include "simulations/simulations.h"
 
@@ -72,11 +72,34 @@ int main(int argc, char *argv[]) {
     // free memory TODO: must be corrected
     //free_lists_memory(&lists, &snn);
 
+
+    // measuring size of the SNN structure
+    int size = sizeof(snn);
+
+    for(i = 0; i<snn.n_neurons; i++){
+        
+        size += sizeof(snn.lif_neurons[i]);
+        size += sizeof(int) * snn.lif_neurons[i].max_spikes;
+        size += sizeof(int) * snn.lif_neurons[i].n_input_synapse;
+        size += sizeof(int) * snn.lif_neurons[i].n_output_synapse;
+    }
+
+    for(i = 0; i<snn.n_synapses; i++){
+
+        size += sizeof(snn.synapses[i]);
+    }
+
+    printf("%d\n", size);
+
+
     printf("Initializing training / simulation\n");
+
 
     // Run the simulation
 
 #ifndef BY_SAMPLE
+
+#ifndef CUDA
     int reps = 1;
     for(i=0; i<reps; i++){
         simulate(&snn, &conf, &results);
@@ -90,6 +113,10 @@ int main(int argc, char *argv[]) {
     results.results_per_sample[0].elapsed_time_synapses_input = results.results_per_sample[0].elapsed_time_synapses_input / reps;
     results.results_per_sample[0].elapsed_time_synapses_output = results.results_per_sample[0].elapsed_time_synapses_output / reps;
     results.results_per_sample[0].elapsed_time_learning = results.results_per_sample[0].elapsed_time_learning / reps; 
+#else
+    simulate_in_GPU(&snn, &conf, &results);
+#endif
+
 #else
     simulate_by_samples();
 #endif

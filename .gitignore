@@ -41,6 +41,7 @@
 /data/
 /performance_profile/
 /tests/
+/results/
 
 
 # Debug files

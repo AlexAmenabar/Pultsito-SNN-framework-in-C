@@ -67,11 +67,7 @@ typedef struct {
     double w; // synapse weight
     int delay; // latency
 
-    // WORK IN PROGRESS: moving to neurons
-    //int *l_spike_times; // circular array to store spikes // TODO: this MUST be refactorized
-    //int next_spike, last_spike; // index of next spike to produce and last spike produced
-    //int max_spikes; // array length
-
+    int lr;
     void (*learning_rule)(); // pointer to learning rule function
 
     int t_last_pre_spike, t_last_post_spike; // times of last presynaptic neuron and postsynaptic neurons spikes // if the difference in performance is not critical, this should be removed and neurons directly used

@@ -92,33 +92,25 @@ void initialize_synapse(synapse_t *synapse, network_construction_lists_t *lists,
     synapse->post_neuron_computed = -1;
     synapse->pre_neuron_computed = -1;
     
-    //synapse->last_spike = 0; 
-    //synapse->next_spike = 0;
-
-    // initialize array of spikes for the synapse
-    //synapse->l_spike_times = (int *)malloc(synapse->max_spikes * sizeof(int));
-    //for(i = 0; i<synapse->max_spikes; i++)
-    //    synapse->l_spike_times[i] = -1; // no spikes yet
-
-
     // set training rule
+    synapse->lr = lists->training_zones[synapse_id];
     switch (lists->training_zones[synapse_id]) // get synapse training zone from list
     {
-    case 0:
-        synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
-        break;
-    case 1:
-        synapse->learning_rule = &mult_stdp;//(void (*)())&mult_stdp;
-        break;
-    case 2:
-        synapse->learning_rule = &anti_stdp;//(void (*)())&anti_stdp;
-        break;
-    //case 3:
-    //    synapse->learning_rule = &triplet_stdp;//(void (*)())&triplet_stdp;
-    //    break;*/
-    default:
-        synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
-        break;
+        case 0:
+            synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
+            break;
+        case 1:
+            synapse->learning_rule = &mult_stdp;//(void (*)())&mult_stdp;
+            break;
+        case 2:
+            synapse->learning_rule = &anti_stdp;//(void (*)())&anti_stdp;
+            break;
+        //case 3:
+        //    synapse->learning_rule = &triplet_stdp;//(void (*)())&triplet_stdp;
+        //    break;*/
+        default:
+            synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
+            break;
     }
 }
 

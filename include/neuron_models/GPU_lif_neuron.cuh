@@ -23,4 +23,8 @@
 
 double process_simulation_lif_neuron(spiking_nn_t *snn, int n, int m, int time_steps);
 
+
+void simulate_in_GPU(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
+double copy_snn_structure_to_GPU(spiking_nn_t *snn);
+
 #endif

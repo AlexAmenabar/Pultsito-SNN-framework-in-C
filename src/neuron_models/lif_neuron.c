@@ -9,9 +9,9 @@
 void lif_neuron_compute_input_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results){
     
     lif_neuron_t *lif_neuron, *pre_lif_neuron;
-    int i, next_spike_time, synapse_index; 
     synapse_t *synapse;
-    double input_current = 0;
+    int i, next_spike_time, synapse_index, delay, msb; 
+    double I = 0, w;
 
 
     // get neuron to be processed
@@ -22,13 +22,10 @@ void lif_neuron_compute_input_synapses(spiking_nn_t *snn, int t, int neuron_id, 
         printf(" - Processing neuron %d \n", neuron_id);
     #endif
 
-    
-    /*printf(" > Neuron %d, time step %d, v thres = %lf, v rest = %lf, v = %lf (r time rest %d)\n"
-            , neuron_id, t, lif_neuron->v_tresh, lif_neuron->v_rest, lif_neuron->v, lif_neuron->r_time_rest);
-    fflush(stdout);*/
+    //msb = lif_neuron->r_time_rest & (1 << (sizeof(int) * 8 - 1)); // check if positive
 
     // process input spikes for the neuron if not in refractory period
-    if(lif_neuron->r_time_rest <= 0){ // TEMPORAL: do not process input neurons
+    if(lif_neuron->r_time_rest <= 0){
         
         // loop over input synapses
         for(i=0; i<lif_neuron->n_input_synapse; i++)
@@ -38,30 +35,29 @@ void lif_neuron_compute_input_synapses(spiking_nn_t *snn, int t, int neuron_id, 
             synapse = &(snn->synapses[synapse_index]); // TODO: make a copy???
             pre_lif_neuron = synapse->pre_synaptic_lif_neuron;
 
+            w = synapse->w;
+            delay = synapse->delay;
+
             #ifdef DEBUG
                 printf(" -- Processing input synapse %d: ", synapse_index);
             #endif
 
             
             // get the time step of the next spike to be processed
-            //next_spike_time = pre_lif_neuron->spike_times_arr[pre_lif_neuron->next_spike];
-            //if(pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] != -1)
-            //{
-            next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + synapse->delay;
+            next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
 
-            // refresh index // TODO: revise this
+            // refresh index
             while (next_spike_time < t && lif_neuron->next_spike_index[i] != pre_lif_neuron->last_spike){
-                //printf(" next spike time: %d (max spikes %d)\n", next_spike_time, pre_lif_neuron->max_spikes);
+
                 lif_neuron->next_spike_index[i] = (lif_neuron->next_spike_index[i] + 1) % pre_lif_neuron->max_spikes;
-                next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + synapse->delay;
+                next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
             }
 
             // process input spike if the spike time + the delay is equal to the actual t
-            if((next_spike_time) == t && next_spike_time - synapse->delay != -1){
-                // sum weight to input current to next update the membrane potential
-                input_current += synapse->w;
+            if((next_spike_time) == t && next_spike_time - delay != -1){
+                I += w;
             }
-            //}
+
             #ifdef DEBUG
                 printf("\n");
             #endif
@@ -71,50 +67,25 @@ void lif_neuron_compute_input_synapses(spiking_nn_t *snn, int t, int neuron_id, 
         // lif_neuron->v = lif_neuron->v + (-(lif_neuron->v - lif_neuron->v_rest) + (lif_neuron->r * input_current)) * (1 / 1);
         //lif_neuron->v =  lif_neuron->v * (1 - 1 / 20) + input_current;  //(0.2) * (-(lif_neuron->v - lif_neuron->v_rest) + lif_neuron->r * input_current); // (1 / 5)
         // https://unaterzavia.com/neural-dynamics2/
-        lif_neuron->v = (1 - 0.05) * lif_neuron->v + lif_neuron->v_rest * 0.05 + input_current; // * lif_neuron->r * 1/20; // supposing r * 1/20 == 1   
+        lif_neuron->v = (1 - 0.05) * lif_neuron->v + lif_neuron->v_rest * 0.05 + I; // * lif_neuron->r * 1/20; // supposing r * 1/20 == 1   
     }
 }
 
 void lif_neuron_compute_output_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results){
     
-    lif_neuron_t *lif_neuron;
-    int i, next_spike_time, synapse_index;
-    synapse_t *synapse;
-
-
     // get neuron to be processed
-    lif_neuron = &(snn->lif_neurons[neuron_id]);
+    lif_neuron_t *lif_neuron = &(snn->lif_neurons[neuron_id]);
 
     #ifdef DEBUG
         printf(" - Processing neuron %d \n", neuron_id);
     #endif
 
-    /*printf(" > Neuron %d, time step %d, v thres = %lf, v rest = %lf, v = %lf\n"
-            , neuron_id, t, lif_neuron->v_tresh, lif_neuron->v_rest, lif_neuron->v);
-    fflush(stdout);*/
-
-
     // fire an spike if neuron membrane potential is higher than the threshold and neuron is not in refractory period
     if(lif_neuron->v >= lif_neuron->v_tresh){ // if the neuron is in refractory period is impossible to have a higher v value than the threshold, so it is not necessary to indicate it
+
         #ifdef DEBUG
             printf(" -- Spike generated by %d at time %d\n", neuron_id, t);
         #endif
-
-        // send spike to all output synapses
-        /*for(i = 0; i<lif_neuron->n_output_synapse; i++){
-            
-            // get synapse to add the new spike
-            synapse_index = lif_neuron->output_synapse_indexes[i];
-            synapse = &(snn->synapses[synapse_index]);
-
-            #ifdef DEBUG
-                printf(" --- Processing output synapse %d: spike located for time %d\n", synapse_index, t + synapse->delay);
-            #endif
-
-            // add the spike to output synapse
-            synapse->l_spike_times[synapse->last_spike] = t + synapse->delay;
-            synapse->last_spike = (synapse->last_spike + 1) % synapse->max_spikes;
-        }*/
 
         // add the spike to output synapse
         lif_neuron->spike_times_arr[lif_neuron->last_spike] = t;// + synapse->delay;
@@ -139,9 +110,108 @@ void lif_neuron_compute_output_synapses(spiking_nn_t *snn, int t, int neuron_id,
 }
 
 void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results){
-    printf(" > Not implemented yet!\n");
-    fflush(stdout);
+
+    lif_neuron_t *lif_neuron, *pre_lif_neuron;
+    synapse_t *synapse;
+    int i, next_spike_time, synapse_index, delay, msb; 
+    double I = 0, w;
+
+
+    // get neuron to be processed
+    lif_neuron = &(snn->lif_neurons[neuron_id]);
+    
+
+    #ifdef DEBUG
+        printf(" - Processing neuron %d \n", neuron_id);
+    #endif
+
+    //msb = lif_neuron->r_time_rest & (1 << (sizeof(int) * 8 - 1)); // check if positive
+
+    // process input spikes for the neuron if not in refractory period
+    if(lif_neuron->r_time_rest <= 0){
+        
+        // loop over input synapses
+        for(i=0; i<lif_neuron->n_input_synapse; i++)
+        {
+            // get synapse from synapse array
+            synapse_index = lif_neuron->input_synapse_indexes[i];
+            synapse = &(snn->synapses[synapse_index]); // TODO: make a copy???
+            pre_lif_neuron = synapse->pre_synaptic_lif_neuron;
+
+            w = synapse->w;
+            delay = synapse->delay;
+
+            #ifdef DEBUG
+                printf(" -- Processing input synapse %d: ", synapse_index);
+            #endif
+
+            
+            // get the time step of the next spike to be processed
+            next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
+
+            // refresh index
+            while (next_spike_time < t && lif_neuron->next_spike_index[i] != pre_lif_neuron->last_spike){
+
+                lif_neuron->next_spike_index[i] = (lif_neuron->next_spike_index[i] + 1) % pre_lif_neuron->max_spikes;
+                next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
+            }
+
+            // process input spike if the spike time + the delay is equal to the actual t
+            if((next_spike_time) == t && next_spike_time - delay != -1){
+                I += w;
+            }
+
+            #ifdef DEBUG
+                printf("\n");
+            #endif
+        }
+
+        // compute membrane potential --> https://colab.research.google.com/github/johanjan/MOOC-HPFEM-source/blob/master/LIF_ei_balance_irregularity.ipynb
+        // lif_neuron->v = lif_neuron->v + (-(lif_neuron->v - lif_neuron->v_rest) + (lif_neuron->r * input_current)) * (1 / 1);
+        //lif_neuron->v =  lif_neuron->v * (1 - 1 / 20) + input_current;  //(0.2) * (-(lif_neuron->v - lif_neuron->v_rest) + lif_neuron->r * input_current); // (1 / 5)
+        // https://unaterzavia.com/neural-dynamics2/
+        lif_neuron->v = (1 - 0.05) * lif_neuron->v + lif_neuron->v_rest * 0.05 + I; // * lif_neuron->r * 1/20; // supposing r * 1/20 == 1   
+
+
+        // fire an spike if neuron membrane potential is higher than the threshold and neuron is not in refractory period
+        if(lif_neuron->v >= lif_neuron->v_tresh){ // if the neuron is in refractory period is impossible to have a higher v value than the threshold, so it is not necessary to indicate it
+
+            #ifdef DEBUG
+                printf(" -- Spike generated by %d at time %d\n", neuron_id, t);
+            #endif
+
+            // add the spike to output synapse
+            lif_neuron->spike_times_arr[lif_neuron->last_spike] = t;// + synapse->delay;
+            lif_neuron->last_spike = (lif_neuron->last_spike + 1) % lif_neuron->max_spikes;
+            
+            // update control information
+            lif_neuron->t_last_spike = t; // last spike generated by the neuron
+            lif_neuron->r_time_rest = lif_neuron->r_time; // set refractory time period
+            lif_neuron->v = lif_neuron->v_rest; // reset potential
+
+            // add information to results struct // TODO: This should be refactorized since this will be done for all neuron types
+            results->generated_spikes[neuron_id][t] = '|'; // TODO: probably this should be a list of unsigned int, or bits, or something
+            results->n_spikes_per_neuron[neuron_id] += 1; 
+        }
+        else{
+            // no spike generated
+            results->generated_spikes[neuron_id][t] = ' ';
+
+            // refresh refractory period time
+            lif_neuron->r_time_rest --; // the value can be lower than 0, so no problem
+        }
+    }
+    else{
+        // no spike generated
+        results->generated_spikes[neuron_id][t] = ' ';
+
+        // refresh refractory period time
+        lif_neuron->r_time_rest --; // the value can be lower than 0, so no problem
+    }
 }
+
+
+
 /*
 void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results){
     
