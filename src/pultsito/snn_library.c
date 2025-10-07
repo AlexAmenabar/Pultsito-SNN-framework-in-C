@@ -1,13 +1,11 @@
-#include "snn_library.h"
-
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
 
+#include "snn_library.h"
 #include "training_rules/stdp.h"
 #include "neuron_models/lif_neuron.h"
-#include "encoders/image_encoders.h"
 
 void initialize_network_neurons(spiking_nn_t *snn, network_construction_lists_t *lists){
     
@@ -22,8 +20,8 @@ void initialize_network_neurons(spiking_nn_t *snn, network_construction_lists_t 
 
 
     // alloc memory to store the number of input and output synapses for each neuron
-    neurons_input_synapses = calloc(snn->n_neurons, sizeof(int)); 
-    neurons_output_synapses = calloc(snn->n_neurons, sizeof(int));
+    neurons_input_synapses = (int *)calloc(snn->n_neurons, sizeof(int)); 
+    neurons_output_synapses = (int *)calloc(snn->n_neurons, sizeof(int));
     
     
     // count neuron input synapses
