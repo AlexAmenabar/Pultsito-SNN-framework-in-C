@@ -11,17 +11,17 @@
 #SBATCH --ntasks=1
 
 # Advanced use
-##SBATCH --cpus-per-task=20
-##SBATCH --threads-per-core=2
-##SBATCH --ntasks-per-core=2
+##SBATCH --cpus-per-task=1
+##SBATCH --threads-per-core=1
+##SBATCH --ntasks-per-core=1
 
 # Required memory (Default 2GB)
-#SBATCH --mem-per-cpu=2000G
+#SBATCH --mem-per-cpu=1GB
 
 # Select one partition
 ##CPU
 ##GPU
-#SBATCH --partition=H100
+#SBATCH --partition=GPU
 #SBATCH --gpus=0
 
 # If you are using arrays, specify the number of tasks in the array
@@ -33,7 +33,7 @@ PARAMETROS=(
 
 # Recorrer la lista de parámetros y ejecutar el programa en segundo plan
 for PARAMS in "${PARAMETROS[@]}"; do
-	./build/main_simulation ./conf.toml
+	./bin/main_simulation ./conf.toml
 done
 
 echo "Todas las tareas han terminado."

@@ -15,6 +15,8 @@
 void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, int learning){
 
     // initialize several control variables
+    int n = snn->n_neurons / conf->n_process * 0.1;
+
     int time_step = 0, i; 
     int n_process = conf->n_process;
     struct timespec start, end; // to measure simulation complete time
@@ -29,19 +31,14 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
     // TODO: revise this
     simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
 
+    printf(" > n_processes = %d\n", conf->n_process);
+    fflush(stdout);
+
     // check simulation schema
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     if(conf->simulation_type == 0) // clock-based
     { 
-        // start measuring time
-
-        // if CUDA is defined, simulate on the GPU
-    #ifdef CUDA
-         {
-
-         }
-    #else
         // simulate over simulation time steps
         while(time_step < conf->time_steps)
         {
@@ -63,7 +60,7 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
                 }
 
                 // simulate input step
-                #pragma omp for schedule(static, 10) private(i) 
+                #pragma omp for schedule(guided, n) private(i) 
                 for(i=0; i<snn->n_neurons; i++)
                     snn->input_step(snn, time_step, i, results_per_sample);
                 
@@ -74,7 +71,7 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
                 }
 
                 // simulate output step
-                #pragma omp for schedule(static, 10) private(i)
+                #pragma omp for schedule(guided, n) private(i)
                 for(i=0; i<snn->n_neurons; i++)
                     snn->output_step(snn, time_step, i, results_per_sample);
      
@@ -139,7 +136,6 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
             #endif      
 
         }
-    #endif
     }
     // event-driven
     else 

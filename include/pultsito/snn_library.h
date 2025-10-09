@@ -74,7 +74,9 @@ typedef struct {
     int pre_neuron_computed, post_neuron_computed; // indicate if pre and postsynaptic neurons has been computed // TODO: I have no idea for what is this actually used
 
     lif_neuron_t *pre_synaptic_lif_neuron; // reference to presynaptic neuron
+    int pre_neuron_index;
     lif_neuron_t *post_synaptic_lif_neuron; // reference to postynaptic neuron
+    int post_neuron_index;
 
 } synapse_t;
 
@@ -108,6 +110,7 @@ typedef struct {
 
     //
     int L; // not used actually
+    //int *sync;
 
 } spiking_nn_t;
 

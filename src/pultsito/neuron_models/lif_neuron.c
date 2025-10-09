@@ -113,7 +113,7 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
 
     lif_neuron_t *lif_neuron, *pre_lif_neuron;
     synapse_t *synapse;
-    int i, next_spike_time, synapse_index, delay, msb; 
+    int i, next_spike_time, synapse_index, delay, msb; //pre_neuron_index; 
     double I = 0, w;
 
 
@@ -137,6 +137,7 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
             synapse_index = lif_neuron->input_synapse_indexes[i];
             synapse = &(snn->synapses[synapse_index]); // TODO: make a copy???
             pre_lif_neuron = synapse->pre_synaptic_lif_neuron;
+            //pre_neuron_index = synapse->pre_neuron_index;
 
             w = synapse->w;
             delay = synapse->delay;
@@ -164,6 +165,9 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
             #ifdef DEBUG
                 printf("\n");
             #endif
+
+            // add sync
+            //snn->sync[pre_neuron_index]++;
         }
 
         // compute membrane potential --> https://colab.research.google.com/github/johanjan/MOOC-HPFEM-source/blob/master/LIF_ei_balance_irregularity.ipynb
@@ -418,22 +422,30 @@ void re_initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_const
     }
 }
 
-void add_input_synapse_to_lif_neuron(lif_neuron_t *neuron, synapse_t* synapse, int synapse_index){
+void add_input_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index){
     
+    lif_neuron_t *neuron = &(snn->lif_neurons[neuron_index]);
+    synapse_t *synapse = &(snn->synapses[synapse_index]);
+
     // add the synapse index to the list of the neuron
     neuron->input_synapse_indexes[neuron->next_input_synapse] = synapse_index;
     neuron->next_input_synapse += 1; // control parameter for initialization
 
     // add reference to the neuron in the synapse
     synapse->post_synaptic_lif_neuron = neuron;
+    synapse->post_neuron_index = neuron_index;
 }
 
-void add_output_synapse_to_lif_neuron(lif_neuron_t *neuron, synapse_t *synapse, int synapse_index){
+void add_output_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index){
     
+    lif_neuron_t *neuron = &(snn->lif_neurons[neuron_index]);
+    synapse_t *synapse = &(snn->synapses[synapse_index]);
+
     // add the synapse index to the list of the neuron
     neuron->output_synapse_indexes[neuron->next_output_synapse] = synapse_index;
     neuron->next_output_synapse += 1;
 
     // add reference to the neuron in the synapse
     synapse->pre_synaptic_lif_neuron = neuron;
+    synapse->pre_neuron_index = neuron_index;
 }

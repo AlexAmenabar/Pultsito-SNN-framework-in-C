@@ -153,7 +153,7 @@ void add_input_synapse_to_neuron(spiking_nn_t *snn, int neuron_index, int synaps
     
     // LIF neuron
     if(snn->neuron_type == 0)
-        add_input_synapse_to_lif_neuron(&snn->lif_neurons[neuron_index], &(snn->synapses[synapse_index]), synapse_index);
+        add_input_synapse_to_lif_neuron(snn, neuron_index, synapse_index);
     // else{}
 }
 
@@ -162,7 +162,7 @@ void add_output_synapse_to_neuron(spiking_nn_t *snn, int neuron_index, int synap
     
     // LIF neuron
     if(snn->neuron_type == 0)
-        add_output_synapse_to_lif_neuron(&snn->lif_neurons[neuron_index], &(snn->synapses[synapse_index]), synapse_index);
+        add_output_synapse_to_lif_neuron(snn, neuron_index, synapse_index);
     // else{}
 }
 
@@ -272,6 +272,7 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
 
     // initialize neurons of the network
     initialize_network_neurons(snn, lists);
+    //snn->sync = (int *)calloc(snn->n_neurons, sizeof(int));
     printf(" >> Neurons initialized!\n");
     fflush(stdout);
 
