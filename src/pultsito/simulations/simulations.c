@@ -99,7 +99,7 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
                 if(learning == 1){
                     #pragma omp for schedule(static, 50) private(i)
                     for(i = 0; i<snn->n_synapses; i++)
-                            snn->synapses[i].learning_rule(&(snn->synapses[i])); 
+                            snn->synapses[i].learning_rule(&(snn->synapses[i]), time_step); 
                 }
                 #endif
 
@@ -151,7 +151,7 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
 }
 
 // TODO
-void sample_simulation(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results){
+void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results){
 
 }
 

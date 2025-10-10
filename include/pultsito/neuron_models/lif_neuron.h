@@ -67,4 +67,7 @@ void add_input_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int sy
 /// @param synapse_index Synapse to be added to the neuron
 void add_output_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index);
 
+
+void cp_lif_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
+
 #endif

@@ -71,7 +71,6 @@ typedef struct {
     void (*learning_rule)(); // pointer to learning rule function
 
     int t_last_pre_spike, t_last_post_spike; // times of last presynaptic neuron and postsynaptic neurons spikes // if the difference in performance is not critical, this should be removed and neurons directly used
-    int pre_neuron_computed, post_neuron_computed; // indicate if pre and postsynaptic neurons has been computed // TODO: I have no idea for what is this actually used
 
     lif_neuron_t *pre_synaptic_lif_neuron; // reference to presynaptic neuron
     int pre_neuron_index;
@@ -194,6 +193,36 @@ typedef struct{
 } simulation_results_t;
 
 
+// struct to represent a spike train
+typedef struct{
+
+    int n_spikes; // number of spikes in the train
+    int *stimes; // spike times
+    
+} spike_train_t;
+
+
+// spike image (set of spike trains)
+typedef struct{
+
+    spike_train_t *st; // pixels
+
+} s_image_t;
+
+// input data
+typedef struct{
+
+    int n_samples;
+    int type; // image, ...
+
+    // images
+    int image_size; // dimensions
+    s_image_t *s_images;
+    
+
+} input_data_t;
+
+
 
 /* Functions related to neurons initialization */
 
@@ -271,6 +300,10 @@ void initialize_network_function_pointers(spiking_nn_t *snn);
 /// @param training_zones List of training types for each synapse
 void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, network_construction_lists_t *lists);
 
+// function to copy snns
+void cp_network(spiking_nn_t *cp_snn, spiking_nn_t *or_snn, simulation_configuration_t *conf);
+void cp_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
+void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
 
 
 /* Other functions */

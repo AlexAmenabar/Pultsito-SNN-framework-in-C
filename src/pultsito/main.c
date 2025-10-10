@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
     int i, j;
 
     // I think that too much structures are used, probably this should be refactorized
-    spiking_nn_t snn; // SNN structure
+    spiking_nn_t snn, *snns; // SNN structure
     simulation_configuration_t conf; // simulation configuration data
     results_configuration_t results_conf; // configuration for results after simulation
     simulation_results_t results; // simulation results
@@ -92,6 +92,17 @@ int main(int argc, char *argv[]) {
     printf("%d\n", size);
 
 
+
+    // copy the network n times // TODO: this can be paralelized
+    printf(" Copying network...\n");
+    snns = (spiking_nn_t *)malloc(3 * sizeof(spiking_nn_t));
+    for(i = 0; i<3; i++){
+        cp_network(&(snns[i]), &snn, &conf);
+    }
+    printf(" Network copied!\n");
+    fflush(stdout);
+
+
     printf("Initializing training / simulation\n");
 
 
@@ -99,26 +110,31 @@ int main(int argc, char *argv[]) {
 
 #ifndef BY_SAMPLE
 
-#ifndef CUDA
-    int reps = 1;
-    for(i=0; i<reps; i++){
-        simulate(&snn, &conf, &results);
-    }
-    // compute means of execution times
-    results.results_per_sample[0].elapsed_time = results.results_per_sample[0].elapsed_time / reps;
-    results.results_per_sample[0].elapsed_time_neurons = results.results_per_sample[0].elapsed_time_neurons / reps;
-    results.results_per_sample[0].elapsed_time_neurons_input = results.results_per_sample[0].elapsed_time_neurons_input / reps;
-    results.results_per_sample[0].elapsed_time_neurons_output = results.results_per_sample[0].elapsed_time_neurons_output / reps;
-    results.results_per_sample[0].elapsed_time_synapses = results.results_per_sample[0].elapsed_time_synapses / reps;
-    results.results_per_sample[0].elapsed_time_synapses_input = results.results_per_sample[0].elapsed_time_synapses_input / reps;
-    results.results_per_sample[0].elapsed_time_synapses_output = results.results_per_sample[0].elapsed_time_synapses_output / reps;
-    results.results_per_sample[0].elapsed_time_learning = results.results_per_sample[0].elapsed_time_learning / reps; 
+    #ifndef CUDA
+        int reps = 1;
+        for(i=0; i<reps; i++){
+            simulate(&snn, &conf, &results);
+        }
+        // compute means of execution times
+        results.results_per_sample[0].elapsed_time = results.results_per_sample[0].elapsed_time / reps;
+        results.results_per_sample[0].elapsed_time_neurons = results.results_per_sample[0].elapsed_time_neurons / reps;
+        results.results_per_sample[0].elapsed_time_neurons_input = results.results_per_sample[0].elapsed_time_neurons_input / reps;
+        results.results_per_sample[0].elapsed_time_neurons_output = results.results_per_sample[0].elapsed_time_neurons_output / reps;
+        results.results_per_sample[0].elapsed_time_synapses = results.results_per_sample[0].elapsed_time_synapses / reps;
+        results.results_per_sample[0].elapsed_time_synapses_input = results.results_per_sample[0].elapsed_time_synapses_input / reps;
+        results.results_per_sample[0].elapsed_time_synapses_output = results.results_per_sample[0].elapsed_time_synapses_output / reps;
+        results.results_per_sample[0].elapsed_time_learning = results.results_per_sample[0].elapsed_time_learning / reps; 
+    #else
+        simulate_in_GPU(&snn, &conf, &results);
+    #endif
 #else
-    simulate_in_GPU(&snn, &conf, &results);
-#endif
 
-#else
-    simulate_by_samples();
+    // load samples
+
+    #ifndef CUDA
+        simulate_samples();
+    #else
+    #endif
 #endif
 
 

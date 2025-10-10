@@ -19,7 +19,7 @@
 void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
 
 /// @brief Function to simulate an SNN where input is divided in samples // TODO
-void sample_simulation(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
+void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
 
 /// @brief Function to simulate an SNN where input is stream data // TODO
 void stream_simulation(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);

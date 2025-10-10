@@ -76,20 +76,10 @@ void initialize_synapse(synapse_t *synapse, network_construction_lists_t *lists,
     if(synapse_id < snn->n_input_synapses)
         synapse->delay = 0;
 
-    // TODO: REVISE REVISE REVISE REVISE 
-    // TODO: IN GENERAL, THE WAY I MANAGE THE INPUT MUST BE REVISED
-    //if(synapse_id < snn->n_input_synapses || synapse_id >= snn->n_synapses - snn->n_output_synapses)
-    //    synapse->max_spikes = INPUT_MAX_SPIKES;
-    //else    
-    //    synapse->max_spikes = MAX_SPIKES;
-
     // initialize control parameters
     synapse->t_last_post_spike = -1;
     synapse->t_last_pre_spike = -1;
-    
-    synapse->post_neuron_computed = -1;
-    synapse->pre_neuron_computed = -1;
-    
+        
     // set training rule
     synapse->lr = lists->training_zones[synapse_id];
     switch (lists->training_zones[synapse_id]) // get synapse training zone from list
@@ -127,9 +117,6 @@ void re_initialize_synapse(synapse_t *synapse){
     // reinitialize synapse control variables
     synapse->t_last_post_spike = -1;
     synapse->t_last_pre_spike = -1;
-    
-    synapse->post_neuron_computed = -1;
-    synapse->pre_neuron_computed = -1;
     
     //synapse->last_spike = 0; 
     //synapse->next_spike = 0;
@@ -336,6 +323,83 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         neuron->r_time_rest = 0;
         neuron->last_spike = 0;
         neuron->t_last_spike = 0;
+    }
+}
+
+
+void cp_network(spiking_nn_t *cp_snn, spiking_nn_t *or_snn, simulation_configuration_t *conf){
+
+    // cp general information
+    cp_snn->neuron_type = or_snn->neuron_type;
+    
+    cp_snn->n_neurons = or_snn->n_neurons;
+    cp_snn->n_input = or_snn->n_input;
+    cp_snn->n_output = or_snn->n_output;
+
+    cp_snn->n_synapses = or_snn->n_synapses;
+    cp_snn->n_input_synapses = or_snn->n_input_synapses;
+    cp_snn->n_output_synapses = or_snn->n_output_synapses;
+
+    // function pointers
+    cp_snn->neuron_initializer = or_snn->neuron_initializer;
+    cp_snn->neuron_re_initializer = or_snn->neuron_re_initializer;
+    cp_snn->complete_step = or_snn->complete_step;
+    cp_snn->input_step = or_snn->input_step;
+    cp_snn->output_step = or_snn->output_step;
+
+    // cp neurons
+    cp_neurons(cp_snn, or_snn);
+
+    // cp synapses
+    cp_synapses(cp_snn, or_snn);
+}
+
+void cp_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
+
+    int i;
+
+    switch(or_snn->neuron_type){
+        case 0:
+            cp_lif_neurons(cp_snn, or_snn);
+        break;
+        default:
+            cp_lif_neurons(cp_snn, or_snn);
+        break;
+    }
+    
+}
+
+void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
+
+    int i, j;
+    synapse_t *cp_synapse, *or_synapse;
+
+    cp_snn->synapses = (synapse_t *)malloc(cp_snn->n_synapses * sizeof(synapse_t));
+    
+    for(i = 0; i<or_snn->n_synapses; i++){
+
+        or_synapse = &(or_snn->synapses[i]);
+        cp_synapse = &(cp_snn->synapses[i]);
+
+        cp_synapse->w = or_synapse->w;
+        cp_synapse->delay = or_synapse->delay;
+        cp_synapse->lr = or_synapse->lr;
+        cp_synapse->learning_rule = or_synapse->learning_rule;
+        cp_synapse->t_last_pre_spike = or_synapse->t_last_pre_spike;
+        cp_synapse->t_last_post_spike = or_synapse->t_last_post_spike;
+        cp_synapse->pre_neuron_index = or_synapse->pre_neuron_index;
+        cp_synapse->post_neuron_index = or_synapse->post_neuron_index;
+
+        switch(or_snn->neuron_type){
+            case 0:
+                cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);
+                cp_synapse->post_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->post_neuron_index]);
+            break;
+            default:
+                cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);
+                cp_synapse->post_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->post_neuron_index]);
+            break;
+        }
     }
 }
 

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+// TODO: This must be revised, since should be introduced as input or in the network, I guess?
 #define TAU_PLUS 5 // ms
 #define TAU_MINUS 5 // ms
 #define A_PLUS 0.01 // ms
@@ -12,13 +13,18 @@
 #define A 0.25 // modulation magnitude for STDP
 
 
-void add_stdp(synapse_t *synapse){
-    //if(synapse->t_last_pre_spike != -1 && synapse->t_last_post_spike != -1 && synapse->t_last_post_spike != synapse->t_last_pre_spike){
-    //    int time_diff = synapse->t_last_post_spike - synapse->t_last_pre_spike;
+int cond_stdp(synapse_t *synapse, int t){
 
-    if(synapse->pre_synaptic_lif_neuron!=NULL && synapse->post_synaptic_lif_neuron!=NULL && 
-        synapse->post_synaptic_lif_neuron->t_last_spike != -1 && synapse->pre_synaptic_lif_neuron->t_last_spike != -1 && 
-        synapse->post_synaptic_lif_neuron->t_last_spike != synapse->pre_synaptic_lif_neuron->t_last_spike){
+    return synapse->pre_synaptic_lif_neuron!=NULL && synapse->post_synaptic_lif_neuron!=NULL && // is not input or output synapse
+        synapse->post_synaptic_lif_neuron->t_last_spike != -1 && synapse->pre_synaptic_lif_neuron->t_last_spike != -1 && // both computed
+        synapse->post_synaptic_lif_neuron->t_last_spike != synapse->pre_synaptic_lif_neuron->t_last_spike && // if both are equal STDP results is 0
+        (synapse->post_synaptic_lif_neuron->t_last_spike == t || synapse->pre_synaptic_lif_neuron->t_last_spike == t); // one of both has to be actual t
+}
+
+
+void add_stdp(synapse_t *synapse, int t){
+    
+    if(cond_stdp(synapse, t) == 1){
 
         int time_diff = synapse->post_synaptic_lif_neuron->t_last_spike - synapse->pre_synaptic_lif_neuron->t_last_spike;
         double initial_weight = synapse->w;
@@ -38,12 +44,9 @@ void add_stdp(synapse_t *synapse){
     }
 }
 
-void mult_stdp(synapse_t *synapse){
-    //if(synapse->t_last_pre_spike != -1 && synapse->t_last_post_spike != -1 && synapse->t_last_post_spike != synapse->t_last_pre_spike){
-    //    int time_diff = synapse->t_last_post_spike - synapse->t_last_pre_spike;
-    if(synapse->pre_synaptic_lif_neuron!=NULL && synapse->post_synaptic_lif_neuron!=NULL && 
-        synapse->post_synaptic_lif_neuron->t_last_spike != -1 && synapse->pre_synaptic_lif_neuron->t_last_spike != -1 && 
-        synapse->post_synaptic_lif_neuron->t_last_spike != synapse->pre_synaptic_lif_neuron->t_last_spike){
+void mult_stdp(synapse_t *synapse, int t){
+
+    if(cond_stdp(synapse, t) == 1){
         
         int time_diff = synapse->post_synaptic_lif_neuron->t_last_spike - synapse->pre_synaptic_lif_neuron->t_last_spike;
         double initial_weight = synapse->w;
@@ -63,13 +66,9 @@ void mult_stdp(synapse_t *synapse){
     }
 }
 
-void anti_stdp(synapse_t *synapse){
-    //if(synapse->t_last_pre_spike != -1 && synapse->t_last_post_spike != -1 && synapse->t_last_post_spike != synapse->t_last_pre_spike){
-    //    int time_diff = synapse->t_last_post_spike - synapse->t_last_pre_spike;
+void anti_stdp(synapse_t *synapse, int t){
 
-    if(synapse->pre_synaptic_lif_neuron!=NULL && synapse->post_synaptic_lif_neuron!=NULL && 
-        synapse->post_synaptic_lif_neuron->t_last_spike != -1 && synapse->pre_synaptic_lif_neuron->t_last_spike != -1 && 
-        synapse->post_synaptic_lif_neuron->t_last_spike != synapse->pre_synaptic_lif_neuron->t_last_spike){
+    if(cond_stdp(synapse, t) == 1){
         
         int time_diff = synapse->post_synaptic_lif_neuron->t_last_spike - synapse->pre_synaptic_lif_neuron->t_last_spike;
         double initial_weight = synapse->w;
@@ -90,6 +89,6 @@ void anti_stdp(synapse_t *synapse){
 }
 
 // TODO
-void triplet_stdp(synapse_t *synapse){
+void triplet_stdp(synapse_t *synapse, int t){
 
 }

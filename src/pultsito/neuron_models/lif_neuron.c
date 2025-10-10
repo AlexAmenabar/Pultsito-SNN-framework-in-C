@@ -449,3 +449,55 @@ void add_output_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int s
     synapse->pre_synaptic_lif_neuron = neuron;
     synapse->pre_neuron_index = neuron_index;
 }
+
+void cp_lif_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
+
+    int i, j;
+    lif_neuron_t *or_lif, *cp_lif;
+
+    cp_snn->lif_neurons = (lif_neuron_t *)malloc(or_snn->n_neurons * sizeof(lif_neuron_t));
+
+    for(i = 0; i<or_snn->n_neurons; i++){
+
+        or_lif = &(or_snn->lif_neurons[i]);
+        cp_lif = &(cp_snn->lif_neurons[i]);
+
+        // synapses data
+        cp_lif->n_input_synapse = or_lif->n_input_synapse;
+        cp_lif->input_synapse_indexes = (int *)malloc(cp_lif->n_input_synapse * sizeof(int));
+        for(j = 0; j<cp_lif->n_input_synapse; j++){
+            cp_lif->input_synapse_indexes[j] = or_lif->input_synapse_indexes[j];
+        }
+
+        cp_lif->n_output_synapse = or_lif->n_output_synapse;
+        cp_lif->output_synapse_indexes = (int *)malloc(cp_lif->n_output_synapse * sizeof(int));
+        for(j = 0; j<cp_lif->n_output_synapse; j++){
+            cp_lif->output_synapse_indexes[j] = or_lif->output_synapse_indexes[j];
+        }
+
+        cp_lif->next_spike_index = (int *)calloc(cp_lif->n_input_synapse, sizeof(int));
+
+
+        // input / output
+        cp_lif->is_input_neuron = or_lif->is_input_neuron;
+        cp_lif->is_output_neuron = or_lif->is_output_neuron;
+
+        // general data
+        cp_lif->excitatory = or_lif->excitatory;
+        cp_lif->v = or_lif->v;
+        cp_lif->r = or_lif->r;
+        cp_lif->v_rest = or_lif->v_rest;
+        cp_lif->v_tresh = or_lif->v_tresh;
+        cp_lif->r_time = or_lif->r_time;
+        cp_lif->r_time_rest = or_lif->r_time_rest;
+        cp_lif->t_last_spike = or_lif->t_last_spike;
+
+        // spike array
+        cp_lif->last_spike = or_lif->last_spike;
+        cp_lif->max_spikes = or_lif->max_spikes;
+        cp_lif->spike_times_arr = (int *)malloc(cp_lif->max_spikes * sizeof(int));
+        for(j = 0; j<cp_lif->max_spikes; j++){
+            cp_lif->spike_times_arr[j] = -1;
+        }
+    }
+}
