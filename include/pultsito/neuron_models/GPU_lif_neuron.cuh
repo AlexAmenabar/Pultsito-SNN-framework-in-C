@@ -1,5 +1,5 @@
-#ifndef LIF_NEURON_CUH
-#define LIF_NEURON_CUH
+#ifndef GPU_LIF_NEURON_CUH
+#define GPU_LIF_NEURON_CUH
 
 #include <stdbool.h>
 
@@ -24,7 +24,14 @@
 double process_simulation_lif_neuron(spiking_nn_t *snn, int n, int m, int time_steps);
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 void simulate_in_GPU(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
+#ifdef __cplusplus
+}
+#endif
+
 double copy_snn_structure_to_GPU(spiking_nn_t *snn);
 
 #endif

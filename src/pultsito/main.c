@@ -15,6 +15,7 @@
 #include <time.h>
 
 
+
 /* main.c */
 int main(int argc, char *argv[]) {
     // variables definition
@@ -125,11 +126,16 @@ int main(int argc, char *argv[]) {
         results.results_per_sample[0].elapsed_time_synapses_output = results.results_per_sample[0].elapsed_time_synapses_output / reps;
         results.results_per_sample[0].elapsed_time_learning = results.results_per_sample[0].elapsed_time_learning / reps; 
     #else
+    printf(" RUNING ON CUDA\n");
+    fflush(stdout);
         simulate_in_GPU(&snn, &conf, &results);
     #endif
 #else
 
     // load samples
+    printf(" RUNING ON CUDA\n");
+    fflush(stdout);
+        simulate_in_GPU(&snn, &conf, &results);
 
     #ifndef CUDA
         simulate_samples();

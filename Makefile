@@ -1,15 +1,18 @@
+# apptainer exec -B /pfs /opt/ohpc/pub/containers/NGC-pytorch-23.12-py3.sif make
+# apptainer exec -B /pfs /opt/ohpc/pub/containers/NGC-pytorch-23.12-py3.sif bin/cuda_simulation_inference ./experiments/experiments_PDP2026/configuration_files/N1000/C05/conf_s_90.toml
 # CUDA directory:
 CUDA_ROOT_DIR=/usr/local/cuda
 
+LCC=g++
 
 # CC compiler options:
 CC=gcc
-CC_FLAGS=
+CC_FLAGS= -O2 -fPIE -DCUDA
 CC_LIBS=
 
 # NVCC compiler options:
 NVCC=nvcc
-NVCC_FLAGS=
+NVCC_FLAGS=  -O2 -Xcompiler -fPIC -DCUDA
 NVCC_LIBS=
 
 
@@ -35,7 +38,7 @@ INC_DIR_LIBS = lib
 
 # Target executable name:
 BIN = bin
-EXE = cuda_simulation_no_learn 
+EXE = cuda_simulation_inference 
 
 # Object files:
 OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/snn_library.o $(OBJ_DIR)/load_data.o $(OBJ_DIR)/helpers.o $(OBJ_DIR)/lif_neuron.o $(OBJ_DIR)/simulations.o $(OBJ_DIR)/stdp.o $(OBJ_DIR)/GPU_lif_neuron.o
@@ -43,21 +46,21 @@ OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/snn_library.o $(OBJ_DIR)/load_data.o $(OBJ_D
 ## Compile ##
 # Link c and CUDA compiled object files to target executable:
 $(BIN)/$(EXE) : $(OBJS)
-	$(CC) $(CC_FLAGS) $(OBJS) -o $@ $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS)
+	$(LCC) $(CC_FLAGS) $(OBJS) -o $@ $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS) -lm
 
 # Compile main.c file to object files:
 $(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
 
 # Compile C source files to object files:
 $(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/neuron_models/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/simulations/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/training_rules/%.c
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS)
