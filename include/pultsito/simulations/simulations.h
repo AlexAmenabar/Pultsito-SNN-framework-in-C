@@ -18,8 +18,26 @@
 /// @param results Structure to store the results of the simulation
 void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
 
-/// @brief Function to simulate an SNN where input is divided in samples // TODO
-void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
+/// @brief 
+/// @param snn 
+/// @param conf 
+/// @param results 
+/// @param dataset 
+void train_network(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset);
+
+/// @brief 
+/// @param snn 
+/// @param conf 
+/// @param results 
+/// @param dataset 
+void test_network(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset);
+
+/// @brief 
+/// @param snn 
+/// @param conf 
+/// @param results 
+/// @param dataset 
+void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset);
 
 /// @brief Function to simulate an SNN where input is stream data // TODO
 void stream_simulation(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);

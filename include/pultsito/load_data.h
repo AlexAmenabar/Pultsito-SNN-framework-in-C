@@ -84,6 +84,10 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
 /// @param snn Spiking Neural Network structure to store input spike trains on input synapses
 void load_input_spike_trains_on_snn(const char *file_name, spiking_nn_t *snn);
 
+/// @brief Load
+/// @param file_name 
+/// @param dataset 
+void load_dataset_from_file(input_data_t *dataset, const char *file_name, const char *labels_file_name, int n_samples, simulation_configuration_t *conf);
 
 /// @brief Read configuration parameters from configuration file
 /// @param file_name Configuration file name
@@ -101,11 +105,11 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
 /// @param results Structure that contains the results of the simulation
 /// @param conf Structure to read where to store the results
 /// @param snn Spiking neural network structure
-void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
+void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset);
 
 void store_generated_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
 void store_network(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
 void store_number_of_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
-void store_times(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
+void store_times(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset);
 
 #endif

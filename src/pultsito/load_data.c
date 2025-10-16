@@ -29,6 +29,343 @@ int open_file_w(FILE **f, const char *file_name){
 }
 
 
+
+// Function to load the simulation configuration file
+int load_configuration_params_from_toml(const char *file_name, simulation_configuration_t *conf){
+    
+    FILE *f = NULL;
+    char errbuf[1000];
+    int i, l, l_file_names = 300;
+
+    // define table and variables to store configuration parameters
+    toml_table_t *tbl, *tbl_general, *tbl_simulation, *tbl_dataset, *tbl_output, *tbl_network;
+    
+    // [general] section
+    toml_value_t execution_type, neuron_type, execution_obj, n_process, cuda, learn, encode;
+    
+    // [simulation] section
+    toml_value_t time_steps, max_spikes, max_input_spikes;
+
+    // [dataset] section
+    toml_value_t train_set, train_labels, n_train, test_provided, test_set, test_labels, n_test,
+                dataset_name, n_classes, epochs, input_size;
+    
+    // [output] section
+    toml_value_t generated_spikes_file, execution_times_file, n_spikes_per_neuron_file, store_network, store_network_file;
+
+    // [network] section
+    toml_value_t network_file, network_neurons_file, network_synapses_file, behaviours, delays, weights,
+                training_zones, thresh, v_rest, t_refract, R;
+
+
+    // open configuration 
+    open_file(&f, file_name); // TOML file
+
+    // read TOML field in the file
+    tbl = toml_parse_file(f, errbuf, l_file_names);
+
+    // close file
+    fclose(f);
+
+
+    /* get sections from file */
+    tbl_general = toml_table_table(tbl, "general");
+    tbl_simulation = toml_table_table(tbl, "simulation");
+    tbl_dataset = toml_table_table(tbl, "dataset");
+    tbl_output = toml_table_table(tbl, "output");
+    tbl_network = toml_table_table(tbl, "network");
+
+
+    // read data in [general] section
+    execution_type = toml_table_int(tbl_general, "execution_type"); // clock / event-driven
+    neuron_type = toml_table_int(tbl_general, "neuron_type"); // neuron type
+    execution_obj = toml_table_int(tbl_general, "execution_obj"); // execution obj. (ML,...)
+    n_process = toml_table_int(tbl_general, "n_process"); // number of CPU processes
+    cuda = toml_table_int(tbl_general, "cuda"); // simulated on cuda
+    learn = toml_table_int(tbl_general, "learn"); // inference or training
+    encode = toml_table_int(tbl_general, "encode"); // encode input or not
+
+    // check that all is correctly loaded
+    if(!execution_type.ok)
+        execution_type.u.i = 0; // clock-based
+
+    if(!neuron_type.ok)
+        neuron_type.u.i = 0; // LIF neuron
+
+    if(!execution_obj.ok)
+        execution_obj.u.i = 0; // biological simulation
+
+    if(!n_process.ok)
+        n_process.u.i = 1; // serial execution
+
+    if(!cuda.ok)
+        cuda.u.i = 0; // no cuda
+
+    if(!learn.ok)
+        learn.u.i = 0; // inference
+
+    if(!encode.ok)
+        encode.u.i = 0; // input encoded
+
+    // load information into configuration structure
+    conf->simulation_type = execution_type.u.i;
+    conf->neuron_type = neuron_type.u.i;
+    conf->simulation_obj = execution_obj.u.i;
+    conf->n_process = n_process.u.i;
+    conf->cuda = cuda.u.i;
+    conf->learn = learn.u.i;
+    conf->encode = encode.u.i;
+    
+
+    /* read [simulation] section */
+    time_steps = toml_table_int(tbl_simulation, "time_steps"); // simulation time steps
+    max_spikes = toml_table_int(tbl_simulation, "max_spikes"); // max spikes for middle spike arrays
+    max_input_spikes = toml_table_int(tbl_simulation, "max_input_spikes"); // length for input and output neurons
+
+    // check that all is correctly loaded
+    if(!time_steps.ok){
+        printf(" >> It is necessary to provide simulation time steps!\n");
+        exit(1);
+    }
+
+    if(!max_spikes.ok)
+        max_spikes.u.i = time_steps.u.i * 10; 
+
+    if(!max_input_spikes.ok)
+        max_input_spikes.u.i = time_steps.u.i * 10;
+
+    // load information into configuration structure
+    conf->time_steps = time_steps.u.i;
+    conf->max_spikes = max_spikes.u.i;
+    conf->max_input_spikes = max_input_spikes.u.i;
+
+
+    /* read [dataset] section */
+    train_set = toml_table_string(tbl_dataset, "train_set");
+    train_labels = toml_table_string(tbl_dataset, "train_labels");
+    n_train = toml_table_int(tbl_dataset, "n_train");
+
+    test_provided = toml_table_int(tbl_dataset, "test_provided");
+    test_set = toml_table_string(tbl_dataset, "test_set");
+    test_labels = toml_table_string(tbl_dataset, "test_labels");
+    n_test = toml_table_int(tbl_dataset, "n_test");
+
+    dataset_name = toml_table_string(tbl_dataset, "dataset_name");
+    n_classes = toml_table_int(tbl_dataset, "num_classes");
+    epochs = toml_table_int(tbl_dataset, "epochs");
+    input_size = toml_table_int(tbl_dataset, "input_size");
+
+    // check that all is correctly loaded
+    if(!train_set.ok){
+        printf(" >> File to load the train / simulation dataset must be provided!\n");
+        exit(1);
+    }
+
+    if(!n_train.ok){
+        printf(" >> The number of samples in the set must be provided!\n");
+        exit(1);    
+    }
+
+    if(!train_labels.ok){
+        printf(" >> WARNING: labels not provided for training set!\n");
+    }
+
+    // test dataset is only necessary on ML tasks, not in biological simulations
+    if(!test_provided.ok && conf->simulation_obj == 1){
+
+        if(!test_set.ok){
+            printf(" >> File to load the test dataset must be provided for ML!\n");
+            exit(1);
+        }
+
+        if(!n_test.ok){
+            printf(" >> The number of samples in the test set must be provided!\n");
+            exit(1);    
+        }
+
+        if(!test_labels.ok){
+            printf(" >> WARNING: labels not provided for test set!\n");
+        }
+    }
+
+    if(!dataset_name.ok){
+        dataset_name.u.s = "Dataset";
+    }
+
+    if(!n_classes.ok && conf->simulation_obj == 1){
+        printf(" >> In ML mode, the number of classes in the dataset is necessary!\n");
+        exit(1);
+    }
+
+    if(!epochs.ok && conf->simulation_obj == 1){
+        printf(" >> In ML mode the number of epochs to be simulated is necessary!\n");
+        exit(1);
+    }
+
+    if(!input_size.ok){
+        printf(" >> The input size is necessary!\n");
+        exit(1);
+    }
+    
+    // load information into configuration structure
+    conf->train_set = train_set.u.s;
+    conf->train_labels = train_labels.u.s;
+    conf->n_train = n_train.u.i;
+
+    conf->test_provided = test_provided.u.i;
+    conf->test_set = test_set.u.s;
+    conf->test_labels = test_labels.u.s;
+    conf->n_test = n_test.u.i;
+
+    conf->dataset_name = dataset_name.u.s;
+    conf->n_classes = n_classes.u.i;
+    conf->epochs = epochs.u.i;
+    conf->input_size = input_size.u.i;
+
+
+    /* read [outputt] section */
+    generated_spikes_file = toml_table_string(tbl_output, "generated_spikes");
+    execution_times_file = toml_table_string(tbl_output, "execution_times");
+    n_spikes_per_neuron_file = toml_table_string(tbl_output, "spikes_per_neuron");
+    store_network = toml_table_int(tbl_output, "store_network"); // whether to store or not the file
+    store_network_file = toml_table_string(tbl_output, "store_network_file"); // file to store the network
+
+    // check that everything is loaded
+    if(!generated_spikes_file.ok){
+        printf("A file to store generated spikes must be provided!\n");
+        exit(1);
+    }
+    if(!execution_times_file.ok){
+        printf("A file to store execution times must be provided!\n");
+        exit(1);
+    }
+    if(!n_spikes_per_neuron_file.ok){
+        printf("A file to store the number of spikes generated per neuron must be provided!\n");
+        exit(1);
+    }
+
+    if(!store_network.ok){
+        if(conf->learn == 0){
+            store_network.u.i = 0; // do not store since it is inference
+        }
+        else{
+            store_network.u.i = 1; // network is trained, so store
+        }
+    }
+    else if(store_network.u.i == 1 && !store_network_file.ok){
+        printf("The file name to store the final network must be provided!\n");
+        exit(1);
+    }
+
+
+    // allocate memory for strings and store them into lists structure
+    //l = generated_spikes.u.sl;
+    //conf->spike_times_file = malloc(l * sizeof(char));
+    conf->generated_spikes_file = generated_spikes_file.u.s;
+
+    //l = execution_times.u.sl;
+    //conf->times_file = malloc(l * sizeof(char));
+    conf->execution_times_file = execution_times_file.u.s;
+
+    //l = spikes_per_neuron.u.sl;
+    //conf->n_spikes_file = malloc(l * sizeof(char));
+    conf->n_spikes_per_neuron_file = n_spikes_per_neuron_file.u.s;
+
+    conf->store_final_network = store_network.u.i;
+    if(conf->store_final_network == 1){
+        //l = store_network_file.u.sl;
+        //conf->final_network_file = malloc(l * sizeof(char));
+        conf->final_network_file = store_network_file.u.s;
+    }
+
+
+    /* read [network] section */
+    network_file = toml_table_string(tbl_network, "network_file");
+    network_neurons_file = toml_table_string(tbl_network, "network_neurons_file");
+    network_synapses_file = toml_table_string(tbl_network, "network_synapses_file");
+    behaviours = toml_table_int(tbl_network, "behaviours");
+    delays = toml_table_int(tbl_network, "delays");
+    weights = toml_table_int(tbl_network, "weights");
+    training_zones = toml_table_int(tbl_network, "training_zones");
+    thresh = toml_table_int(tbl_network, "thresh");
+    v_rest = toml_table_int(tbl_network, "v_rests");
+    t_refract = toml_table_int(tbl_network, "t_refract");
+    R = toml_table_int(tbl_network, "R");
+    // TODO: more parameters should be added in the future
+
+    // check if all is in configuration file
+    if(!network_file.ok)
+    {
+        printf(" > The file to load the network from must be provided!\n");
+        exit(1);
+    }
+
+    // if there is not in the file, by default set as not proveded
+    if(!behaviours.ok){
+        behaviours.u.i = 0;
+    }
+    
+    if(!delays.ok){
+        delays.u.i = 0;
+    }
+
+    if(!weights.ok){
+        weights.u.i = 0;
+    }    
+    
+    if(!training_zones.ok){
+        training_zones.u.i = 0;
+    }    
+    
+    if(!thresh.ok){
+        thresh.u.i = 0;
+    }    
+
+    if(!v_rest.ok){
+        v_rest.u.i = 0;
+    }    
+
+    if(!R.ok){
+        R.u.i = 0; 
+    }
+
+    if(!t_refract.ok){
+        t_refract.u.i = 0;
+    }    
+    
+    // copy information into config structure
+    //l = network.u.sl;
+    //conf->network_file = malloc(l * sizeof(char));
+    //conf->network_neurons_file = malloc(l * sizeof(char));
+    //conf->network_synapses_file = malloc(l * sizeof(char));
+    conf->network_file = network_file.u.s;
+    if(network_neurons_file.ok)
+        conf->network_neurons_file = network_neurons_file.u.s;
+    if(network_synapses_file.ok)
+        conf->network_synapses_file = network_synapses_file.u.s;
+    
+    conf->behaviours_provided = behaviours.u.i;
+    conf->delays_provided = delays.u.i;
+    conf->weights_provided = weights.u.i;
+    conf->training_zones_provided = training_zones.u.i;
+    conf->thresholds_provided = thresh.u.i;
+    conf->v_rests_provided = v_rest.u.i;
+    conf->refract_times_provided = t_refract.u.i;
+    conf->R_provided = R.u.i;
+
+
+    // free memory
+    /*toml_free(tbl);
+    toml_free(tbl_general);
+    toml_free(tbl_simulation);
+    toml_free(tbl_samples);
+    toml_free(tbl_output);
+    toml_free(tbl_network);*/
+}
+
+
+
+
 // Function to load a network into the simulation from a network definition file
 void load_network_information(const char *file_name, spiking_nn_t *snn, network_construction_lists_t *lists, simulation_configuration_t *conf) {
     
@@ -172,7 +509,7 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
                 printf("Following configuration file, resting potentials for neurons must be provided, setting 50\n");
                 v_rest.u.d = 50;
             }
-            if(!res.ok && conf->res_provided == 1 || conf->res_provided == 0){
+            if(!res.ok && conf->R_provided == 1 || conf->R_provided == 0){
                 printf("Following configuration file, resistances for neurons not proveided, setting 1\n");
                 res.u.d = 1;
             }
@@ -254,13 +591,13 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
     // if it is separated, read the information from the other file
     else{
         for(i=0; i<snn->n_synapses; i++){
-            fscanf(f_synapses, "%d", &((lists->delay_list)[i]));
+            fscanf(f_synapses, "%d", &(lists->delay_list[i]));
         }
         for(i=0; i<snn->n_synapses; i++){
-            fscanf(f_synapses, "%lf", &((lists->weight_list)[i]));
+            fscanf(f_synapses, "%lf", &(lists->weight_list[i]));
         }
         for(i=0; i<snn->n_synapses; i++){
-            fscanf(f_synapses, "%d", &((lists->training_zones)[i]));
+            fscanf(f_synapses, "%d", &(lists->training_zones[i]));
         }
     }
 
@@ -327,7 +664,6 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
 }
 
 
-
 // I THINK THIS SHOULDN'T BE HERE // NOW WITH NEURON IT IS NOT CORRECT FOR GENERALIZING
 /// @brief Function to load data into the SNN structure 
 /// @param file_name File name to load spikes from
@@ -361,367 +697,60 @@ void load_input_spike_trains_on_snn(const char *file_name, spiking_nn_t *snn){
     fclose(f);
 }
 
+// TODO labels
+void load_dataset_from_file(input_data_t *dataset, const char *file_name, const char *labels_file_name, int n_samples, simulation_configuration_t *conf){
 
-/// @brief [Deprecated] Function to read a file name
-/// @param f 
-/// @param max_length 
-/// @param file_name 
-/// @return 
-int read_file_name(FILE *f, int max_length, char *file_name){
-    char ch;
-    int length = 0;
+    int i, j, l, n_spikes;
+    
+    // copy dataset information from conf to dataset
+    dataset->image_size = conf->input_size;
+    dataset->n_classes = conf->n_classes;
+    dataset->n_samples = n_samples;
 
-    // skip any leading whitespace
-    while ((ch = fgetc(f)) != EOF && isspace(ch));
-
-    // read word and count number of characters
-    while (ch != EOF && !isspace(ch) && length < max_length) {
-        file_name[length] = ch;
-        ch = fgetc(f);
-        length++;
-    }
-
-    printf("Length of first word: %d\n", length);
-    printf("Word: %s\n", file_name);
-    if(length >= max_length) return 1; // error
-
-    return 0;
-}
-
-/// @brief [Deprecated] Function to load configuration parameters
-/// @param file_name 
-/// @param conf 
-/// @return 
-int load_configuration_params(const char *file_name, simulation_configuration_t *conf){
-    FILE *f = NULL;
-
-    int err = 0;
-
-    // allocate memory for file names
-    conf->network_file = malloc(100 * sizeof(char));
-    conf->spike_times_file = malloc(100 * sizeof(char));
-    conf->times_file = malloc(100 * sizeof(char));
-    conf->n_spikes_file = malloc(100 * sizeof(char));
-    conf->final_network_file = malloc(100 * sizeof(char));
-
-    // read parameters
+    // load dataset from file
+    FILE *f = NULL, *f_labels = NULL;
     open_file(&f, file_name);
+    //open_file(&f_labels, labels_file_name);
 
-    fscanf(f, "%d", &(conf->simulation_type));
-    fscanf(f, "%d", &(conf->neuron_type));
-    err = read_file_name(f, 100, conf->network_file);
-    if(err == 1) 
-        return err; //err
+    // allocate memory for samples and labels
+    dataset->samples = (sample_t *)malloc(dataset->n_samples * sizeof(sample_t));
+    //dataset->labels = (int *)malloc(dataset->n_samples * sizeof(int));
 
+    // load samples
+    for(i = 0; i<dataset->n_samples; i++){
 
-    fscanf(f, "%d", &(conf->n_process));
-    fscanf(f, "%d", &(conf->store));
-    if(conf->store == 1){
-        err = read_file_name(f, 100, conf->final_network_file);
-        if(err == 1)
-            return err; //err
+        // load label
+        //fscanf(f_labels, "%d", &(dataset->labels[i]));
+        
+        // load each element of the sample
+        dataset->samples[i].st = (spike_train_t *)malloc(dataset->image_size * sizeof(spike_train_t));
+        
+        for(j = 0; j<dataset->image_size; j++){
+
+            fscanf(f, "%d", &n_spikes);
+            dataset->samples[i].st[j].n_spikes = n_spikes;
+            dataset->samples[i].st[j].stimes = (int *)malloc(n_spikes * sizeof(int));
+
+            // load spike train for each element of the sample
+            for(l = 0; l<n_spikes; l++){
+                fscanf(f, "%d", &(dataset->samples[i].st[j].stimes[l]));
+            }
+        }
     }
-
-    // output files
-    err = read_file_name(f, 100, conf->spike_times_file);
-    if(err == 1) 
-        return err; //err
-
-    err = read_file_name(f, 100, conf->times_file);
-    if(err == 1) 
-        return err; //err
-
-    err = read_file_name(f, 100, conf->n_spikes_file);
-    if(err == 1) 
-        return err; //err    
-    
-    // IFDEF SIMULATION...
-    conf->input_spikes_file = malloc(100 * sizeof(char));
-    err = read_file_name(f, 100, conf->input_spikes_file);
-    if(err == 1) 
-        return err; //err    
-    printf("Hasta aquío bien\n");
-
-    fscanf(f, "%d", &(conf->time_steps));
-    printf("Vaya por dios \n");
-    // ELSE...
-}
-
-// Function to load the simulation configuration file
-int load_configuration_params_from_toml(const char *file_name, simulation_configuration_t *conf){
-    
-    FILE *f = NULL;
-    char errbuf[1000];
-    int i, l, l_file_names = 300;
-
-    // define table and variables to store configuration parameters
-    toml_table_t *tbl, *tbl_general, *tbl_simulation, *tbl_samples, *tbl_output, *tbl_network;
-    
-    toml_value_t execution_type, neuron_type, execution_obj, n_process, cuda, learn, 
-                time_steps, input_file,
-                dataset, dataset_name, num_classes, epochs, n_samples,
-                generated_spikes, execution_times, spikes_per_neuron, store_network, store_network_file,
-                network, network_neurons, network_synapses, behaviours, delays, weights, training_zones, 
-                thresh, v_rest, t_refract, R;
-
-
-    // open configuration 
-    open_file(&f, file_name); // TOML file
-
-    // read TOML field in the file
-    tbl = toml_parse_file(f, errbuf, l_file_names);
-
-    // close file
-    fclose(f);
-
-
-    /* get sections from file */
-    tbl_general = toml_table_table(tbl, "general");
-    tbl_simulation = toml_table_table(tbl, "simulation");
-    tbl_samples = toml_table_table(tbl, "samples");
-    tbl_output = toml_table_table(tbl, "output");
-    tbl_network = toml_table_table(tbl, "network");
-
-    // read subsections in general section
-    execution_type = toml_table_int(tbl_general, "execution_type");
-    neuron_type = toml_table_int(tbl_general, "neuron_type");
-    execution_obj = toml_table_int(tbl_general, "execution_obj");
-    n_process = toml_table_int(tbl_general, "n_process");
-    cuda = toml_table_int(tbl_general, "cuda");
-    learn = toml_table_int(tbl_general, "learn");
-
-    // if something is missing in configuration file, set default values
-    if(!execution_type.ok)
-        execution_type.u.i = 0; // clock-based
-
-    if(!neuron_type.ok)
-        neuron_type.u.i = 0; // LIF neuron
-
-    if(!execution_obj.ok)
-        execution_obj.u.i = 0; // biological simulation
-
-    if(!n_process.ok)
-        n_process.u.i = 1; // serial execution
-
-    if(!cuda.ok)
-        cuda.u.i = 0; // no cuda
-
-    if(!learn.ok)
-        learn.u.i = 1; // not learn
-
-
-    // load information into configuration structure
-    conf->simulation_type = execution_type.u.i;
-    conf->neuron_type = neuron_type.u.i;
-    conf->simulation_obj = execution_obj.u.i;
-    conf->n_process = n_process.u.i;
-    conf->cuda = cuda.u.i;
-    conf->learn = learn.u.i;
-    
-
-
-
-    /* simulation section in TOML file */ 
-    // load data from TOML file
-    time_steps = toml_table_int(tbl_simulation, "time_steps");
-    input_file = toml_table_string(tbl_simulation, "input_file");
-    n_samples = toml_table_int(tbl_simulation, "n_samples");
-    epochs = toml_table_int(tbl_simulation, "epochs");
-    printf(" > Simulation section loaded\n");
-    fflush(stdout);
-
-    // set default values if something is missing
-    if(!time_steps.ok)
-    {
-        printf(" >> Amount of time-steps haven't been provided, setting default value: 1000\n");
-        time_steps.u.i = 1000;
-    }
-
-    if(!input_file.ok){
-        printf(" >> A input file must be provided for input spikes!\n");
-        exit(1);
-    }
-
-    if(!n_samples.ok)
-    {
-        printf(" >> Setting number of samples in 1\n");
-        n_samples.u.i = 1;
-    }
-
-    if(!epochs.ok){
-        printf(" >> Number of epochs not provided! Setting 1.\n");
-        epochs.u.i = 1;
-    }
-    
-    // load information into config structure
-    conf->time_steps = time_steps.u.i;
-    l = input_file.u.sl; // get string length
-    conf->input_spikes_file = malloc(l * sizeof(char)); // allocate memory for string
-    conf->input_spikes_file = input_file.u.s; // store file name
-    conf->n_samples = n_samples.u.i;
-    conf->epochs = epochs.u.i;
-
-    printf(" > Simulation section copied\n");
-    fflush(stdout);
-
-
-    /* output section in TOML file */
-    generated_spikes = toml_table_string(tbl_output, "generated_spikes");
-    execution_times = toml_table_string(tbl_output, "execution_times");
-    spikes_per_neuron = toml_table_string(tbl_output, "spikes_per_neuron");
-    store_network = toml_table_int(tbl_output, "store_network"); // whether to store or not the file
-    store_network_file = toml_table_string(tbl_output, "store_network_file"); // file to store the network
-
-    // check that everything is loaded
-    if(!generated_spikes.ok){
-        printf("A file to store generated spikes must be provided!\n");
-        exit(1);
-    }
-    if(!execution_times.ok){
-        printf("A file to store execution times must be provided!\n");
-        exit(1);
-    }
-    if(!spikes_per_neuron.ok){
-        printf("A file to store the number of spikes generated per neuron must be provided!\n");
-        exit(1);
-    }
-
-    if(!store_network.ok){
-        store_network.u.i = 0; // default option
-    }
-    else if(store_network.u.i == 1 && !store_network_file.ok){
-        printf("The file name to store the final network must be provided!\n");
-        exit(1);
-    }
-
-    printf(" > Output section loaded\n");
-    fflush(stdout);
-
-
-    // allocate memory for strings and store them into lists structure
-    l = generated_spikes.u.sl;
-    conf->spike_times_file = malloc(l * sizeof(char));
-    conf->spike_times_file = generated_spikes.u.s;
-
-    l = execution_times.u.sl;
-    conf->times_file = malloc(l * sizeof(char));
-    conf->times_file = execution_times.u.s;
-
-    l = spikes_per_neuron.u.sl;
-    conf->n_spikes_file = malloc(l * sizeof(char));
-    conf->n_spikes_file = spikes_per_neuron.u.s;
-
-    conf->store = store_network.u.i;
-    if(conf->store == 1){
-        l = store_network_file.u.sl;
-        conf->final_network_file = malloc(l * sizeof(char));
-        conf->final_network_file = store_network_file.u.s;
-    }
-
-    printf(" > Output section copied\n");
-    fflush(stdout);
-
-
-    /* network section */
-    // parameters that are provided for the network
-    network = toml_table_string(tbl_network, "network_file");
-    network_neurons = toml_table_string(tbl_network, "network_neurons_file");
-    network_synapses = toml_table_string(tbl_network, "network_synapses_file");
-    behaviours = toml_table_int(tbl_network, "behaviours");
-    delays = toml_table_int(tbl_network, "delays");
-    weights = toml_table_int(tbl_network, "weights");
-    training_zones = toml_table_int(tbl_network, "training_zones");
-    thresh = toml_table_int(tbl_network, "thresh");
-    v_rest = toml_table_int(tbl_network, "v_rests");
-    t_refract = toml_table_int(tbl_network, "t_refract");
-    R = toml_table_int(tbl_network, "resistance");
-    // TODO: more parameters should be added in the future
-
-    printf(" > Network section loaded\n");
-    fflush(stdout);
-
-    // if something is missing in configuration file, set default value
-    if(!network.ok)
-    {
-        printf("The file to load the network must be provided\n");
-        exit(1);
-    }
-
-    // if there is not in the file, by default set as not proveded
-    if(!behaviours.ok){
-        behaviours.u.i = 0;
-    }
-    
-    if(!delays.ok){
-        delays.u.i = 0;
-    }
-
-    if(!weights.ok){
-        weights.u.i = 0;
-    }    
-    
-    if(!training_zones.ok){
-        training_zones.u.i = 0;
-    }    
-    
-    if(!thresh.ok){
-        thresh.u.i = 0;
-    }    
-
-    if(!v_rest.ok){
-        v_rest.u.i = 0;
-    }    
-
-    if(!R.ok){
-        R.u.i = 0; 
-    }
-
-    if(!t_refract.ok){
-        t_refract.u.i = 0;
-    }    
-    
-    // copy information into config structure
-    l = network.u.sl;
-    conf->network_file = malloc(l * sizeof(char));
-    conf->network_neurons_file = malloc(l * sizeof(char));
-    conf->network_synapses_file = malloc(l * sizeof(char));
-    conf->network_file = network.u.s;
-    if(network_neurons.ok)
-        conf->network_neurons_file = network_neurons.u.s;
-    if(network_synapses.ok)
-        conf->network_synapses_file = network_synapses.u.s;
-    
-    conf->behaviours_provided = behaviours.u.i;
-    conf->delays_provided = delays.u.i;
-    conf->weights_provided = weights.u.i;
-    conf->training_zones_provided = training_zones.u.i;
-    conf->thresholds_provided = thresh.u.i;
-    conf->v_rests_provided = v_rest.u.i;
-    conf->refract_times_provided = t_refract.u.i;
-    conf->res_provided = R.u.i;
-
-
-    // free memory
-    /*toml_free(tbl);
-    toml_free(tbl_general);
-    toml_free(tbl_simulation);
-    toml_free(tbl_samples);
-    toml_free(tbl_output);
-    toml_free(tbl_network);*/
 }
 
 
 
-// TODO: this functions should be adapted for several samples
+// TODO: all the functions below must be revised!!!
 
 // Functions to store results and data into files
-void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn){
+void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset){
 
     // store
     store_generated_spikes(results, conf, snn);
     //store_network();
     store_number_of_spikes(results, conf,snn);
-    store_times(results, conf, snn);
+    store_times(results, conf, snn, dataset);
 
 }
 
@@ -734,9 +763,9 @@ void store_generated_spikes(simulation_results_t *results, simulation_configurat
     FILE *f;
 
     // file to store generated spikes
-    f = fopen(conf->spike_times_file, "w");
+    f = fopen(conf->generated_spikes_file, "w");
     if(f == NULL){
-        printf("Error opening the file %s. \n", conf->spike_times_file);
+        printf("Error opening the file %s. \n", conf->generated_spikes_file);
         exit(1);
     }
 
@@ -763,9 +792,9 @@ void store_network(simulation_results_t *results, simulation_configuration_t *co
     FILE *f;
 
     // file to store generated spikes
-    f = fopen(conf->spike_times_file, "w");
+    f = fopen(conf->network_file, "w");
     if(f == NULL){
-        printf("Error opening the file %s. \n", conf->spike_times_file);
+        printf("Error opening the file %s. \n", conf->network_file);
         exit(1);
     }
 
@@ -785,9 +814,9 @@ void store_number_of_spikes(simulation_results_t *results, simulation_configurat
     FILE *f;
 
     // file to store generated spikes
-    f = fopen(conf->n_spikes_file, "w");
+    f = fopen(conf->n_spikes_per_neuron_file, "w");
     if(f == NULL){
-        printf("Error opening the file %s. \n", conf->n_spikes_file);
+        printf("Error opening the file %s. \n", conf->n_spikes_per_neuron_file);
         exit(1);
     }
 
@@ -800,30 +829,36 @@ void store_number_of_spikes(simulation_results_t *results, simulation_configurat
 }
 
 
-void store_times(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn){
+void store_times(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset){
     
     int i,j;
 
     // TODO: In this moment this function only stores the first sample results
-    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
+    simulation_results_per_sample_t *results_per_sample;
     FILE *f;
 
     // file to store generated spikes
-    f = fopen(conf->times_file, "w");
+    f = fopen(conf->execution_times_file, "w");
     if(f == NULL){
-        printf("Error opening the file %s. \n", conf->spike_times_file);
+        printf("Error opening the file %s. \n", conf->execution_times_file);
         exit(1);
     }
 
     // store number of spikes
-    fprintf(f, "%lf ", results_per_sample->elapsed_time);
-    fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons);
-    fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons_input);
-    fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons_output);
-    fprintf(f, "%lf ", results_per_sample->elapsed_time_synapses);
-    fprintf(f, "%lf ", results_per_sample->elapsed_time_synapses_input);
-    fprintf(f, "%lf ", results_per_sample->elapsed_time_synapses_output);
-    fprintf(f, "%lf \n", results_per_sample->elapsed_time_learning);
+    fprintf(f, "%lf\n", results->elapsed_time); // store total elapsed time
+    fprintf(f, "%lf\n", results->elapsed_time_epoch); // store total elapsed time
+
+    for(i=0; i<dataset->n_samples; i++){
+
+        results_per_sample = &(results->results_per_sample[i]);
+        fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons);
+        fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons_input);
+        fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons_output);
+        fprintf(f, "%lf \n", results_per_sample->elapsed_time_learning);
+        fprintf(f, "%lf \n", results_per_sample->elapsed_time_re_neurons);
+        fprintf(f, "%lf \n", results_per_sample->elapsed_time_re_synapses);
+        fprintf(f, "%lf \n", results_per_sample->elapsed_time_load_sample);
+    }
 
 
     // close file

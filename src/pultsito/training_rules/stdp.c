@@ -30,16 +30,18 @@ void add_stdp(synapse_t *synapse, int t){
         double initial_weight = synapse->w;
 
         if(time_diff > 0 && time_diff < 75){
-            synapse->w += A_PLUS * exp(-time_diff / TAU_PLUS);
-            
-            if(initial_weight > 0 && synapse->w < 0)
-                synapse->w = 0.0001;
+            //synapse->w += A_PLUS * exp(-time_diff / TAU_PLUS);
+            synapse->dw += A_PLUS * exp(-time_diff / TAU_PLUS);
+
+            //if(initial_weight > 0 && synapse->w < 0)
+            //    synapse->w = 0.0001;
         }
         else if(time_diff < 0 && time_diff > -200){ // time window to stdp be considered
-            synapse->w -= A_MINUS * exp(time_diff / TAU_MINUS);
+            //synapse->w -= A_MINUS * exp(time_diff / TAU_MINUS);
+            synapse->dw -= A_MINUS * exp(time_diff / TAU_MINUS);
 
-            if(initial_weight < 0 && synapse->w > 0)
-                synapse->w = -0.0001;
+            //if(initial_weight < 0 && synapse->w > 0)
+            //    synapse->w = -0.0001;
         }
     }
 }
@@ -52,16 +54,18 @@ void mult_stdp(synapse_t *synapse, int t){
         double initial_weight = synapse->w;
 
         if(time_diff > 0 && time_diff < 75){
-            synapse->w += A_PLUS * synapse->w * (1 - synapse->w) * exp(-time_diff / TAU_PLUS);
-            
-            if(initial_weight > 0 && synapse->w < 0)
-                synapse->w = 0.0001;
+            //synapse->w += A_PLUS * synapse->w * (1 - synapse->w) * exp(-time_diff / TAU_PLUS);
+            synapse->dw += A_PLUS * synapse->w * (1 - synapse->w) * exp(-time_diff / TAU_PLUS);
+
+            //if(initial_weight > 0 && synapse->w < 0)
+            //    synapse->w = 0.0001;
         }
         else if(time_diff < 0 && time_diff > -200){ // time window to stdp be considered
-            synapse->w -= A_MINUS * synapse->w * (1 - synapse->w) * exp(time_diff / TAU_MINUS);
+            //synapse->w -= A_MINUS * synapse->w * (1 - synapse->w) * exp(time_diff / TAU_MINUS);
+            synapse->dw -= A_MINUS * synapse->w * (1 - synapse->w) * exp(time_diff / TAU_MINUS);
 
-            if(initial_weight < 0 && synapse->w > 0)
-                synapse->w = -0.0001;
+            //if(initial_weight < 0 && synapse->w > 0)
+            //    synapse->w = -0.0001;
         }
     }
 }
@@ -74,16 +78,18 @@ void anti_stdp(synapse_t *synapse, int t){
         double initial_weight = synapse->w;
 
         if(time_diff > 0 && time_diff < 75){
-            synapse->w -= A_PLUS * exp(-time_diff / TAU_PLUS);
-            
-            if(initial_weight > 0 && synapse->w < 0)
-                synapse->w = 0.0001;
+            //synapse->w -= A_PLUS * exp(-time_diff / TAU_PLUS);
+            synapse->dw -= A_PLUS * exp(-time_diff / TAU_PLUS);
+
+            //if(initial_weight > 0 && synapse->w < 0)
+            //    synapse->w = 0.0001;
         }
         else if(time_diff < 0 && time_diff > -200){ // time window to stdp be considered
-            synapse->w += A_MINUS * exp(time_diff / TAU_MINUS);
+            //synapse->w += A_MINUS * exp(time_diff / TAU_MINUS);
+            synapse->dw += A_MINUS * exp(time_diff / TAU_MINUS);
 
-            if(initial_weight < 0 && synapse->w > 0)
-                synapse->w = -0.0001;
+            //if(initial_weight < 0 && synapse->w > 0)
+            //    synapse->w = -0.0001;
         }
     }
 }

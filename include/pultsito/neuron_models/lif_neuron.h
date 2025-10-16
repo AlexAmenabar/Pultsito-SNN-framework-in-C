@@ -42,15 +42,16 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
 /// @brief Initialize a LIF neuron
 /// @param snn SNN structure containing the neurons
 /// @param neuron_index Index of the neuron to be initialized
-/// @param lists Arrays containing the values to initialize the neuron with
+/// @param data Arrays containing the values to initialize the neuron with
 /// @param n_input_synapse // Number of input synapses for the neuron
 /// @param n_output_synapse // Number of output synapses for the neuron
-void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *lists, int n_input_synapse, int n_output_synapse);
+void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *data, int n_input_synapse, int n_output_synapse);
 
 /// @brief Initialize a lif neuron
 /// @param snn SNN structure with neuron information
 /// @param neuron_index Index to get the neuron to be initialized from snn
-void re_initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *lists);
+/// @param data Arrays containing the values to initialize the neuron with
+void re_initialize_lif_neuron(spiking_nn_t *snn, int neuron_index);
 
 
 /* Functions to add input and output synapses to LIF neurons */
@@ -67,7 +68,14 @@ void add_input_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int sy
 /// @param synapse_index Synapse to be added to the neuron
 void add_output_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index);
 
-
+/// @brief Function to copy lif neurons
+/// @param cp_snn Structure to copy neurons in
+/// @param or_snn Structure to copy neurons from
 void cp_lif_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
+
+/// @brief Load a sample in the network, where each spike train of the sample is loaded in a neuron
+/// @param snn SNN structure with the neurons
+/// @param sample sample to be loaded in the network
+void load_sample_in_LIF(spiking_nn_t *snn, sample_t *sample);
 
 #endif

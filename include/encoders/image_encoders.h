@@ -9,6 +9,8 @@ This file contains the structures and functions to convert different types of in
 
 
 // TODO: this should be generalized for different data types ??? 
+// This will be refactorized and integrated to pultsito structs
+
 
 /// @brief Image of spikes. Each image has a list of spikes for each pixel
 typedef struct {
