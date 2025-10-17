@@ -196,12 +196,15 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
 
             // get results struct and reinitialize necessary data // TODO: actually is temporal
             results_per_sample = &(results->results_per_sample[s]);
+            
+            #pragma omp parallel for schedule(guided, n) private(i) 
             for(i = 0; i<snn->n_neurons; i++){
                 results_per_sample->n_spikes_per_neuron[i] = 0;
             }
 
             // reinitialize neurons O(n)
             clock_gettime(CLOCK_MONOTONIC, &start_re_neurons);
+            #pragma omp parallel for schedule(guided, n) private(i) 
             for(i = 0; i<snn->n_neurons; i++){
                 snn->neuron_re_initializer(snn, i);
             }
@@ -209,6 +212,7 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
 
             // reinitialize synapses O(m)
             clock_gettime(CLOCK_MONOTONIC, &start_re_synapses);
+            #pragma omp parallel for schedule(guided, n) private(i) 
             for(i = 0; i<snn->n_synapses; i++){
                 re_initialize_synapse(&(snn->synapses[i]));
             }
@@ -266,13 +270,14 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             results_per_sample->elapsed_time_load_sample += (end_load_sample.tv_sec - start_load_sample.tv_sec) + (end_load_sample.tv_nsec - start_load_sample.tv_nsec) / 1e9;
 
             results_per_sample->elapsed_time_sample += (end_sample.tv_sec - start_sample.tv_sec) + (end_sample.tv_nsec - start_sample.tv_nsec) / 1e9;
-
         }
 
         // sum all dw
         /*for(i = 0; i<snn->n_synapses; i++){
             snn->Dw += snn->n_
         }*/
+
+
 
 
         // update weights O(m) (only if we are learning)
@@ -332,6 +337,7 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         printf(" >>> Mean output step %lf (per time step %lf)\n", results_per_sample->elapsed_time_neurons_output / (double)n_samples, results_per_sample->elapsed_time_neurons_output / (double)n_samples / (double)conf->time_steps);
         printf(" >>> Mean learning rules %lf (per time step %lf)\n", results_per_sample->elapsed_time_learning / (double)n_samples, results_per_sample->elapsed_time_learning / (double)n_samples / (double)conf->time_steps);
         fflush(stdout);
+        
         
         // store results of the epoch
 

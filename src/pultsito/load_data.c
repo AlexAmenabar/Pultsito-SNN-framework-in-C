@@ -710,23 +710,31 @@ void load_dataset_from_file(input_data_t *dataset, const char *file_name, const 
     // load dataset from file
     FILE *f = NULL, *f_labels = NULL;
     open_file(&f, file_name);
-    //open_file(&f_labels, labels_file_name);
+
+    // if ML, load labels
+    if(conf->simulation_obj == 1)
+        open_file(&f_labels, labels_file_name);
 
     // allocate memory for samples and labels
     dataset->samples = (sample_t *)malloc(dataset->n_samples * sizeof(sample_t));
-    //dataset->labels = (int *)malloc(dataset->n_samples * sizeof(int));
+
+    // allocate memory for labels
+    if(conf->simulation_obj == 1)
+        dataset->labels = (int *)malloc(dataset->n_samples * sizeof(int));
 
     // load samples
     for(i = 0; i<dataset->n_samples; i++){
 
         // load label
-        //fscanf(f_labels, "%d", &(dataset->labels[i]));
+        if(conf->simulation_obj == 1)
+            fscanf(f_labels, "%d", &(dataset->labels[i]));
         
         // load each element of the sample
         dataset->samples[i].st = (spike_train_t *)malloc(dataset->image_size * sizeof(spike_train_t));
         
         for(j = 0; j<dataset->image_size; j++){
 
+            // read number of spikes
             fscanf(f, "%d", &n_spikes);
             dataset->samples[i].st[j].n_spikes = n_spikes;
             dataset->samples[i].st[j].stimes = (int *)malloc(n_spikes * sizeof(int));
@@ -747,19 +755,21 @@ void load_dataset_from_file(input_data_t *dataset, const char *file_name, const 
 void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset){
 
     // store
-    store_generated_spikes(results, conf, snn);
+    store_generated_spikes(results, conf, snn, dataset);
     //store_network();
-    store_number_of_spikes(results, conf,snn);
+    store_number_of_spikes(results, conf,snn, dataset);
     store_times(results, conf, snn, dataset);
 
 }
 
-void store_generated_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn){
-    
-    int i,j;
+void store_epoch_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset){
 
-    // TODO: In this moment this function only stores the first sample results
-    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
+}
+
+void store_generated_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset){
+    
+    int i, j, l;
+    simulation_results_per_sample_t *results_per_sample;
     FILE *f;
 
     // file to store generated spikes
@@ -769,12 +779,17 @@ void store_generated_spikes(simulation_results_t *results, simulation_configurat
         exit(1);
     }
 
-    // write generated spikes // TODO: for each sample (a file?)
-    for (i = 0; i<snn->n_neurons; i++)
-    {
-        for(j = 0; j<conf->time_steps; j++)
-            fprintf(f, "%c", results_per_sample->generated_spikes[i][j]);
+    for(i = 0; i<dataset->n_samples; i++){
         
+        results_per_sample = &(results->results_per_sample[i]);
+        for(j = 0; j<snn->n_neurons; j++){
+            
+            for(l = 0; l<conf->time_steps; l++){
+
+                fprintf(f, "%c", results_per_sample->generated_spikes[j][l]);
+            }
+            fprintf(f, "\n");
+        }
         fprintf(f, "\n");
     }
 
@@ -786,6 +801,7 @@ void store_generated_spikes(simulation_results_t *results, simulation_configurat
 void store_network(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn){
     
     int i,j;
+
 
     // TODO: In this moment this function only stores the first sample results
     simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
@@ -805,13 +821,12 @@ void store_network(simulation_results_t *results, simulation_configuration_t *co
 }
 
 
-void store_number_of_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn){
+void store_number_of_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset){
     
     int i,j;
-
-    // TODO: In this moment this function only stores the first sample results
-    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
+    simulation_results_per_sample_t *results_per_sample;
     FILE *f;
+
 
     // file to store generated spikes
     f = fopen(conf->n_spikes_per_neuron_file, "w");
@@ -819,10 +834,20 @@ void store_number_of_spikes(simulation_results_t *results, simulation_configurat
         printf("Error opening the file %s. \n", conf->n_spikes_per_neuron_file);
         exit(1);
     }
+    
+    // store all samples number of spikes
+    for(i = 0; i<dataset->n_samples; i++){
 
-    // store number of spikes
-    for(i = 0; i<snn->n_neurons; i++)
-        fprintf(f, "%d ", results->results_per_sample[0].n_spikes_per_neuron[i]);
+        results_per_sample = &(results->results_per_sample[i]);
+
+        // store number of spikes
+        for(j = 0; j<snn->n_neurons; j++){
+            fprintf(f, "%d ", results_per_sample->n_spikes_per_neuron[j]);
+        }
+
+        fprintf(f, "\n");
+    }
+    fprintf(f, "\n");
 
     // close file
     fclose(f);
@@ -831,9 +856,7 @@ void store_number_of_spikes(simulation_results_t *results, simulation_configurat
 
 void store_times(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset){
     
-    int i,j;
-
-    // TODO: In this moment this function only stores the first sample results
+    int i;
     simulation_results_per_sample_t *results_per_sample;
     FILE *f;
 
@@ -845,21 +868,19 @@ void store_times(simulation_results_t *results, simulation_configuration_t *conf
     }
 
     // store number of spikes
-    fprintf(f, "%lf\n", results->elapsed_time); // store total elapsed time
     fprintf(f, "%lf\n", results->elapsed_time_epoch); // store total elapsed time
 
     for(i=0; i<dataset->n_samples; i++){
 
         results_per_sample = &(results->results_per_sample[i]);
-        fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons);
         fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons_input);
         fprintf(f, "%lf ", results_per_sample->elapsed_time_neurons_output);
-        fprintf(f, "%lf \n", results_per_sample->elapsed_time_learning);
-        fprintf(f, "%lf \n", results_per_sample->elapsed_time_re_neurons);
-        fprintf(f, "%lf \n", results_per_sample->elapsed_time_re_synapses);
-        fprintf(f, "%lf \n", results_per_sample->elapsed_time_load_sample);
+        fprintf(f, "%lf ", results_per_sample->elapsed_time_learning);
+        fprintf(f, "%lf ", results_per_sample->elapsed_time_re_neurons);
+        fprintf(f, "%lf ", results_per_sample->elapsed_time_re_synapses);
+        fprintf(f, "%lf\n", results_per_sample->elapsed_time_load_sample);
     }
-
+    fprintf(f, "\n");
 
     // close file
     fclose(f);
