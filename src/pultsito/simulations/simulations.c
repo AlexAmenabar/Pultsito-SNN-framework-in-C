@@ -1,4 +1,6 @@
 /// FUNCTIONS WITH SIMULATION TYPES
+#include <omp.h>
+
 #include "snn_library.h"
 #include "load_data.h"
 #include "helpers.h"
@@ -18,15 +20,12 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
     // initialize several control variables
     int n = snn->n_neurons / conf->n_process * 0.1;
 
-    int time_step = 0, i, s; 
+    int time_step = 0, i; 
     int n_process = conf->n_process;
     struct timespec start, end; // to measure simulation complete time
     struct timespec start_neurons, end_neurons; // to measure neurons simulation time
     struct timespec start_neurons_input, end_neurons_input; // to measure input synapses simulation time
     struct timespec start_neurons_output, end_neurons_output; // to measure output synapses simulation time
-    struct timespec start_synapses, end_synapses; // to measure synapses simulation time
-    struct timespec start_synapses_input, end_synapses_input; // to measure synapses simulation time
-    struct timespec start_synapses_output, end_synapses_output; // to measure synapses simulation time
     struct timespec start_learning, end_learning; // to measure learning processing time
     
     // TODO: revise this
@@ -147,16 +146,19 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
 void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset){
 
     // initialize several control variables
-    int n;
+    int n, n_samps;
     int epochs, n_samples, time_steps;
+    spiking_nn_t *pr_snns;
+    spiking_nn_t *tmp_snn;
     
     n = snn->n_neurons / conf->n_process * 0.1;
+    //n_samps = n_samples / conf->n_process * 0.1;
     epochs = conf->epochs;
     n_samples = dataset->n_samples;
     time_steps = conf->time_steps;
 
 
-    int i, j, t, s, e; 
+    int i, t, s, e; 
     int n_process = conf->n_process;
     struct timespec start, end; // to measure simulation complete time
     struct timespec start_epoch, end_epoch; // to measure simulation time for epochs
@@ -164,10 +166,6 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     struct timespec start_neurons_input, end_neurons_input; // to measure input synapses simulation time
     struct timespec start_neurons_output, end_neurons_output; // to measure output synapses simulation time
     struct timespec start_learning, end_learning; // to measure learning processing time
-    struct timespec start_dw, end_dw; // to measure learning processing time
-    struct timespec start_neurons_reinit, end_neurons_reinit; // to measure learning processing time
-    struct timespec start_synapses_reinit, end_synapses_reinit; // to measure learning processing time
-    struct timespec start_input_int, end_input_int; // to measure learning processing time
     struct timespec start_load_sample, end_load_sample; // to measure learning processing time
     struct timespec start_re_neurons, end_re_neurons; // to measure learning processing time
     struct timespec start_re_synapses, end_re_synapses; // to measure learning processing time
@@ -176,11 +174,20 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     // TODO: revise this
     simulation_results_per_sample_t *results_per_sample;
 
-    printf(" > n_processes = %d\n", conf->n_process);
-    fflush(stdout);
-
     // start measuring time
     clock_gettime(CLOCK_MONOTONIC, &start);
+
+
+    // copy networks if necessary
+#ifdef PAR_SAMPLES 
+    printf(" > Copying network %d times...\n", n_process);
+    pr_snns = (spiking_nn_t *)malloc(n_process * sizeof(spiking_nn_t));
+    for(i = 0; i<n_process; i++){
+        cp_network(&(pr_snns[i]), snn, conf);
+    }
+    printf(" > Network copied!\n");
+    fflush(stdout);
+#endif
 
     // simulate epochs
     for(e = 0; e<epochs; e++){
@@ -189,7 +196,21 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         clock_gettime(CLOCK_MONOTONIC, &start_epoch);
 
         // simulate samples
+        #ifdef PAR_SAMPLES
+        #pragma omp parallel for num_threads(n_process) schedule(dynamic, 10) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
+        #endif
         for(s = 0; s<n_samples; s++){
+
+            #ifdef PAR_SAMPLES
+            printf(" Thread = %d, sample %d\n", omp_get_thread_num(), s);
+            tmp_snn = &(pr_snns[omp_get_thread_num()]);
+            #else
+            tmp_snn = snn;
+            #endif
+
+            //if(s % 10 == 0)
+                printf(" > Sample %d\n", s);
+            //fflush(stdout);
 
             // sample started
             clock_gettime(CLOCK_MONOTONIC, &start_sample);
@@ -197,50 +218,66 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             // get results struct and reinitialize necessary data // TODO: actually is temporal
             results_per_sample = &(results->results_per_sample[s]);
             
-            #pragma omp parallel for schedule(guided, n) private(i) 
-            for(i = 0; i<snn->n_neurons; i++){
+            #ifndef PAR_SAMPLES
+            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+            #endif
+            for(i = 0; i<tmp_snn->n_neurons; i++){
                 results_per_sample->n_spikes_per_neuron[i] = 0;
             }
 
             // reinitialize neurons O(n)
             clock_gettime(CLOCK_MONOTONIC, &start_re_neurons);
-            #pragma omp parallel for schedule(guided, n) private(i) 
-            for(i = 0; i<snn->n_neurons; i++){
-                snn->neuron_re_initializer(snn, i);
+
+            #ifndef PAR_SAMPLES
+            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+            #endif
+            for(i = 0; i<tmp_snn->n_neurons; i++){
+                tmp_snn->neuron_re_initializer(tmp_snn, i);
             }
             clock_gettime(CLOCK_MONOTONIC, &end_re_neurons);
 
             // reinitialize synapses O(m)
             clock_gettime(CLOCK_MONOTONIC, &start_re_synapses);
-            #pragma omp parallel for schedule(guided, n) private(i) 
-            for(i = 0; i<snn->n_synapses; i++){
-                re_initialize_synapse(&(snn->synapses[i]));
+
+            #ifndef PAR_SAMPLES
+            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+            #endif
+            for(i = 0; i<tmp_snn->n_synapses; i++){
+                re_initialize_synapse(&(tmp_snn->synapses[i]));
             }
             clock_gettime(CLOCK_MONOTONIC, &end_re_synapses);
 
             // load sample in network 
             clock_gettime(CLOCK_MONOTONIC, &start_load_sample);
-            snn->load_sample(snn, &(dataset->samples[s]));
+            tmp_snn->load_sample(tmp_snn, &(dataset->samples[s]));
             clock_gettime(CLOCK_MONOTONIC, &end_load_sample);
 
             
             // simulate time steps for each sample
             for(t = 0; t<time_steps; t++){
 
+                //if(t % 100 == 0)
+                //    printf(" > > Time step %d\n", t);
+
                 // input step
                 clock_gettime(CLOCK_MONOTONIC, &start_neurons_input);
 
-                #pragma omp parallel for schedule(guided, n) private(i) 
-                for(i = 0; i<snn->n_neurons; i++) // O(n)
-                    snn->input_step(snn, t, i, results_per_sample);
+                #ifndef PAR_SAMPLES
+                #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+                #endif
+                for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
+                    tmp_snn->input_step(tmp_snn, t, i, results_per_sample);
 
                 clock_gettime(CLOCK_MONOTONIC, &end_neurons_input);
 
                 // output step
                 clock_gettime(CLOCK_MONOTONIC, &start_neurons_output);
-                #pragma omp parallel for schedule(guided, n) private(i) 
-                for(i = 0; i<snn->n_neurons; i++) // O(n)
-                    snn->output_step(snn, t, i, results_per_sample);
+                
+                #ifndef PAR_SAMPLES
+                #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+                #endif
+                for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
+                    tmp_snn->output_step(tmp_snn, t, i, results_per_sample);
 
                 clock_gettime(CLOCK_MONOTONIC, &end_neurons_output);
 
@@ -248,9 +285,12 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                 clock_gettime(CLOCK_MONOTONIC, &start_learning);
                 
                 if(conf->learn == 1){
-                #pragma omp parallel for schedule(guided, n) private(i) 
-                for(i = 0; i<snn->n_synapses; i++) // O(m)
-                    snn->synapses[i].learning_rule(&(snn->synapses[i]), t); 
+
+                    #ifndef PAR_SAMPLES
+                    #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+                    #endif
+                    for(i = 0; i<tmp_snn->n_synapses; i++) // O(m)
+                        tmp_snn->synapses[i].learning_rule(&(tmp_snn->synapses[i]), t); 
                 }
 
                 clock_gettime(CLOCK_MONOTONIC, &end_learning);
@@ -272,21 +312,46 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             results_per_sample->elapsed_time_sample += (end_sample.tv_sec - start_sample.tv_sec) + (end_sample.tv_nsec - start_sample.tv_nsec) / 1e9;
         }
 
+        #pragma omp barrier
+
         // sum all dw
         /*for(i = 0; i<snn->n_synapses; i++){
             snn->Dw += snn->n_
         }*/
 
 
+        results->elapsed_time_neurons_input = 0; // elapsed time processing neurons input 
+        results->elapsed_time_neurons_output = 0; // elapsed time processing neurons output
+        results->elapsed_time_learning = 0; // elapsed time processing learning rules
+        results->elapsed_time_sample = 0;
+        results->elapsed_time_load_sample = 0;
+        results->elapsed_time_re_neurons = 0;
+        results->elapsed_time_re_synapses = 0;
+
+
+        // sum all execution times
+        for(i = 0; i<n_samples; i++){
+            
+            results->elapsed_time_neurons_input += results->results_per_sample[i].elapsed_time_neurons_input; // elapsed time processing neurons input 
+            results->elapsed_time_neurons_output += results->results_per_sample[i].elapsed_time_neurons_output; // elapsed time processing neurons output
+            results->elapsed_time_learning += results->results_per_sample[i].elapsed_time_learning; // elapsed time processing learning rules
+            results->elapsed_time_sample += results->results_per_sample[i].elapsed_time_sample;
+            results->elapsed_time_load_sample += results->results_per_sample[i].elapsed_time_load_sample;
+            results->elapsed_time_re_neurons += results->results_per_sample[i].elapsed_time_re_neurons;
+            results->elapsed_time_re_synapses += results->results_per_sample[i].elapsed_time_re_synapses;
+        }
+
 
 
         // update weights O(m) (only if we are learning)
         if(conf->learn == 1){
             clock_gettime(CLOCK_MONOTONIC, &start_learning);
+
+            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
             for(i = 0; i<snn->n_synapses; i++)
                 update_weight(&(snn->synapses[i]));
             clock_gettime(CLOCK_MONOTONIC, &end_learning);
-            results_per_sample->elapsed_time_learning += (end_learning.tv_sec - start_learning.tv_sec) + (end_learning.tv_nsec - start_learning.tv_nsec) / 1e9;
+            results->elapsed_time_learning += (end_learning.tv_sec - start_learning.tv_sec) + (end_learning.tv_nsec - start_learning.tv_nsec) / 1e9;
         }
 
 
@@ -329,13 +394,13 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         //printf(" > Accuracy in epoch %d: %lf\n", e, (double)acc / (double)n_samples);
         printf(" > Epoch %d\n", e);
         printf(" >>> Epoch time %lf\n", results->elapsed_time_epoch);
-        printf(" >>> Mean sample sim. time %lf\n", results_per_sample->elapsed_time_sample / (double)n_samples);
-        printf(" >>> Mean re neurons %lf\n", results_per_sample->elapsed_time_re_neurons / (double)n_samples);
-        printf(" >>> Mean re synapses %lf\n", results_per_sample->elapsed_time_re_synapses / (double)n_samples);
-        printf(" >>> Mean load sample %lf\n", results_per_sample->elapsed_time_load_sample / (double)n_samples);
-        printf(" >>> Mean input step %lf (per time step %lf)\n", results_per_sample->elapsed_time_neurons_input / (double)n_samples, results_per_sample->elapsed_time_neurons_input / (double)n_samples / (double)conf->time_steps);
-        printf(" >>> Mean output step %lf (per time step %lf)\n", results_per_sample->elapsed_time_neurons_output / (double)n_samples, results_per_sample->elapsed_time_neurons_output / (double)n_samples / (double)conf->time_steps);
-        printf(" >>> Mean learning rules %lf (per time step %lf)\n", results_per_sample->elapsed_time_learning / (double)n_samples, results_per_sample->elapsed_time_learning / (double)n_samples / (double)conf->time_steps);
+        printf(" >>> Mean sample sim. time %lf (%lf)\n", results->elapsed_time_sample, results->elapsed_time_sample / (double)n_samples);
+        printf(" >>> Mean re neurons %lf (%lf)\n", results->elapsed_time_re_neurons, results->elapsed_time_re_neurons / (double)n_samples);
+        printf(" >>> Mean re synapses %lf (%lf)\n", results->elapsed_time_re_synapses, results->elapsed_time_re_synapses / (double)n_samples);
+        printf(" >>> Mean load sample %lf (%lf)\n", results->elapsed_time_load_sample, results->elapsed_time_load_sample / (double)n_samples);
+        printf(" >>> Mean input step %lf (%lf)\n", results->elapsed_time_neurons_input, results->elapsed_time_neurons_input / (double)n_samples);
+        printf(" >>> Mean output step %lf (%lf)\n", results->elapsed_time_neurons_output, results->elapsed_time_neurons_output / (double)n_samples);
+        printf(" >>> Mean learning rules %lf (%lf)\n", results->elapsed_time_learning, results->elapsed_time_learning / (double)n_samples);
         fflush(stdout);
         
         

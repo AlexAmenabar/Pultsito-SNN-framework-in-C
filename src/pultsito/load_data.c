@@ -800,9 +800,6 @@ void store_generated_spikes(simulation_results_t *results, simulation_configurat
 
 void store_network(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn){
     
-    int i,j;
-
-
     // TODO: In this moment this function only stores the first sample results
     simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
     FILE *f;

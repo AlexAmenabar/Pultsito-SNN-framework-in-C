@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
     int i, j;
 
     // I think that too much structures are used, probably this should be refactorized
-    spiking_nn_t snn, *snns; // SNN structure
+    spiking_nn_t snn; // base SNN structure and copies to process samples in parallel
     simulation_configuration_t conf; // simulation configuration data
     simulation_results_t train_results, test_results; // simulation results
     network_construction_lists_t lists; // structures to 
@@ -64,6 +64,7 @@ int main(int argc, char *argv[]) {
     // initialize struct to store results
     printf(" > Initializing results struct...\n");
     
+    // TODO: this is too much, probably one struct for each process and a file for each sample? Epoch?
     initialize_results_struct(&train_results, &conf, train_dataset.n_samples, snn.n_neurons);
     if(conf.test_provided == 1)
         initialize_results_struct(&test_results, &conf, test_dataset.n_samples, snn.n_neurons);
@@ -79,16 +80,17 @@ int main(int argc, char *argv[]) {
  
 
     // copy the network n times // TODO: this can be paralelized
-    /*printf(" Copying network...\n");
-    snns = (spiking_nn_t *)malloc(3 * sizeof(spiking_nn_t));
-    for(i = 0; i<3; i++){
-        cp_network(&(snns[i]), &snn, &conf);
+/*#ifdef PAR_SAMPLES 
+    printf(" > Copying network %d times...\n", conf.n_process);
+    pr_snns = (spiking_nn_t *)malloc(conf.n_process * sizeof(spiking_nn_t));
+    for(i = 0; i<conf.n_process; i++){
+        cp_network(&(pr_snns[i]), &snn, &conf);
     }
-    printf(" Network copied!\n");
+    printf(" > Network copied!\n");
     fflush(stdout);
+#endif*/
 
-
-    printf("Initializing training / simulation\n");*/
+    printf("Initializing training / simulation\n");
 
 
 
@@ -99,54 +101,10 @@ int main(int argc, char *argv[]) {
     if(conf.test_provided == 1)
         test_network(&snn, &conf, &test_results, &test_dataset);
 
-
     // store results
     store_results(&train_results, &conf, &snn, &train_dataset);
 
-    // Run the simulation
-    
-    
-    //simulate_samples(&snn, &conf, &results, , 1);
-
-/*#ifndef BY_SAMPLE
-
-    #ifndef CUDA
-        int reps = 1;
-        for(i=0; i<reps; i++){
-            simulate(&snn, &conf, &results);
-        }
-        // compute means of execution times
-        results.results_per_sample[0].elapsed_time_neurons = results.results_per_sample[0].elapsed_time_neurons / reps;
-        results.results_per_sample[0].elapsed_time_neurons_input = results.results_per_sample[0].elapsed_time_neurons_input / reps;
-        results.results_per_sample[0].elapsed_time_neurons_output = results.results_per_sample[0].elapsed_time_neurons_output / reps;
-        results.results_per_sample[0].elapsed_time_synapses = results.results_per_sample[0].elapsed_time_synapses / reps;
-        results.results_per_sample[0].elapsed_time_synapses_input = results.results_per_sample[0].elapsed_time_synapses_input / reps;
-        results.results_per_sample[0].elapsed_time_synapses_output = results.results_per_sample[0].elapsed_time_synapses_output / reps;
-        results.results_per_sample[0].elapsed_time_learning = results.results_per_sample[0].elapsed_time_learning / reps; 
-    #else
-    printf(" RUNING ON CUDA\n");
-    fflush(stdout);
-        simulate_in_GPU(&snn, &conf, &results);
-    #endif
-#else
-
-    // load samples
-    printf(" RUNING ON CUDA\n");
-    fflush(stdout);
-        simulate_in_GPU(&snn, &conf, &results);
-
-    #ifndef CUDA
-        simulate_samples();
-    #else
-    #endif
-#endif*/
-
-
-    // store results (fnal network, execution times...)
-    //store_results(&results, &conf, &snn);
-
     // free memory
-    // TODO
 
 
     return 0;

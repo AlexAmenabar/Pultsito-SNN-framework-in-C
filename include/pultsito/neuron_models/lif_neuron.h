@@ -45,7 +45,7 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
 /// @param data Arrays containing the values to initialize the neuron with
 /// @param n_input_synapse // Number of input synapses for the neuron
 /// @param n_output_synapse // Number of output synapses for the neuron
-void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *data, int n_input_synapse, int n_output_synapse);
+void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *data, int n_input_synapse, int n_output_synapse, int max_spikes);
 
 /// @brief Initialize a lif neuron
 /// @param snn SNN structure with neuron information
@@ -68,10 +68,11 @@ void add_input_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int sy
 /// @param synapse_index Synapse to be added to the neuron
 void add_output_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index);
 
-/// @brief Function to copy lif neurons
-/// @param cp_snn Structure to copy neurons in
-/// @param or_snn Structure to copy neurons from
-void cp_lif_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
+/// @brief Copy lif neurons from a network to another
+/// @param cp_lifs 
+/// @param or_lifs 
+/// @param n_neurons 
+void cp_lif_neurons(lif_neuron_t *cp_lifs, lif_neuron_t *or_lifs, int n_neurons);
 
 /// @brief Load a sample in the network, where each spike train of the sample is loaded in a neuron
 /// @param snn SNN structure with the neurons

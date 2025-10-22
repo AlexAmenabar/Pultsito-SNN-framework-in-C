@@ -108,9 +108,8 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
 
     lif_neuron_t *lif_neuron, *pre_lif_neuron;
     synapse_t *synapse;
-    int i, next_spike_time, synapse_index, delay, msb; //pre_neuron_index; 
+    int i, next_spike_time, synapse_index, delay; //pre_neuron_index; 
     double I = 0, w;
-
 
     // get neuron to be processed
     lif_neuron = &(snn->lif_neurons[neuron_id]);
@@ -209,7 +208,7 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
     }
 }
 
-void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *data, int n_input_synapse, int n_output_synapse){
+void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *data, int n_input_synapse, int n_output_synapse, int max_spikes){
  
     int i;
     lif_neuron_t *neuron;
@@ -261,10 +260,10 @@ void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construc
     }
 
     // Probably this MAX_SPIKES should be an input parameter or an L correctly computed
-    neuron->spike_times_arr = (int *)malloc(MAX_SPIKES * sizeof(int));
-    for(i = 0; i<MAX_SPIKES; i++)
+    neuron->spike_times_arr = (int *)malloc(max_spikes * sizeof(int));
+    for(i = 0; i<max_spikes; i++)
         neuron->spike_times_arr[i] = -1; // no spikes yet
-    neuron->max_spikes = MAX_SPIKES;
+    neuron->max_spikes = max_spikes;
 }
 
 void re_initialize_lif_neuron(spiking_nn_t *snn, int neuron_index){
@@ -295,7 +294,7 @@ void re_initialize_lif_neuron(spiking_nn_t *snn, int neuron_index){
     for(i=0; i<neuron->n_input_synapse; i++)
         neuron->next_spike_index[i] = 0;
 
-    for(i = 0; i<MAX_SPIKES; i++)
+    for(i = 0; i<neuron->max_spikes; i++)
         neuron->spike_times_arr[i] = -1; // no spikes yet
 }
 
@@ -327,39 +326,41 @@ void add_output_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int s
     synapse->pre_neuron_index = neuron_index;
 }
 
-void cp_lif_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
+void cp_lif_neurons(lif_neuron_t *cp_lifs, lif_neuron_t *or_lifs, int n_neurons){
 
     int i, j;
-    lif_neuron_t *or_lif, *cp_lif;
+    lif_neuron_t *or_lif, *cp_lif; // helpers
 
-    cp_snn->lif_neurons = (lif_neuron_t *)malloc(or_snn->n_neurons * sizeof(lif_neuron_t));
+    // copy each neuron
+    for(i = 0; i<n_neurons; i++){
 
-    for(i = 0; i<or_snn->n_neurons; i++){
+        // get original and copy neurons
+        or_lif = &(or_lifs[i]);
+        cp_lif = &(cp_lifs[i]);
 
-        or_lif = &(or_snn->lif_neurons[i]);
-        cp_lif = &(cp_snn->lif_neurons[i]);
-
-        // synapses data
-        cp_lif->n_input_synapse = or_lif->n_input_synapse;
+        // copy synapses data
+        cp_lif->n_input_synapse = or_lif->n_input_synapse; // number of input synapses
         cp_lif->input_synapse_indexes = (int *)malloc(cp_lif->n_input_synapse * sizeof(int));
         for(j = 0; j<cp_lif->n_input_synapse; j++){
             cp_lif->input_synapse_indexes[j] = or_lif->input_synapse_indexes[j];
         }
 
+        // copy output synapses data
         cp_lif->n_output_synapse = or_lif->n_output_synapse;
         cp_lif->output_synapse_indexes = (int *)malloc(cp_lif->n_output_synapse * sizeof(int));
         for(j = 0; j<cp_lif->n_output_synapse; j++){
             cp_lif->output_synapse_indexes[j] = or_lif->output_synapse_indexes[j];
         }
 
+        // initialize the index of the next spikes to be processed
         cp_lif->next_spike_index = (int *)calloc(cp_lif->n_input_synapse, sizeof(int));
 
 
-        // input / output
+        // set whether neuron is input or output
         cp_lif->is_input_neuron = or_lif->is_input_neuron;
         cp_lif->is_output_neuron = or_lif->is_output_neuron;
 
-        // general data
+        // copy general data
         cp_lif->excitatory = or_lif->excitatory;
         cp_lif->v = or_lif->v;
         cp_lif->r = or_lif->r;
@@ -367,11 +368,12 @@ void cp_lif_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
         cp_lif->v_tresh = or_lif->v_tresh;
         cp_lif->r_time = or_lif->r_time;
         cp_lif->r_time_rest = or_lif->r_time_rest;
-        cp_lif->t_last_spike = or_lif->t_last_spike;
+        cp_lif->t_last_spike = or_lif->t_last_spike; // this should be 0
 
         // spike array
         cp_lif->last_spike = or_lif->last_spike;
         cp_lif->max_spikes = or_lif->max_spikes;
+        // initialize array
         cp_lif->spike_times_arr = (int *)malloc(cp_lif->max_spikes * sizeof(int));
         for(j = 0; j<cp_lif->max_spikes; j++){
             cp_lif->spike_times_arr[j] = -1;

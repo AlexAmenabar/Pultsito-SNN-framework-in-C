@@ -33,12 +33,12 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
     }
 
     // initialize neurons of the network
-    initialize_neurons(snn, data);
+    initialize_neurons(snn, conf, data);
     printf(" >> Neurons initialized!\n");
     fflush(stdout);
 
     // initialize synapses
-    initialize_synapses(snn, snn->n_synapses, data);
+    initialize_synapses(snn, snn->n_synapses, conf, data);
     snn->Dw = (double *)calloc(snn->n_synapses, sizeof(double));
     printf(" >> Synapses initialized!\n");
     fflush(stdout);
@@ -96,8 +96,8 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         
         lif_neuron_t *neuron = &(snn->input_lif_neurons[i]);
 
-        neuron->spike_times_arr = (int *)calloc(INPUT_MAX_SPIKES, sizeof(int));
-        neuron->max_spikes = INPUT_MAX_SPIKES;
+        neuron->spike_times_arr = (int *)calloc(conf->max_input_spikes, sizeof(int));
+        neuron->max_spikes = conf->max_input_spikes;
 
         // connect input layer neurons with the rest 
         neuron->n_output_synapse = 1;
@@ -146,7 +146,7 @@ void initialize_network_function_pointers(spiking_nn_t *snn){
 }
 
 
-void initialize_neurons(spiking_nn_t *snn, network_construction_lists_t *data){
+void initialize_neurons(spiking_nn_t *snn, simulation_configuration_t  *conf, network_construction_lists_t *data){
     
     int i, j;
     int *neurons_input_synapses, *neurons_output_synapses;
@@ -193,7 +193,7 @@ void initialize_neurons(spiking_nn_t *snn, network_construction_lists_t *data){
     for(i=0; i<snn->n_neurons; i++){
 
         if(snn->neuron_type == 0){ // lif neurons
-            initialize_lif_neuron(snn, i, data, neurons_input_synapses[i], neurons_output_synapses[i]);
+            initialize_lif_neuron(snn, i, data, neurons_input_synapses[i], neurons_output_synapses[i], conf->max_spikes);
         }
     }
 
@@ -203,7 +203,7 @@ void initialize_neurons(spiking_nn_t *snn, network_construction_lists_t *data){
 }
 
 
-void initialize_synapses(spiking_nn_t *snn, int n_synapses, network_construction_lists_t *data){
+void initialize_synapses(spiking_nn_t *snn, int n_synapses, simulation_configuration_t *conf, network_construction_lists_t *data){
     
     int i;
 
@@ -383,9 +383,16 @@ void cp_network(spiking_nn_t *cp_snn, spiking_nn_t *or_snn, simulation_configura
     cp_snn->complete_step = or_snn->complete_step;
     cp_snn->input_step = or_snn->input_step;
     cp_snn->output_step = or_snn->output_step;
+    cp_snn->load_sample = or_snn->load_sample;
+
+    // weights change
+    cp_snn->Dw = (double*)calloc(cp_snn->n_synapses, sizeof(double));
 
     // cp neurons
     cp_neurons(cp_snn, or_snn);
+
+    // cp input neurons
+    cp_input_neurons(cp_snn, or_snn);
 
     // cp synapses
     cp_synapses(cp_snn, or_snn);
@@ -397,10 +404,37 @@ void cp_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
 
     switch(or_snn->neuron_type){
         case 0:
-            cp_lif_neurons(cp_snn, or_snn);
+            // allocate memory
+            cp_snn->lif_neurons = (lif_neuron_t *)malloc(or_snn->n_neurons * sizeof(lif_neuron_t));
+            // copy
+            cp_lif_neurons(cp_snn->lif_neurons, or_snn->lif_neurons, or_snn->n_neurons);
         break;
         default:
-            cp_lif_neurons(cp_snn, or_snn);
+            // allocate memory
+            cp_snn->lif_neurons = (lif_neuron_t *)malloc(or_snn->n_neurons * sizeof(lif_neuron_t));
+            // copy
+            cp_lif_neurons(cp_snn->lif_neurons, or_snn->lif_neurons, or_snn->n_neurons);
+        break;
+    }
+    
+}
+
+void cp_input_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
+
+    int i;
+
+    switch(or_snn->neuron_type){
+        case 0:
+            // allocate memory
+            cp_snn->input_lif_neurons = (lif_neuron_t *)malloc(or_snn->n_input * sizeof(lif_neuron_t));
+            // copy
+            cp_lif_neurons(cp_snn->input_lif_neurons, or_snn->input_lif_neurons, or_snn->n_input);
+        break;
+        default:
+            // allocate memory
+            cp_snn->input_lif_neurons = (lif_neuron_t *)malloc(or_snn->n_input * sizeof(lif_neuron_t));
+            // copy
+            cp_lif_neurons(cp_snn->input_lif_neurons, or_snn->input_lif_neurons, or_snn->n_input);        
         break;
     }
     
@@ -411,6 +445,7 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
     int i, j;
     synapse_t *cp_synapse, *or_synapse;
 
+    // allocate memory for synapses
     cp_snn->synapses = (synapse_t *)malloc(cp_snn->n_synapses * sizeof(synapse_t));
     
     for(i = 0; i<or_snn->n_synapses; i++){
@@ -419,14 +454,15 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
         cp_synapse = &(cp_snn->synapses[i]);
 
         cp_synapse->w = or_synapse->w;
+        cp_synapse->dw = or_synapse->dw; // should be 0
         cp_synapse->delay = or_synapse->delay;
         cp_synapse->lr = or_synapse->lr;
-        cp_synapse->learning_rule = or_synapse->learning_rule;
-        //cp_synapse->t_last_pre_spike = or_synapse->t_last_pre_spike;
-        //cp_synapse->t_last_post_spike = or_synapse->t_last_post_spike;
+        cp_synapse->learning_rule = or_synapse->learning_rule; // copy function pointer
+
         cp_synapse->pre_neuron_index = or_synapse->pre_neuron_index;
         cp_synapse->post_neuron_index = or_synapse->post_neuron_index;
 
+        // reference pre and post synaptic neurons
         switch(or_snn->neuron_type){
             case 0:
                 cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);

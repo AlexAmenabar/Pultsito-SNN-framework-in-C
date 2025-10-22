@@ -1,15 +1,6 @@
 #ifndef SNN_LIBRARY_H
 #define SNN_LIBRARY_H
 
-// max spikes to store per synapse
-#ifndef MAX_SPIKES
-#define MAX_SPIKES 200 
-#endif
-// I have to change the way I manage the input
-#ifndef INPUT_MAX_SPIKES
-#define INPUT_MAX_SPIKES 500 
-#endif
-
 
 // TODO: Max spikes should be an input parameter?
 
@@ -111,6 +102,16 @@ typedef struct{
     
     simulation_results_per_sample_t *results_per_sample; // [n_samples]
     double elapsed_time_epoch, elapsed_time;
+
+    double elapsed_time_neurons; // elapsed time computing neurons
+    double elapsed_time_neurons_input; // elapsed time processing neurons input 
+    double elapsed_time_neurons_output; // elapsed time processing neurons output
+    double elapsed_time_synapses; // elapsed time processing synapses
+    double elapsed_time_synapses_input; // elapsed time processing synapses input
+    double elapsed_time_synapses_output; // elapsed time processing synapses output
+    double elapsed_time_learning; // elapsed time processing learning rules
+    double elapsed_time_sample, elapsed_time_load_sample;
+    double elapsed_time_re_neurons, elapsed_time_re_synapses;
 
 } simulation_results_t;
 
@@ -233,10 +234,11 @@ typedef struct spiking_nn_t spiking_nn_t;
 struct spiking_nn_t{
 
     // network general information
+    int neuron_type; // neuron type: LIF (0)
+
     int n_neurons; // number neurons 
     int n_input; // number of input neurons
     int n_output; // number of output neurons
-    int neuron_type; // neuron type: LIF (0)
 
     int n_synapses; // number of synapses
     int n_input_synapses; // number of input synapses
@@ -247,7 +249,7 @@ struct spiking_nn_t{
     //hh_neuron_t *hh_neurons; // TODO
 
     // function pointers dependent of neuron type
-    void (*neuron_initializer)(spiking_nn_t *, int, network_construction_lists_t*, int, int); 
+    void (*neuron_initializer)(spiking_nn_t *, int, network_construction_lists_t*, int, int, int); 
     void (*neuron_re_initializer)(spiking_nn_t *, int); // function pointers to initialize neurons
     void (*complete_step)(spiking_nn_t*, int, int, simulation_results_per_sample_t*); 
     void (*input_step)(spiking_nn_t*, int, int, simulation_results_per_sample_t*); 
@@ -282,7 +284,7 @@ void initialize_network_function_pointers(spiking_nn_t *snn);
 /// @brief Function to initialize the neurons in the networks
 /// @param snn SNN structure to initialize neurons in
 /// @param lists array containing the data to initialize neurons
-void initialize_neurons(spiking_nn_t *snn, network_construction_lists_t *data);
+void initialize_neurons(spiking_nn_t *snn, simulation_configuration_t *conf, network_construction_lists_t *data);
 
 // !!!! Neurons initilization functions are located in their respective files in neuron_models directory
 
@@ -293,7 +295,7 @@ void initialize_neurons(spiking_nn_t *snn, network_construction_lists_t *data);
 /// @param snn SNN structure to initialize synapses in
 /// @param n_synapses Number of synapses in the network
 /// @param data Structure containing the data to initialize synapses
-void initialize_synapses(spiking_nn_t *snn, int n_synapses, network_construction_lists_t *data);
+void initialize_synapses(spiking_nn_t *snn, int n_synapses, simulation_configuration_t *conf, network_construction_lists_t *data);
 
 /// @brief Function to initialize a synapse
 /// @param synapse Synapse structure to be initialized
@@ -357,6 +359,11 @@ void cp_network(spiking_nn_t *cp_snn, spiking_nn_t *or_snn, simulation_configura
 /// @param cp_snn Struct to copy neurons in
 /// @param or_snn Struct to copy neurons from
 void cp_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
+
+/// @brief 
+/// @param cp_snn 
+/// @param or_snn 
+void cp_input_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
 
 /// @brief Function to copy synapses
 /// @param cp_snn Struct to copy synapses in
