@@ -91,38 +91,46 @@ double copy_snn_structure_to_GPU(spiking_nn_t *snn){
     printf(" > Copying data to GPU memory");
     fflush(stdout);
 
-    /* Memory allocation and transfer */
+    /* Memory allocation and copy */
 
-    cudaMalloc(&d_snn, sizeof(spiking_nn_t)); // allocate memory for neurons
-    cudaMemcpy(d_snn, snn, sizeof(spiking_nn_t), cudaMemcpyHostToDevice); // copy neurons information
+    cudaMalloc(&d_snn, sizeof(spiking_nn_t)); // allocate memory for SNN structure
+    cudaMemcpy(d_snn, snn, sizeof(spiking_nn_t), cudaMemcpyHostToDevice); // copy SNN information
 
+    // allocate memory for neurons and copy data // IF...
     cudaMalloc(&d_lif_neurons, snn->n_neurons * sizeof(lif_neuron_t)); // allocate memory for neurons
     cudaMemcpy(d_lif_neurons, snn->lif_neurons, snn->n_neurons * sizeof(lif_neuron_t), cudaMemcpyHostToDevice); // copy neurons information
 
+    // allocate memory for synapses and copy data
     cudaMalloc(&d_synapses, snn->n_synapses * sizeof(synapse_t)); // allocate memory for synapses
     cudaMemcpy(d_synapses, snn->synapses, snn->n_synapses * sizeof(synapse_t), cudaMemcpyHostToDevice); // copy synapses information
 
 
-
-    d_snn->lif_neurons = d_lif_neurons;
+    // add synapses and neurons to the SNN
+    d_snn->lif_neurons = d_lif_neurons; // IF...
     d_snn->synapses = d_synapses;
+
+
     // TODO: connect neuron initializer... if it is necessary
 
 
     // allocate memory for each neuron elements
     for(i = 0; i<snn->n_neurons; i++){
+        
+        // THIS SHOULD BE A FUNCTION SINCE IT DEPENDS ON THE NEURON TYPE
+            
         //gpuErrchk(cudaMalloc(&d_lif_neurons[i].input_synapse_indexes, snn->lif_neurons[i].n_input_synapse * sizeof(int)));
         
-        // allocate memory for input and outpyt synapse indexes, and copy
+        // allocate memory for input and output synapse indexes
         cudaMalloc(&d_lif_neurons[i].input_synapse_indexes, snn->lif_neurons[i].n_input_synapse * sizeof(int));
         cudaMalloc(&d_lif_neurons[i].output_synapse_indexes, snn->lif_neurons[i].n_output_synapse * sizeof(int));
+        // copy memory for input and output synapses indexes
         cudaMemcpy(&d_lif_neurons[i].input_synapse_indexes, snn->lif_neurons[i].input_synapse_indexes, snn->lif_neurons[i].n_input_synapse * sizeof(int), cudaMemcpyHostToDevice);
         cudaMemcpy(&d_lif_neurons[i].output_synapse_indexes, snn->lif_neurons[i].output_synapse_indexes, snn->lif_neurons[i].n_output_synapse * sizeof(int), cudaMemcpyHostToDevice);
 
         // allocate memory for next spike indexes and initialize
         cudaMalloc(&d_lif_neurons[i].next_spike_index, snn->lif_neurons[i].n_input_synapse * sizeof(int));     
         for(j = 0; j<snn->lif_neurons[i].n_input_synapse; j++){
-            d_lif_neurons[i].next_spike_index[j] = 0;
+            d_lif_neurons[i].next_spike_index[j] = 0; // all are initialize as 0
         }  
 
         // allocate memory for spike times and initialize
@@ -133,11 +141,14 @@ double copy_snn_structure_to_GPU(spiking_nn_t *snn){
     }
 
 
-    /* initialize references (pointers) */
+    /* Initialize references (pointers) */
+    // connect neurons and synapses
     
     // connect neurons and synapses
     lif_neuron_t *d_neuron;
     synapse_t *d_synapse;
+
+    // loop over neuyrons and connect to synapses
     for(i=0; i<snn->n_neurons; i++){
 
         d_neuron = &(d_lif_neurons[i]);
@@ -154,49 +165,8 @@ double copy_snn_structure_to_GPU(spiking_nn_t *snn){
         }
     }
     
-    // set training rule for synapse // TODO: this must be refactorized to a function
 
-    /*for(i=0; i<snn->n_synapses; i++){
-        synapse_t *d_synapse = &(d_synapses[i]);
-
-        switch (d_synapse->lr) // get synapse training zone from list
-        {
-            case 0:
-                d_synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
-                break;
-            case 1:
-                d_synapse->learning_rule = &mult_stdp;//(void (*)())&mult_stdp;
-                break;
-            case 2:
-                d_synapse->learning_rule = &anti_stdp;//(void (*)())&anti_stdp;
-                break;
-            //case 3:
-            //    synapse->learning_rule = &triplet_stdp;//(void (*)())&triplet_stdp;
-            //    break;*/
-            /*default:
-                d_synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
-                break;
-        }
-    }*/
-    
-
-
-    /* Copy information from CPU to GPU */
-
-    // copy information to gpu
-    //gpuErrchk(cudaMemcpy(d_lif_neurons, snn->lif_neurons, snn->n_neurons * sizeof(lif_neuron_t), cudaMemcpyHostToDevice));
-    //gpuErrchk(cudaMemcpy(d_synapses, snn->synapses, snn->n_synapses * sizeof(synapse_t), cudaMemcpyHostToDevice));
-
-    // copy neurons information
-
-    // copy synapses information
-
-    // copy info of neurons (ONLY POINTERS; HOW IS THE REST OF INFORMATION PASSED?)
-    for(int i = 0; i<snn->n_neurons; i++){
-        cudaMemcpy(d_lif_neurons[i].input_synapse_indexes, snn->lif_neurons[i].input_synapse_indexes, snn->lif_neurons[i].n_input_synapse * sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_lif_neurons[i].output_synapse_indexes, snn->lif_neurons[i].output_synapse_indexes, snn->lif_neurons[i].n_output_synapse * sizeof(int), cudaMemcpyHostToDevice);
-   }
-
+    // initialize function pointers
 
     return 0.0;    
 }

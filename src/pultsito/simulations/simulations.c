@@ -178,11 +178,31 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     clock_gettime(CLOCK_MONOTONIC, &start);
 
 
+    // set number of processes to simulate in parallel for each possible strategy
+    int p_outer = 0, p_inner = 0, n_outer = 0, n_inner = 0;
+
+    #ifdef NESTED
+        omp_set_dynamic(0); // disable dynamic threads (I do not understand this very well)
+        omp_set_nested(1); // allow nested parallelism
+
+        // number of processes
+        p_inner = 4;
+        n_inner = snn->n_neurons / p_inner * 0.1;
+        p_outer = n_process / p_inner;
+        n_outer = 1;//snn->n_neurons / p_outer * 0.1;
+    #elif PAR_SAMPLES
+        p_outer = n_process;
+        n_outer = 1;//snn->n_neurons / p_outer * 0.1;
+    #else
+        p_inner = n_process;
+        n_inner = snn->n_neurons / p_inner * 0.1;
+    #endif
+
     // copy networks if necessary
-#ifdef PAR_SAMPLES 
-    printf(" > Copying network %d times...\n", n_process);
-    pr_snns = (spiking_nn_t *)malloc(n_process * sizeof(spiking_nn_t));
-    for(i = 0; i<n_process; i++){
+#if defined PAR_SAMPLES || defined NESTED 
+    printf(" > Copying network %d times...\n", p_outer);
+    pr_snns = (spiking_nn_t *)malloc(p_outer * sizeof(spiking_nn_t));
+    for(i = 0; i<p_outer; i++){
         cp_network(&(pr_snns[i]), snn, conf);
     }
     printf(" > Network copied!\n");
@@ -196,12 +216,12 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         clock_gettime(CLOCK_MONOTONIC, &start_epoch);
 
         // simulate samples
-        #ifdef PAR_SAMPLES
-        #pragma omp parallel for num_threads(n_process) schedule(dynamic, 10) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
+        #if defined PAR_SAMPLES || defined NESTED
+        #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
         #endif
         for(s = 0; s<n_samples; s++){
 
-            #ifdef PAR_SAMPLES
+            #if defined PAR_SAMPLES || defined NESTED
             printf(" Thread = %d, sample %d\n", omp_get_thread_num(), s);
             tmp_snn = &(pr_snns[omp_get_thread_num()]);
             #else
@@ -209,7 +229,7 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             #endif
 
             //if(s % 10 == 0)
-                printf(" > Sample %d\n", s);
+            printf(" > Sample %d\n", s);
             //fflush(stdout);
 
             // sample started
@@ -218,8 +238,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             // get results struct and reinitialize necessary data // TODO: actually is temporal
             results_per_sample = &(results->results_per_sample[s]);
             
-            #ifndef PAR_SAMPLES
-            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+            #if !defined PAR_SAMPLES || defined NESTED
+            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
             #endif
             for(i = 0; i<tmp_snn->n_neurons; i++){
                 results_per_sample->n_spikes_per_neuron[i] = 0;
@@ -228,8 +248,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             // reinitialize neurons O(n)
             clock_gettime(CLOCK_MONOTONIC, &start_re_neurons);
 
-            #ifndef PAR_SAMPLES
-            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+            #if !defined PAR_SAMPLES || defined NESTED
+            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
             #endif
             for(i = 0; i<tmp_snn->n_neurons; i++){
                 tmp_snn->neuron_re_initializer(tmp_snn, i);
@@ -239,8 +259,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             // reinitialize synapses O(m)
             clock_gettime(CLOCK_MONOTONIC, &start_re_synapses);
 
-            #ifndef PAR_SAMPLES
-            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+            #if !defined PAR_SAMPLES || defined NESTED
+            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
             #endif
             for(i = 0; i<tmp_snn->n_synapses; i++){
                 re_initialize_synapse(&(tmp_snn->synapses[i]));
@@ -262,8 +282,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                 // input step
                 clock_gettime(CLOCK_MONOTONIC, &start_neurons_input);
 
-                #ifndef PAR_SAMPLES
-                #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+                #if !defined PAR_SAMPLES || defined NESTED
+                #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
                 #endif
                 for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
                     tmp_snn->input_step(tmp_snn, t, i, results_per_sample);
@@ -273,8 +293,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                 // output step
                 clock_gettime(CLOCK_MONOTONIC, &start_neurons_output);
                 
-                #ifndef PAR_SAMPLES
-                #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+                #if !defined PAR_SAMPLES || defined NESTED
+                #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
                 #endif
                 for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
                     tmp_snn->output_step(tmp_snn, t, i, results_per_sample);
@@ -286,8 +306,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                 
                 if(conf->learn == 1){
 
-                    #ifndef PAR_SAMPLES
-                    #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+                    #if !defined PAR_SAMPLES || defined NESTED
+                    #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
                     #endif
                     for(i = 0; i<tmp_snn->n_synapses; i++) // O(m)
                         tmp_snn->synapses[i].learning_rule(&(tmp_snn->synapses[i]), t); 
@@ -347,7 +367,7 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         if(conf->learn == 1){
             clock_gettime(CLOCK_MONOTONIC, &start_learning);
 
-            #pragma omp parallel for num_threads(n_process) schedule(guided, n) private(i) 
+            #pragma omp parallel for num_threads(p_outer * p_inner) schedule(guided, n_outer) private(i) 
             for(i = 0; i<snn->n_synapses; i++)
                 update_weight(&(snn->synapses[i]));
             clock_gettime(CLOCK_MONOTONIC, &end_learning);
