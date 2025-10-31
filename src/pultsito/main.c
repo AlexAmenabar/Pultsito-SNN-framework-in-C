@@ -95,11 +95,18 @@ int main(int argc, char *argv[]) {
 
 
     // train the network
-    train_network(&snn, &conf, &train_results, &train_dataset);
+    if(conf.cuda == 0){
+        train_network(&snn, &conf, &train_results, &train_dataset);
 
-    // test the network
-    if(conf.test_provided == 1)
-        test_network(&snn, &conf, &test_results, &test_dataset);
+        // test the network
+        if(conf.test_provided == 1)
+            test_network(&snn, &conf, &test_results, &test_dataset);
+    }
+    else{
+        #ifdef CUDA
+        simulate_in_GPU(&snn, &conf, &train_dataset, &train_results);
+        #endif
+    }
 
     // store results
     store_results(&train_results, &conf, &snn, &train_dataset);

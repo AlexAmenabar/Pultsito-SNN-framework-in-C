@@ -95,13 +95,13 @@ void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_re
                 #endif      
 
                 // process learning if it is necessary
-                #ifndef NOLEARN 
+                //#ifndef NOLEARN 
                 if(conf->learn == 1){
                     #pragma omp for schedule(static, 50) private(i)
                     for(i = 0; i<snn->n_synapses; i++)
                             snn->synapses[i].learning_rule(&(snn->synapses[i]), time_step); 
                 }
-                #endif
+                //#endif
 
                 #pragma omp master
                 {
@@ -438,11 +438,11 @@ void train_network(spiking_nn_t *snn, simulation_configuration_t *conf, simulati
 
     int learn  = conf->learn;
     
-    conf->learn = 1;
+    //conf->learn = 1;
 
     simulate_samples(snn, conf, results, dataset);
 
-    conf->learn = learn;
+    //conf->learn = learn;
 }
 
 void test_network(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset){

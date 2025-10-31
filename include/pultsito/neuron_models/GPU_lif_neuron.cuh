@@ -21,17 +21,73 @@
        }                                                         \
      } while (0)
 
-double process_simulation_lif_neuron(spiking_nn_t *snn, int n, int m, int time_steps);
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-void simulate_in_GPU(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
+
+
+/// @brief LIF neuron model structure
+typedef struct {
+
+  // neccessary parameters for all neurons
+  float *v;
+  float *v_thresh;
+  float *v_rest;
+  int *r_period;
+  int *r_period_remain;
+  int *res;
+
+  // input and output synapses
+  int *in_synapses, *in_off;
+  int *out_synapses, *out_off;
+
+  // spike arrays
+  int *spk_matrix; 
+
+  // neuron model dependent variables
+
+
+  // synapses
+  float *w; // synapse weight
+  float *dw; // weight change
+  int *delay; // latency
+  int *lr; // learning rule index
+  int *pre_neuron_index;
+  int *post_neuron_index;
+
+} GPU_SNN_t;
+
+
+/// @brief LIF neuron model structure
+typedef struct {
+
+  int type;
+  int n_classes;
+
+  int n_samples; // number of samples in the dataset
+  int *n_features; // number of features for samples [n_samples] // TODO: For now, suppose all samples have the same number of features
+  int *n_spikes; // n spikes per each sample element [n_samples * n_features]. FOr now, suppse all samples have the same number of features
+
+  int *sample_offset; // indicates where each sample starts [n_samples]
+  int *feature_offset; // indicates the local offset of each element in the sample [n_samples * sample_size]. Sample size can be different for each sample
+
+  int *spikes; // the entire dataset is stored in a 1D array
+
+} GPU_input_info_t;
+
+
+double process_simulation_lif_neuron(spiking_nn_t *snn, int n, int m, int time_steps);
+void simulate_in_GPU(spiking_nn_t *snn, simulation_configuration_t *conf, input_data_t *dataset, simulation_results_t *results);
+
+GPU_SNN_t* copy_snn_structure_to_GPU(spiking_nn_t *snn, int n);
+GPU_input_info_t* copy_dataset_to_GPU(input_data_t *dataset);
+void simulate_snn_in_GPU(GPU_SNN_t *snn, simulation_configuration_t *conf, GPU_input_info_t *dataset, simulation_results_t *results);
+
 #ifdef __cplusplus
 }
 #endif
 
-double copy_snn_structure_to_GPU(spiking_nn_t *snn);
 
 #endif
