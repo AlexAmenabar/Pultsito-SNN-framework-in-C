@@ -15,6 +15,7 @@ typedef struct{
     int neuron_type; // neuron type (LIF...)
     int simulation_obj; // simulation obj. (ML or biological simulations) // DEPRECATED???
     int n_process; // number of CPU processes
+    int n_inner_process;
     int cuda; // simulation done in cuda
     int learn; // inference (0) / training (1)
     int encode; // input encoded (0) / encode input (1) // TODO

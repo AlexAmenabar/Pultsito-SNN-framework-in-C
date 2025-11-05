@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
     printf(" > Initializing network...\n"); 
     initialize_network(&snn, &conf, &lists);
     printf(" > Network initialized!\n\n");
-
+    fflush(stdout);
 
     // load input spike train from file (different depending on execution type) // ESTO DEBERÍA CAMBIARLO; NO ME TERMINA DE GUSTAR COMO ESTÁ PASANDO DIRECTAMENTE EL PARÁMETRO DE ENTRADA
     printf(" > Loading datasets...\n");
@@ -70,12 +70,14 @@ int main(int argc, char *argv[]) {
         initialize_results_struct(&test_results, &conf, test_dataset.n_samples, snn.n_neurons);
 
     printf(" > Results strcut initialized!\n");
+    fflush(stdout);
 
 
 #ifdef REORDER
     printf(" > Reordering synapses list...\n");
     reorder_synapse_list(&snn);
     printf(" > List of synapses reordered!\n");
+    fflush(stdout);
 #endif
  
 
@@ -91,8 +93,7 @@ int main(int argc, char *argv[]) {
 #endif*/
 
     printf("Initializing training / simulation\n");
-
-
+    fflush(stdout);
 
     // train the network
     if(conf.cuda == 0){

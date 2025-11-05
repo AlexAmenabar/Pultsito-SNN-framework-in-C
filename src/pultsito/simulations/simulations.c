@@ -14,6 +14,7 @@
 #include <time.h>
 
 
+
 // DEPRECATED???
 void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset){
 
@@ -184,18 +185,23 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     #ifdef NESTED
         omp_set_dynamic(0); // disable dynamic threads (I do not understand this very well)
         omp_set_nested(1); // allow nested parallelism
+        omp_set_max_active_levels(2);
 
         // number of processes
-        p_inner = 4;
+        p_inner = conf->n_inner_process;
         n_inner = snn->n_neurons / p_inner * 0.1;
+        if(n_inner == 0) n_inner = 1;
+        
         p_outer = n_process / p_inner;
         n_outer = 1;//snn->n_neurons / p_outer * 0.1;
+
     #elif PAR_SAMPLES
         p_outer = n_process;
         n_outer = 1;//snn->n_neurons / p_outer * 0.1;
     #else
         p_inner = n_process;
         n_inner = snn->n_neurons / p_inner * 0.1;
+        if(n_inner == 0) n_inner = 1;
     #endif
 
     // copy networks if necessary
@@ -222,14 +228,19 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         for(s = 0; s<n_samples; s++){
 
             #if defined PAR_SAMPLES || defined NESTED
-            printf(" Thread = %d, sample %d\n", omp_get_thread_num(), s);
+            //printf(" Thread = %d, sample %d\n", omp_get_thread_num(), s);
             tmp_snn = &(pr_snns[omp_get_thread_num()]);
             #else
             tmp_snn = snn;
-            #endif
 
             //if(s % 10 == 0)
-            printf(" > Sample %d\n", s);
+            //    printf(" > Sample %d\n", s);
+            //fflush(stdout);
+
+            #endif
+
+
+
             //fflush(stdout);
 
             // sample started
@@ -276,8 +287,9 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             // simulate time steps for each sample
             for(t = 0; t<time_steps; t++){
 
-                //if(t % 100 == 0)
-                //    printf(" > > Time step %d\n", t);
+                //if(t % 10 == 0)
+                    //printf(" > > Time step %d\n", t);
+                //fflush(stdout);
 
                 // input step
                 clock_gettime(CLOCK_MONOTONIC, &start_neurons_input);
@@ -468,3 +480,25 @@ void test_network(spiking_nn_t *snn, simulation_configuration_t *conf, simulatio
 void stream_simulation(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results){
 
 }
+
+/*
+
+omp_set_max_active_levels(2);
+omp_set_nested(1);
+
+#pragma omp parallel num_threads(p_outer)
+{
+    int outer_id = omp_get_thread_num();
+
+    #pragma omp parallel num_threads(p_inner)
+    {
+        int inner_id = omp_get_thread_num();
+        int global_id = outer_id * p_inner + inner_id;
+
+        // Now both outer and inner threads are alive simultaneously.
+        // You can distribute work manually or with if-conditions.
+        simulate_inner(global_id, outer_id, inner_id);
+    }
+}
+
+*/

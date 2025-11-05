@@ -41,7 +41,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     toml_table_t *tbl, *tbl_general, *tbl_simulation, *tbl_dataset, *tbl_output, *tbl_network;
     
     // [general] section
-    toml_value_t execution_type, neuron_type, execution_obj, n_process, cuda, learn, encode;
+    toml_value_t execution_type, neuron_type, execution_obj, n_process, n_inner_process, cuda, learn, encode;
     
     // [simulation] section
     toml_value_t time_steps, max_spikes, max_input_spikes;
@@ -81,6 +81,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     neuron_type = toml_table_int(tbl_general, "neuron_type"); // neuron type
     execution_obj = toml_table_int(tbl_general, "execution_obj"); // execution obj. (ML,...)
     n_process = toml_table_int(tbl_general, "n_process"); // number of CPU processes
+    n_inner_process = toml_table_int(tbl_general, "n_inner_process");
     cuda = toml_table_int(tbl_general, "cuda"); // simulated on cuda
     learn = toml_table_int(tbl_general, "learn"); // inference or training
     encode = toml_table_int(tbl_general, "encode"); // encode input or not
@@ -98,6 +99,9 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     if(!n_process.ok)
         n_process.u.i = 1; // serial execution
 
+    if(!n_inner_process.ok)
+        n_inner_process.u.i = 1;
+
     if(!cuda.ok)
         cuda.u.i = 0; // no cuda
 
@@ -112,6 +116,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     conf->neuron_type = neuron_type.u.i;
     conf->simulation_obj = execution_obj.u.i;
     conf->n_process = n_process.u.i;
+    conf->n_inner_process = n_inner_process.u.i;
     conf->cuda = cuda.u.i;
     conf->learn = learn.u.i;
     conf->encode = encode.u.i;

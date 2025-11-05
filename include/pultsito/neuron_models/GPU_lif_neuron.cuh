@@ -45,6 +45,7 @@ typedef struct {
 
   // spike arrays
   int *spk_matrix; 
+  int *in_spk_matrix;
 
   // neuron model dependent variables
 
@@ -54,7 +55,7 @@ typedef struct {
   float *dw; // weight change
   int *delay; // latency
   int *lr; // learning rule index
-  int *pre_neuron_index;
+  int *pre_neuron_index; // input neurons...
   int *post_neuron_index;
 
 } GPU_SNN_t;
@@ -83,7 +84,8 @@ void simulate_in_GPU(spiking_nn_t *snn, simulation_configuration_t *conf, input_
 
 GPU_SNN_t* copy_snn_structure_to_GPU(spiking_nn_t *snn, int n);
 GPU_input_info_t* copy_dataset_to_GPU(input_data_t *dataset);
-void simulate_snn_in_GPU(GPU_SNN_t *snn, simulation_configuration_t *conf, GPU_input_info_t *dataset, simulation_results_t *results);
+void simulate_snn_in_GPU(GPU_SNN_t *gpu_snn, spiking_nn_t *snn, simulation_configuration_t *conf, GPU_input_info_t *gpu_dataset, input_data_t *dataset, simulation_results_t *results);
+
 
 #ifdef __cplusplus
 }

@@ -104,6 +104,7 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         neuron->output_synapse_indexes = (int *)malloc(neuron->n_output_synapse * sizeof(int));
         neuron->output_synapse_indexes[0] = i;
         snn->synapses[i].pre_synaptic_lif_neuron = neuron;
+        snn->synapses[i].pre_neuron_index = i; // this is in the array of input neurons
 
         neuron->r_time = 0;
         neuron->r_time_rest = 0;
@@ -462,14 +463,20 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
         cp_synapse->pre_neuron_index = or_synapse->pre_neuron_index;
         cp_synapse->post_neuron_index = or_synapse->post_neuron_index;
 
-        // reference pre and post synaptic neurons
+        // reference pre and post synaptic neurons // This does not work with input neurons...
         switch(or_snn->neuron_type){
             case 0:
-                cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);
+                if(i < or_snn->n_input)
+                    cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->input_lif_neurons[cp_synapse->pre_neuron_index]);
+                else
+                    cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);
                 cp_synapse->post_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->post_neuron_index]);
             break;
             default:
-                cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);
+                if(i < or_snn->n_input)
+                    cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->input_lif_neurons[cp_synapse->pre_neuron_index]);
+                else
+                    cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);
                 cp_synapse->post_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->post_neuron_index]);
             break;
         }

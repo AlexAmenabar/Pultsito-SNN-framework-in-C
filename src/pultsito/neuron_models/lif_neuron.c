@@ -399,6 +399,7 @@ void load_sample_in_LIF(spiking_nn_t *snn, sample_t *sample){
         }
 
         // set last spike index
+        //lif->last_spike = st->n_spikes;
         lif->last_spike = st->n_spikes;
     }
 }
