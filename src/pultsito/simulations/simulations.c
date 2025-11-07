@@ -153,6 +153,10 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     spiking_nn_t *pr_snns;
     spiking_nn_t *tmp_snn;
     
+
+    if(conf->n_process > conf->batch_size)
+        conf->n_process = conf->batch_size;
+
     n = snn->n_neurons / conf->n_process * 0.1;
     //n_samps = n_samples / conf->n_process * 0.1;
     epochs = conf->epochs;
@@ -185,7 +189,6 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
 
     // start measuring time
     clock_gettime(CLOCK_MONOTONIC, &start);
-
 
     // set number of processes to simulate in parallel for each possible strategy
     int p_outer = 0, p_inner = 0, n_outer = 0, n_inner = 0;
@@ -233,14 +236,27 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         // reorder samples
         shuffle_sample_indexes(batches, n_samples);
 
+        for(b = 0; b<n_batches; b++){
+
+            printf("[");
+            for(s = 0; s<batch_size; s++){
+
+                printf("%d ", batches[b * batch_size + s]);
+            }
+            printf("]\n");
+        }
 
         // loop over batches
         for(b = 0; b<n_batches; b++){
             
+            printf(" In batch %d\n", b);
+
             #if defined PAR_SAMPLES || defined NESTED
             #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
             #endif
             for(s = 0; s<batch_size; s++){
+
+                printf(" > In sample %d\n", s);
 
                 if(batches[batch_size * b + s] != -1){
                     
@@ -357,9 +373,9 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             }
 
             // compute metrics
-            float acc = accuracy_by_output_neurons(results, dataset, batches, conf->batch_size, b, snn->n_output);
+            //float acc = accuracy_by_output_neurons(results, dataset, batches, conf->batch_size, b, snn->n_output);
 
-            printf(" > %f\n", acc);
+            //printf(" > %f\n", acc);
             fflush(stdout);
 
             // update weights
