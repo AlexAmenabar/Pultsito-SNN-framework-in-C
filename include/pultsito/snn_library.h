@@ -19,6 +19,7 @@ typedef struct{
     int cuda; // simulation done in cuda
     int learn; // inference (0) / training (1)
     int encode; // input encoded (0) / encode input (1) // TODO
+    int batch_size; // batch size
 
     // [simulation] data
     int time_steps; // time steps of the simulations

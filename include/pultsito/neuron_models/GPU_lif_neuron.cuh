@@ -31,6 +31,13 @@ extern "C" {
 /// @brief LIF neuron model structure
 typedef struct {
 
+  int n_neurons;
+  int n_input_neurons;
+  int n_output_neurons;
+  int n_synapses;
+  int n_input_synapses;
+  int n_output_synapses;
+
   // neccessary parameters for all neurons
   float *v;
   float *v_thresh;
@@ -68,11 +75,12 @@ typedef struct {
   int n_classes;
 
   int n_samples; // number of samples in the dataset
-  int *n_features; // number of features for samples [n_samples] // TODO: For now, suppose all samples have the same number of features
-  int *n_spikes; // n spikes per each sample element [n_samples * n_features]. FOr now, suppse all samples have the same number of features
+  int n_features; // number of features of the samples
+  int *n_spikes; // n spikes per each sample element [n_samples * n_features]
 
-  int *sample_offset; // indicates where each sample starts [n_samples]
-  int *feature_offset; // indicates the local offset of each element in the sample [n_samples * sample_size]. Sample size can be different for each sample
+  int *sample_offset; // indicates where each sample starts [n_samples] in the 
+  int *feature_offset; // indicates the local offset of each element in the sample [n_samples * ~sample_size]. Sample size can be different for each sample
+  //int *sample_offset_in_n_spikes; // offset of the sample in the array of the number of spikes. This is necessary for cases in which samples have different number of features
 
   int *spikes; // the entire dataset is stored in a 1D array
 

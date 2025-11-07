@@ -7,6 +7,7 @@
 #include "training_rules/stdp.h"
 
 #include "neuron_models/lif_neuron.h"
+#include "metrics.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -148,7 +149,7 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
 
     // initialize several control variables
     int n, n_samps;
-    int epochs, n_samples, time_steps;
+    int epochs, n_samples, time_steps, batch_size;
     spiking_nn_t *pr_snns;
     spiking_nn_t *tmp_snn;
     
@@ -157,9 +158,10 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     epochs = conf->epochs;
     n_samples = dataset->n_samples;
     time_steps = conf->time_steps;
+    batch_size = conf->batch_size; // batch size
 
 
-    int i, t, s, e; 
+    int i, t, s, e, b; 
     int n_process = conf->n_process;
     struct timespec start, end; // to measure simulation complete time
     struct timespec start_epoch, end_epoch; // to measure simulation time for epochs
@@ -170,6 +172,12 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     struct timespec start_load_sample, end_load_sample; // to measure learning processing time
     struct timespec start_re_neurons, end_re_neurons; // to measure learning processing time
     struct timespec start_re_synapses, end_re_synapses; // to measure learning processing time
+
+
+
+    // create array for batches
+    int n_batches;
+    int *batches = create_batches(&n_batches, dataset, n_samples, conf->batch_size);
 
 
     // TODO: revise this
@@ -221,131 +229,146 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         // epoch started
         clock_gettime(CLOCK_MONOTONIC, &start_epoch);
 
-        // simulate samples
-        #if defined PAR_SAMPLES || defined NESTED
-        #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
-        #endif
-        for(s = 0; s<n_samples; s++){
 
+        // reorder samples
+        shuffle_sample_indexes(batches, n_samples);
+
+
+        // loop over batches
+        for(b = 0; b<n_batches; b++){
+            
             #if defined PAR_SAMPLES || defined NESTED
-            //printf(" Thread = %d, sample %d\n", omp_get_thread_num(), s);
-            tmp_snn = &(pr_snns[omp_get_thread_num()]);
-            #else
-            tmp_snn = snn;
-
-            //if(s % 10 == 0)
-            //    printf(" > Sample %d\n", s);
-            //fflush(stdout);
-
+            #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
             #endif
+            for(s = 0; s<batch_size; s++){
+
+                if(batches[batch_size * b + s] != -1){
+                    
+                    int sample_index = batches[batch_size * b + s];
+
+                    #if defined PAR_SAMPLES || defined NESTED
+                    //printf(" Thread = %d, sample %d\n", omp_get_thread_num(), s);
+                    tmp_snn = &(pr_snns[omp_get_thread_num()]);
+                    #else
+                    tmp_snn = snn;
+                    #endif
 
 
+                    // sample started
+                    clock_gettime(CLOCK_MONOTONIC, &start_sample);
 
-            //fflush(stdout);
+                    // get results struct and reinitialize necessary data // TODO: actually is temporal
+                    results_per_sample = &(results->results_per_sample[sample_index]);
+                    
+                    #if !defined PAR_SAMPLES || defined NESTED
+                    #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
+                    #endif
+                    for(i = 0; i<tmp_snn->n_neurons; i++){
+                        results_per_sample->n_spikes_per_neuron[i] = 0;
+                    }
 
-            // sample started
-            clock_gettime(CLOCK_MONOTONIC, &start_sample);
-
-            // get results struct and reinitialize necessary data // TODO: actually is temporal
-            results_per_sample = &(results->results_per_sample[s]);
-            
-            #if !defined PAR_SAMPLES || defined NESTED
-            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
-            #endif
-            for(i = 0; i<tmp_snn->n_neurons; i++){
-                results_per_sample->n_spikes_per_neuron[i] = 0;
-            }
-
-            // reinitialize neurons O(n)
-            clock_gettime(CLOCK_MONOTONIC, &start_re_neurons);
-
-            #if !defined PAR_SAMPLES || defined NESTED
-            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
-            #endif
-            for(i = 0; i<tmp_snn->n_neurons; i++){
-                tmp_snn->neuron_re_initializer(tmp_snn, i);
-            }
-            clock_gettime(CLOCK_MONOTONIC, &end_re_neurons);
-
-            // reinitialize synapses O(m)
-            clock_gettime(CLOCK_MONOTONIC, &start_re_synapses);
-
-            #if !defined PAR_SAMPLES || defined NESTED
-            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
-            #endif
-            for(i = 0; i<tmp_snn->n_synapses; i++){
-                re_initialize_synapse(&(tmp_snn->synapses[i]));
-            }
-            clock_gettime(CLOCK_MONOTONIC, &end_re_synapses);
-
-            // load sample in network 
-            clock_gettime(CLOCK_MONOTONIC, &start_load_sample);
-            tmp_snn->load_sample(tmp_snn, &(dataset->samples[s]));
-            clock_gettime(CLOCK_MONOTONIC, &end_load_sample);
-
-            
-            // simulate time steps for each sample
-            for(t = 0; t<time_steps; t++){
-
-                //if(t % 10 == 0)
-                    //printf(" > > Time step %d\n", t);
-                //fflush(stdout);
-
-                // input step
-                clock_gettime(CLOCK_MONOTONIC, &start_neurons_input);
-
-                #if !defined PAR_SAMPLES || defined NESTED
-                #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
-                #endif
-                for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
-                    tmp_snn->input_step(tmp_snn, t, i, results_per_sample);
-
-                clock_gettime(CLOCK_MONOTONIC, &end_neurons_input);
-
-                // output step
-                clock_gettime(CLOCK_MONOTONIC, &start_neurons_output);
-                
-                #if !defined PAR_SAMPLES || defined NESTED
-                #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
-                #endif
-                for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
-                    tmp_snn->output_step(tmp_snn, t, i, results_per_sample);
-
-                clock_gettime(CLOCK_MONOTONIC, &end_neurons_output);
-
-                // learning rule
-                clock_gettime(CLOCK_MONOTONIC, &start_learning);
-                
-                if(conf->learn == 1){
+                    // reinitialize neurons O(n)
+                    clock_gettime(CLOCK_MONOTONIC, &start_re_neurons);
 
                     #if !defined PAR_SAMPLES || defined NESTED
                     #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
                     #endif
-                    for(i = 0; i<tmp_snn->n_synapses; i++) // O(m)
-                        tmp_snn->synapses[i].learning_rule(&(tmp_snn->synapses[i]), t); 
-                }
+                    for(i = 0; i<tmp_snn->n_neurons; i++){
+                        tmp_snn->neuron_re_initializer(tmp_snn, i);
+                    }
+                    clock_gettime(CLOCK_MONOTONIC, &end_re_neurons);
 
-                clock_gettime(CLOCK_MONOTONIC, &end_learning);
-            
+                    // reinitialize synapses O(m)
+                    clock_gettime(CLOCK_MONOTONIC, &start_re_synapses);
+
+                    #if !defined PAR_SAMPLES || defined NESTED
+                    #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
+                    #endif
+                    for(i = 0; i<tmp_snn->n_synapses; i++){
+                        re_initialize_synapse(&(tmp_snn->synapses[i]));
+                    }
+                    clock_gettime(CLOCK_MONOTONIC, &end_re_synapses);
+
+                    // load sample in network 
+                    clock_gettime(CLOCK_MONOTONIC, &start_load_sample);
+                    tmp_snn->load_sample(tmp_snn, &(dataset->samples[sample_index]));
+                    clock_gettime(CLOCK_MONOTONIC, &end_load_sample);
+
                     
-                // sum times
-                results_per_sample->elapsed_time_neurons_input += (end_neurons_input.tv_sec - start_neurons_input.tv_sec) + (end_neurons_input.tv_nsec - start_neurons_input.tv_nsec) / 1e9;
-                results_per_sample->elapsed_time_neurons_output += (end_neurons_output.tv_sec - start_neurons_output.tv_sec) + (end_neurons_output.tv_nsec - start_neurons_output.tv_nsec) / 1e9;
-                results_per_sample->elapsed_time_learning += (end_learning.tv_sec - start_learning.tv_sec) + (end_learning.tv_nsec - start_learning.tv_nsec) / 1e9;
+                    // simulate time steps for each sample
+                    for(t = 0; t<time_steps; t++){
+
+                        //if(t % 10 == 0)
+                            //printf(" > > Time step %d\n", t);
+                        //fflush(stdout);
+
+                        // input step
+                        clock_gettime(CLOCK_MONOTONIC, &start_neurons_input);
+
+                        #if !defined PAR_SAMPLES || defined NESTED
+                        #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
+                        #endif
+                        for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
+                            tmp_snn->input_step(tmp_snn, t, i, results_per_sample);
+
+                        clock_gettime(CLOCK_MONOTONIC, &end_neurons_input);
+
+                        // output step
+                        clock_gettime(CLOCK_MONOTONIC, &start_neurons_output);
+                        
+                        #if !defined PAR_SAMPLES || defined NESTED
+                        #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
+                        #endif
+                        for(i = 0; i<tmp_snn->n_neurons; i++) // O(n)
+                            tmp_snn->output_step(tmp_snn, t, i, results_per_sample);
+
+                        clock_gettime(CLOCK_MONOTONIC, &end_neurons_output);
+
+                        // learning rule
+                        clock_gettime(CLOCK_MONOTONIC, &start_learning);
+                        
+                        if(conf->learn == 1){
+
+                            #if !defined PAR_SAMPLES || defined NESTED
+                            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
+                            #endif
+                            for(i = 0; i<tmp_snn->n_synapses; i++) // O(m)
+                                tmp_snn->synapses[i].learning_rule(&(tmp_snn->synapses[i]), t); 
+                        }
+
+                        clock_gettime(CLOCK_MONOTONIC, &end_learning);
+                    
+                            
+                        // sum times
+                        results_per_sample->elapsed_time_neurons_input += (end_neurons_input.tv_sec - start_neurons_input.tv_sec) + (end_neurons_input.tv_nsec - start_neurons_input.tv_nsec) / 1e9;
+                        results_per_sample->elapsed_time_neurons_output += (end_neurons_output.tv_sec - start_neurons_output.tv_sec) + (end_neurons_output.tv_nsec - start_neurons_output.tv_nsec) / 1e9;
+                        results_per_sample->elapsed_time_learning += (end_learning.tv_sec - start_learning.tv_sec) + (end_learning.tv_nsec - start_learning.tv_nsec) / 1e9;
+                    }
+
+                    // sample finished
+                    clock_gettime(CLOCK_MONOTONIC, &end_sample);
+
+                    results_per_sample->elapsed_time_re_neurons += (end_re_neurons.tv_sec - start_re_neurons.tv_sec) + (end_re_neurons.tv_nsec - start_re_neurons.tv_nsec) / 1e9;
+                    results_per_sample->elapsed_time_re_synapses += (end_re_synapses.tv_sec - start_re_synapses.tv_sec) + (end_re_synapses.tv_nsec - start_re_synapses.tv_nsec) / 1e9;
+                    results_per_sample->elapsed_time_load_sample += (end_load_sample.tv_sec - start_load_sample.tv_sec) + (end_load_sample.tv_nsec - start_load_sample.tv_nsec) / 1e9;
+
+                    results_per_sample->elapsed_time_sample += (end_sample.tv_sec - start_sample.tv_sec) + (end_sample.tv_nsec - start_sample.tv_nsec) / 1e9;
+                }
             }
 
-            // sample finished
-            clock_gettime(CLOCK_MONOTONIC, &end_sample);
+            // compute metrics
+            float acc = accuracy_by_output_neurons(results, dataset, batches, conf->batch_size, b, snn->n_output);
 
-            results_per_sample->elapsed_time_re_neurons += (end_re_neurons.tv_sec - start_re_neurons.tv_sec) + (end_re_neurons.tv_nsec - start_re_neurons.tv_nsec) / 1e9;
-            results_per_sample->elapsed_time_re_synapses += (end_re_synapses.tv_sec - start_re_synapses.tv_sec) + (end_re_synapses.tv_nsec - start_re_synapses.tv_nsec) / 1e9;
-            results_per_sample->elapsed_time_load_sample += (end_load_sample.tv_sec - start_load_sample.tv_sec) + (end_load_sample.tv_nsec - start_load_sample.tv_nsec) / 1e9;
+            printf(" > %f\n", acc);
+            fflush(stdout);
 
-            results_per_sample->elapsed_time_sample += (end_sample.tv_sec - start_sample.tv_sec) + (end_sample.tv_nsec - start_sample.tv_nsec) / 1e9;
+            // update weights
+            
+
+            #pragma omp barrier
+
         }
-
-        #pragma omp barrier
-
+        
         // sum all dw
         /*for(i = 0; i<snn->n_synapses; i++){
             snn->Dw += snn->n_
@@ -392,37 +415,6 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         results->elapsed_time_epoch = (end_epoch.tv_sec - start_epoch.tv_sec) + (end_epoch.tv_nsec - start_epoch.tv_nsec) / 1e9;
     
 
-        // compute predictions
-        /*
-        int acc;
-        int *pred = (int *)malloc(n_samples * sizeof(int));
-        /*int *output_spikes = (int *)calloc(conf->n_samples, sizeof(int));
-
-        for(i = 0; i<conf->n_samples; i++){
-            
-            for(j = 0; j<snn->n_output; j++){
-                    output_spikes[i] += results->results_per_sample[i].n_spikes_per_neuron[snn->n_neurons - j];
-            }
-        }*/
-        /*
-        for(i = 0; i<n_samples; i++){
-
-            // compute probabilities
-            int max, index;
-            for(j = 0; j<snn->n_output; j++){
-
-                if(results->results_per_sample[i].n_spikes_per_neuron[j] > max){
-                    
-                    index = j;
-                    max = results->results_per_sample[i].n_spikes_per_neuron[j];
-                }
-            }
-
-            // compare
-            if(index == dataset->labels[i])
-                acc ++;
-        }
-        */
         //printf(" > Accuracy in epoch %d: %lf\n", e, (double)acc / (double)n_samples);
         printf(" > Epoch %d\n", e);
         printf(" >>> Epoch time %lf\n", results->elapsed_time_epoch);
