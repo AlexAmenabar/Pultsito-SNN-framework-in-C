@@ -306,11 +306,14 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                     clock_gettime(CLOCK_MONOTONIC, &end_re_synapses);
 
                     // load sample in network 
+                    printf(" > Loading sample!\n");
+                    fflush(stdout);
                     clock_gettime(CLOCK_MONOTONIC, &start_load_sample);
                     tmp_snn->load_sample(tmp_snn, &(dataset->samples[sample_index]));
                     clock_gettime(CLOCK_MONOTONIC, &end_load_sample);
 
-                    
+                                        printf(" > Loading sample!\n");
+                    fflush(stdout);
                     // simulate time steps for each sample
                     for(t = 0; t<time_steps; t++){
 

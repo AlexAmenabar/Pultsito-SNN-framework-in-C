@@ -512,11 +512,11 @@ void reorder_synapse_list(spiking_nn_t *snn){
             lif_neuron = &(snn->lif_neurons[i]);
             n_synap = snn->lif_neurons[i].n_input_synapse;
             for(j=0; j<n_synap; j++){
-                if(lif_neuron->input_synapse_indexes[j] >= snn->n_input_synapses){
+                //if(lif_neuron->input_synapse_indexes[j] >= snn->n_input_synapses){
                     new_order_indexes[next_pos] = lif_neuron->input_synapse_indexes[j]; // store synapse index in the list
                     map_indexes[lif_neuron->input_synapse_indexes[j]] = next_pos; // store mapping
                     next_pos ++;
-                }
+                //}
             }
         }
     }
