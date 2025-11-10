@@ -37,33 +37,44 @@ typedef struct {
   int n_synapses;
   int n_input_synapses;
   int n_output_synapses;
+  int T;
 
   // neccessary parameters for all neurons
-  float *v;
-  float *v_thresh;
-  float *v_rest;
-  int *r_period;
-  int *r_period_remain;
-  int *res;
+  float *v; // [n_neurons]
+  float *v_thresh; // [n_neurons]
+  float *v_rest; // [n_neurons]
+  int *r_period; // [n_neurons]
+  int *r_period_remain; // [n_neurons]
+  int *res; // [n_neurons]
+  int *t_last_spike; // [n_neurons]
+  
+  int *n_neuron_input_synapses; // [n_neurons]
+  int *neuron_input_synapses; // [n_synapses - n_output_synapses] // if indexes would continuous, it would be smaller
+  int *neuron_input_synapses_offset; // [n_neurons]
 
-  // input and output synapses
-  int *in_synapses, *in_off;
-  int *out_synapses, *out_off;
-
-  // spike arrays
-  int *spk_matrix; 
-  int *in_spk_matrix;
-
-  // neuron model dependent variables
-
+  int *next_spk; // next spike in input synapses [n_synapses - n_output_synapses] // the same offsets of the previous
+  int *last_spk; // last spike [n_neurons]
+  
 
   // synapses
-  float *w; // synapse weight
-  float *dw; // weight change
-  int *delay; // latency
-  int *lr; // learning rule index
-  int *pre_neuron_index; // input neurons...
-  int *post_neuron_index;
+  float *w; // [n_synapses]
+  float *dw; // [n_synapses]
+  int *delay; // [n_synapses]
+  int *lr; // [n_synapses]
+  int *pre_neuron_index; // [n_synapses]
+  int *post_neuron_index; // [n_synapses]
+
+
+  int *spk_matrix; // [(n_neurons + n_input_neurons) * T]
+  // FLOAT(3N + 2M) + INT(7N + 5M) + NT = 32(10N + 7M) + 32NT bit
+
+  // N = 1.000; M = 100.000; T = 500; 32(10.000 + 700.000 + 500.000) = 32 * 1.210.000 = 38.720.000 = 0,0045 GB
+  // N = 100.000; M = 100.000.000; T = 500; COST = 24.032.000.000 = 2,8 GB
+
+
+
+  // it should be helpfull to add output synapses to compute STDP easier?
+  // neurons are processed? Those variables could help
 
 } GPU_SNN_t;
 

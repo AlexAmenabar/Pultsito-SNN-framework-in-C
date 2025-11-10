@@ -46,7 +46,8 @@ __global__ void load_sample_kernel(GPU_SNN_t *snn, GPU_input_info_t *dataset, in
     int globalThreadNum = blockNumInGrid * threadsPerBlock + threadNumInBlock;
     int neuron_index = globalThreadNum; // ?
 
-    printf(" > Neuron index = %d, input neurons = %d, sample index = %d\n", neuron_index, snn->n_input_neurons, s);
+    printf(" > Neuron index = %d, input neurons = %d, sample index = %d, n_features = %d\n", 
+            neuron_index, snn->n_input_neurons, s, dataset->n_features);
 
     // if it is an input neuron
     if(neuron_index < snn->n_input_neurons){
@@ -57,16 +58,22 @@ __global__ void load_sample_kernel(GPU_SNN_t *snn, GPU_input_info_t *dataset, in
 
         int f = neuron_index; // the neuron index is also the feature index
 
+        printf(" > > Feature = %d\n", f);
+
         int start_sample = dataset->sample_offset[s];
+        printf(" Thread %d, start sample = %d\n", f, start_sample);
+        
         int start_feature = dataset->feature_offset[s * dataset->n_samples + f];
-        int n_spikes = dataset->n_spikes[start_sample + start_feature];
+        printf(" Thread %d, start feature = %d\n", f, start_feature);
+
+        int n_spikes = dataset->n_spikes[s * dataset->n_features + f];
 
         printf(" > Loading spike train in neuron = %d (n = %d)\n", neuron_index, n_spikes);
 
         for(i = 0; i<n_spikes; i++){
         
             // store a 1 value if there is a spike
-            snn->spk_matrix[neuron_index * 500 + dataset->spikes[start_sample + start_feature + i]] = 1;
+            snn->spk_matrix[neuron_index * T + dataset->spikes[start_sample + start_feature + i]] = 1;
         }
     }
 }
@@ -82,6 +89,13 @@ __global__ void reinit_neurons_kernel(GPU_SNN_t *snn, int s)
     int globalThreadNum = blockNumInGrid * threadsPerBlock + threadNumInBlock;
     int neuron_index = globalThreadNum;
 
+
+    if(neuron_index < snn->n_neurons){
+
+        snn->v[neuron_index] = snn->v_rest[neuron_index];
+        snn->r_period_remain[neuron_index] = 0;
+    }
+
 }
 
 __global__ void reinit_synapses_kernel(GPU_SNN_t *snn, int s)
@@ -93,8 +107,12 @@ __global__ void reinit_synapses_kernel(GPU_SNN_t *snn, int s)
     int blockNumInGrid   = blockIdx.x  + gridDim.x  * blockIdx.y;  //(alternatively: blockIdx.y  + gridDim.y  * blockIdx.x);
 
     int globalThreadNum = blockNumInGrid * threadsPerBlock + threadNumInBlock;
-    int neuron_index = globalThreadNum;
+    int synapse_index = globalThreadNum;
 
+    if(synapse_index < snn->n_synapses){
+
+        continue;
+    }
 }
 
 __global__ void lif_neuron_input(GPU_SNN_t *snn, int s, int t)
@@ -107,7 +125,20 @@ __global__ void lif_neuron_input(GPU_SNN_t *snn, int s, int t)
 
     int globalThreadNum = blockNumInGrid * threadsPerBlock + threadNumInBlock;
     int neuron_index = globalThreadNum;
+    int n;
 
+    if(neuron_index < snn->n_neurons){
+
+        n = neuron_index;
+        float I = 0.0;
+
+        // if not in refractory time
+        if(snn->r_period_remain <= 0){
+
+            // loop over input synapses
+
+        }
+    }
 }
 
 __global__ void lif_neuron_output(GPU_SNN_t *snn, int s, int t)
@@ -234,7 +265,11 @@ extern "C" GPU_SNN_t* copy_snn_structure_to_GPU(spiking_nn_t *snn, int n){
 
     // allocate memory for spike matrix (virtual neurons are included too here)
     gpu_snn_mapper->spk_matrix = (int *)malloc((snn->n_neurons + snn->n_input) * T * sizeof(int));
-    
+    gnu_snn_mapper->next_spk = (int*)calloc(snn->n_synapses - snn->n_output_synapses, sizeof(int));
+    gpu_snn_mapper->next_spk_offset = (int*)malloc(snn->n_neurons * sizeof(int));
+    gnu_snn_mapper->last_spk = (int*)calloc(snn->n_neurons, sizeof(int));
+    gnu_snn_mapper->processed = (int*)calloc(snn->n_neurons, sizeof(int));
+
     // count total number of input and output synapses
     int tmp_in = 0, tmp_out = 0;
     for(i = 0; i<snn->n_neurons; i++){
@@ -323,6 +358,7 @@ extern "C" GPU_SNN_t* copy_snn_structure_to_GPU(spiking_nn_t *snn, int n){
     cudaMalloc(&(gpu_snn->r_period), snn->n_neurons * sizeof(int)); // allocate memory for neurons
     cudaMalloc(&(gpu_snn->r_period_remain), snn->n_neurons * sizeof(int)); // allocate memory for neurons
     cudaMalloc(&(gpu_snn->res), snn->n_neurons * sizeof(int)); // allocate memory for neurons
+    cudaMalloc(&(gpu_snn->t_last_spike), snn->n_neurons * sizeof(int)); // allocate memory for neurons
 
     cudaMalloc(&(gpu_snn->in_synapses), tmp_in * sizeof(int)); // allocate memory for neurons
     cudaMalloc(&(gpu_snn->in_off), snn->n_neurons * sizeof(int)); // allocate memory for neurons
@@ -419,6 +455,10 @@ extern "C" GPU_input_info_t* copy_dataset_to_GPU(input_data_t *dataset){
 
             tmp_gpu_input_dataset->feature_offset[i * n_features + j] = next_feature;
 
+            // store the number of spikes of the feature
+            tmp_gpu_input_dataset->n_spikes[i * n_features + j] = dataset->samples[i].st[j].n_spikes;
+            printf(" > Sample %d, feature %d, n. spikes = %d\n", i, j, dataset->samples[i].st[j].n_spikes);
+
             // loop over spikes
             for(l = 0; l<dataset->samples[i].st[j].n_spikes; l++){
 
@@ -428,8 +468,6 @@ extern "C" GPU_input_info_t* copy_dataset_to_GPU(input_data_t *dataset){
             }
         }
     }
-
-
 
     // count total number of spikes
     /*int h_spk_ind = 0; // spike position index
@@ -486,10 +524,10 @@ extern "C" GPU_input_info_t* copy_dataset_to_GPU(input_data_t *dataset){
 
     // copy to GPU
     cudaMalloc(&(d_gpu_input_dataset), sizeof(GPU_input_info_t)); // allocate memory for neurons
-    cudaMemcpy(d_gpu_input_dataset, gpu_input_dataset->spikes, sizeof(GPU_input_info_t), cudaMemcpyHostToDevice); // copy neurons information
+    cudaMemcpy(d_gpu_input_dataset, gpu_input_dataset, sizeof(GPU_input_info_t), cudaMemcpyHostToDevice); // copy neurons information
 
 
-    printf(" > Dataset copied to the GPU!\n");
+    printf(" > Dataset copied to the GPU (feat %d)!\n", gpu_input_dataset->n_features);
     fflush(stdout);
  
     return d_gpu_input_dataset;

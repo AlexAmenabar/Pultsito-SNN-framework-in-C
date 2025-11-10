@@ -307,7 +307,6 @@ void connect_neurons_and_synapses(spiking_nn_t *snn, int **synaptic_connections)
     n_output = snn->n_output;
     i_synapse = 0; // index of the actual synapse
 
-
     // add network input synapses (the firt neurons and synapses)
     for(i = 0; i<(synaptic_connections[0][0]); i++){ 
         
@@ -499,11 +498,11 @@ void reorder_synapse_list(spiking_nn_t *snn){
     
 
     // input synapses are not moved
-    for(i=0; i<snn->n_input_synapses; i++){
+    /*for(i=0; i<snn->n_input_synapses; i++){
         new_order_indexes[next_pos] = i;
         map_indexes[i] = next_pos; // store mapping
         next_pos ++;
-    }
+    }*/
 
     // order by NEURONS input synapses
     for(i=0; i<snn->n_neurons; i++){
