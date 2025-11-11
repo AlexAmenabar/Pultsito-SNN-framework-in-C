@@ -4,7 +4,7 @@
 #include "snn_library.h"
 
 #define REFRAC_TIME 5
-#define L 100 
+#define L 500 
 #define DT 1.0 
 #define TC 0.9
 

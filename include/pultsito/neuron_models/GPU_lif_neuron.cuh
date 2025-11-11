@@ -47,9 +47,7 @@ typedef struct {
   int *r_period_remain; // [n_neurons]
   int *res; // [n_neurons]
   int *t_last_spike; // [n_neurons]
-  
   int *n_neuron_input_synapses; // [n_neurons]
-  int *neuron_input_synapses; // [n_synapses - n_output_synapses] // if indexes would continuous, it would be smaller
   int *neuron_input_synapses_offset; // [n_neurons]
 
   int *next_spk; // next spike in input synapses [n_synapses - n_output_synapses] // the same offsets of the previous
@@ -98,12 +96,21 @@ typedef struct {
 } GPU_input_info_t;
 
 
+typedef struct {
+
+  int *nspk; // [n_samples * n_neurons]
+  char *gs; // [n_samples * n_neurons * timesteps] // TODO: remove in the future
+
+} GPU_results_t;
+
+
 double process_simulation_lif_neuron(spiking_nn_t *snn, int n, int m, int time_steps);
 void simulate_in_GPU(spiking_nn_t *snn, simulation_configuration_t *conf, input_data_t *dataset, simulation_results_t *results);
 
 GPU_SNN_t* copy_snn_structure_to_GPU(spiking_nn_t *snn, int n);
 GPU_input_info_t* copy_dataset_to_GPU(input_data_t *dataset);
-void simulate_snn_in_GPU(GPU_SNN_t *gpu_snn, spiking_nn_t *snn, simulation_configuration_t *conf, GPU_input_info_t *gpu_dataset, input_data_t *dataset, simulation_results_t *results);
+GPU_results_t* copy_results_to_GPU(spiking_nn_t *snn, input_data_t *dataset, simulation_results_t *results);
+void simulate_snn_in_GPU(GPU_SNN_t *gpu_snn, spiking_nn_t *snn, simulation_configuration_t *conf, GPU_input_info_t *gpu_dataset, input_data_t *dataset, GPU_results_t *gpu_results, simulation_results_t *results);
 
 
 #ifdef __cplusplus
