@@ -579,6 +579,292 @@ void reorder_synapse_list(spiking_nn_t *snn){
 }
 
 
+
+/* Mapping functions */ // TODO: Change the L to a configuration parameter
+GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *conf){
+
+    int i, j, offset = 0;
+    GPU_SNN_t *gpu_snn;
+
+    // allocate memory for GPU SNN structure
+    gpu_snn = (GPU_SNN_t*)malloc(sizeof(GPU_SNN_t));
+
+    gpu_snn->n_neurons = snn->n_neurons;
+    gpu_snn->n_input_neurons = snn->n_input;
+    gpu_snn->n_output_neurons = snn->n_output;
+    gpu_snn->n_synapses = snn->n_synapses;
+    gpu_snn->n_input_synapses = snn->n_input_synapses;
+    gpu_snn->n_output_synapses = snn->n_output_synapses;
+    gpu_snn->max_spikes = conf->max_input_spikes;
+
+    // neurons - allocate and cpy
+    gpu_snn->v = (float *)malloc((snn->n_neurons) * sizeof(float));
+    gpu_snn->v_thresh = (float *)malloc((snn->n_neurons) * sizeof(float));
+    gpu_snn->v_rest = (float *)malloc((snn->n_neurons) * sizeof(float));
+    gpu_snn->r_period = (int *)malloc((snn->n_neurons) * sizeof(int));
+    gpu_snn->r_period_remain = (int *)calloc(snn->n_neurons, sizeof(int)); // 0
+    gpu_snn->res = (int *)malloc((snn->n_neurons) * sizeof(int));
+    gpu_snn->t_last_spike = (int*)calloc(snn->n_neurons, sizeof(int)); // 0
+    gpu_snn->n_neuron_input_synapses = (int*)malloc(snn->n_neurons * sizeof(int));
+    gpu_snn->neuron_input_synapses_offset = (int*)malloc(snn->n_neurons * sizeof(int));
+
+    // TODO: generalize??
+    for(i = 0; i<snn->n_neurons; i++){
+        
+        // copy information from CPU
+        gpu_snn->v[i] = (float)(snn->lif_neurons[i].v);
+        gpu_snn->v_thresh[i] = (float)(snn->lif_neurons[i].v_tresh);
+        gpu_snn->v_rest[i] = (float)(snn->lif_neurons[i].v_rest);
+        gpu_snn->r_period[i] = snn->lif_neurons[i].r_time;
+        gpu_snn->r_period_remain[i] = 0;
+        gpu_snn->res[i] = snn->lif_neurons[i].r;
+        gpu_snn->t_last_spike[i] = 0;
+
+        // input synapses and offsets
+        gpu_snn->n_neuron_input_synapses[i] = snn->lif_neurons[i].n_input_synapse;
+        gpu_snn->neuron_input_synapses_offset[i] = offset;
+
+        // update offset for the next iteration
+        offset += gpu_snn->n_neuron_input_synapses[i];    
+    }
+
+    // synapses - allocate and cpy
+    gpu_snn->w = (float*)malloc(snn->n_synapses * sizeof(float));
+    gpu_snn->dw = (float*)calloc(snn->n_synapses, sizeof(float)); // 0
+    gpu_snn->delay = (int*)malloc(snn->n_synapses * sizeof(int));
+    gpu_snn->lr = (int*)malloc(snn->n_synapses * sizeof(int));
+    gpu_snn->pre_neuron_index = (int*)malloc(snn->n_synapses * sizeof(int));
+    gpu_snn->post_neuron_index = (int*)malloc(snn->n_synapses * sizeof(int));
+
+    for(i = 0; i<snn->n_synapses; i++){
+
+        gpu_snn->w[i] = (float)(snn->synapses[i].w);
+        gpu_snn->dw[i] = 0.0;
+        gpu_snn->delay[i] = snn->synapses[i].delay;
+        gpu_snn->lr[i] = snn->synapses[i].lr;
+        gpu_snn->pre_neuron_index[i] = snn->synapses[i].pre_neuron_index;
+        gpu_snn->post_neuron_index[i] = snn->synapses[i].post_neuron_index;
+
+        // if it is an input synapse, then it's pre neuron is a virtual one. Map indexes
+        if(gpu_snn->delay[i] > 0) // to detect input synapses
+            gpu_snn->pre_neuron_index[i] += snn->n_input; // n_input_synapses??
+        gpu_snn->post_neuron_index[i] += snn->n_input;
+    }
+
+    // spike matrix
+    gpu_snn->spk_matrix = (int*)malloc((snn->n_neurons + snn->n_input) * conf->max_input_spikes * sizeof(int));
+    for(i = 0; i<snn->n_neurons + snn->n_input; i++)
+        for(j = 0; j<conf->max_input_spikes; j++)
+            gpu_snn->spk_matrix[i * conf->max_input_spikes + j] = -1; // no spikes yet
+
+
+    return gpu_snn;
+}
+
+GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configuration_t *conf){
+
+    int i, j, l;
+    int next_spike, next_feature;
+    int n_samples, n_features;
+
+    GPU_dataset_t *gpu_dataset;
+    gpu_dataset = (GPU_dataset_t *)malloc(sizeof(GPU_dataset_t));
+    
+    // copy first to a temporal struct in the CPU
+    gpu_dataset->type = dataset->type;
+    gpu_dataset->n_classes = dataset->n_classes;
+    gpu_dataset->n_samples = dataset->n_samples;
+    gpu_dataset->n_features = dataset->image_size; // TODO: generalize
+    gpu_dataset->n_spikes_per_feature = (int*)malloc(dataset->n_samples * dataset->image_size * sizeof(int)); 
+
+    gpu_dataset->sample_offset = (int*)malloc(gpu_dataset->n_samples * sizeof(int));
+    gpu_dataset->feature_offset = (int*)malloc(gpu_dataset->n_samples * gpu_dataset->n_features * sizeof(int));
+
+    gpu_dataset->n_spikes = 0;
+
+
+    // loop over samples to count the total number of spikes in the dataset
+    for(i = 0; i<dataset->n_samples; i++){
+        
+        // loop over the features of each sample
+        for(j = 0; j<dataset->image_size; j++){ // TODO: Generalize
+        
+            // count the number of spikes
+            gpu_dataset->n_spikes += dataset->samples[i].st[j].n_spikes;
+        }
+    }
+
+    // allocate memory to store all the spikes in a 1D array
+    gpu_dataset->spikes = (int*)malloc(gpu_dataset->n_spikes * sizeof(int));
+
+
+    // compute offsets for samples and features
+    next_spike = 0;
+    next_feature = 0;
+    n_samples = gpu_dataset->n_samples;
+    n_features = gpu_dataset->n_features;
+
+    for(i = 0; i<n_samples; i++){
+
+        gpu_dataset->sample_offset[i] = next_spike;
+        next_feature = 0; // local for sample
+
+        // loop over features
+        for(j = 0; j<n_features; j++){
+
+            gpu_dataset->feature_offset[i * n_features + j] = next_feature;
+
+            // store the number of spikes of the feature
+            gpu_dataset->n_spikes_per_feature[i * n_features + j] = dataset->samples[i].st[j].n_spikes;
+            //printf(" > Sample %d, feature %d, n. spikes = %d\n", i, j, dataset->samples[i].st[j].n_spikes);
+
+            // loop over spikes
+            for(l = 0; l<dataset->samples[i].st[j].n_spikes; l++){
+
+                gpu_dataset->spikes[next_spike] = dataset->samples[i].st[j].stimes[l];
+                next_spike ++;
+                next_feature ++;
+            }
+        }
+    }
+
+    return gpu_dataset;
+}
+
+
+// function to estimate structure size
+double get_gpu_snn_size(GPU_SNN_t *gpu_snn){
+    
+    // n_input neurons or synapses?
+    return (
+        (sizeof(GPU_SNN_t) +
+        sizeof(int) * gpu_snn->n_neurons * 6 + sizeof(float) * gpu_snn->n_neurons * 3 + 
+        sizeof(int) * (gpu_snn->n_synapses - gpu_snn->n_output_synapses) +
+        sizeof(float) * gpu_snn->n_synapses * 2 + sizeof(int) * gpu_snn->n_synapses * 4 + 
+        sizeof(int) * (gpu_snn->n_neurons + gpu_snn->n_input_neurons) * gpu_snn->max_spikes) / 8.0
+    );
+}
+
+double get_gpu_dataset_size(GPU_dataset_t *gpu_dataset){
+    
+    return (
+        (sizeof(GPU_dataset_t) +
+        sizeof(int) * gpu_dataset->n_spikes +
+        sizeof(int) * gpu_dataset->n_samples + 
+        sizeof(int) * gpu_dataset->n_samples * gpu_dataset->n_features) / 8.0
+    );
+}
+
+double get_gpu_results_size(int n_neurons, int n_samples, int L){
+
+    return (
+        (sizeof(GPU_results_t) + 
+        sizeof(int) * n_neurons * n_samples +
+        sizeof(char) * n_neurons * n_samples * L) / 8.0
+    );
+}
+
+
+void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu, GPU_dataset_t *gpu_dataset_in_cpu, simulation_configuration_t *conf){
+
+    // compute number of networks that can be simulated by free memory
+    cuda_info->network_size = get_gpu_snn_size(gpu_snn_in_cpu);
+    cuda_info->dataset_size = get_gpu_dataset_size(gpu_dataset_in_cpu); // b2B
+    cuda_info->results_size = get_gpu_results_size(gpu_snn_in_cpu->n_neurons, gpu_dataset_in_cpu->n_samples, conf->max_input_spikes);
+
+    printf(" > SNN size = %.2f, dataset size = %.2f, results size = %.2f (MB)\n",
+            cuda_info->network_size / 1024.0 / 1024.0, cuda_info->dataset_size / 1024.0 / 1024.0, cuda_info->results_size / 1024.0 / 1024.0);
+    fflush(stdout);
+
+    // get free memory
+    cuda_info->gpu_usable_mem -= cuda_info->dataset_size;
+    cuda_info->gpu_usable_mem -= cuda_info->results_size;
+
+    // do not allocate all the memory // (100 MB free)
+    cuda_info->gpu_usable_mem -= (100 * 1024 * 1024 * 8);
+
+    // compute number of networks that can be stored
+    cuda_info->n_networks = (int)((cuda_info->gpu_usable_mem) / (cuda_info->network_size));
+    printf(" > Usable memory in GPU for network = %.2f MB (%.2f GB) / %.2f. Number of networks = %d\n", 
+        cuda_info->gpu_usable_mem / 1024.0 / 1024.0, cuda_info->gpu_usable_mem / 1024.0 / 1024.0 / 1024.0, cuda_info->gpu_mem[0] / 1024.0 / 1024.0, cuda_info->n_networks);
+    
+    fflush(stdout);
+
+    // the maximum number of copies that can be used is defined by the batch size
+    if(cuda_info->n_networks > conf->batch_size)
+        cuda_info->n_networks = conf->batch_size;
+
+    gpu_snn_in_cpu->n_networks = cuda_info->n_networks;
+
+    // compute kernel configuration for each execution part
+    // The execution is done by a 3D grid, where each dimension of the grid
+    // contains the blocks and thredas to simulate a cpy
+
+
+    // these numbers are only temporal
+    int n_spkmatrix_reinit_blk = ((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * conf->max_input_spikes) / 1024 + 1;
+    int n_spkmatrix_reinit_threads_per_blk = 1024;
+    
+    int n_ls_threads_per_block = 1024;
+    int n_ls_blk = (gpu_snn_in_cpu->n_input_neurons) / 1024 + 1;
+
+    int n_pn_threads_per_block = 516;
+    int n_pn_blk = (gpu_snn_in_cpu->n_neurons) / 516 + 1;
+}
+
+
+
+void free_gpu_snn_in_CPU(GPU_SNN_t *gpu_snn){
+
+    // deallocate internal arrays
+    free(gpu_snn->v);
+    free(gpu_snn->v_thresh);
+    free(gpu_snn->v_rest);
+    free(gpu_snn->r_period);
+    free(gpu_snn->r_period_remain);
+    free(gpu_snn->res);
+    free(gpu_snn->t_last_spike);
+    free(gpu_snn->n_neuron_input_synapses);
+    free(gpu_snn->neuron_input_synapses_offset);
+    
+    free(gpu_snn->w);
+    free(gpu_snn->dw);
+    free(gpu_snn->delay);
+    free(gpu_snn->lr);
+    free(gpu_snn->pre_neuron_index);
+    free(gpu_snn->post_neuron_index);
+
+    free(gpu_snn->spk_matrix);
+
+    // deallocate struct
+    free(gpu_snn);
+}
+
+void free_gpu_dataset_in_CPU(GPU_dataset_t *gpu_dataset){
+    
+    // deallocate internal arrays
+    free(gpu_dataset->spikes);
+    free(gpu_dataset->n_spikes_per_feature);
+    free(gpu_dataset->sample_offset);
+    free(gpu_dataset->feature_offset);
+
+    // deallocate struct
+    free(gpu_dataset);
+}
+
+
+void free_gpu_results_in_CPU(GPU_results_t *gpu_results){
+
+    free(gpu_results->nspk);
+    free(gpu_results->gs);
+
+    free(gpu_results);
+}
+
+
+/////
+
+
 void initialize_results_struct(simulation_results_t *results, simulation_configuration_t *conf, int n_samples, int n_neurons){
     
     int i;

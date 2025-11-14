@@ -1,20 +1,21 @@
-#include "snn_library.h"
-#include "load_data.h"
-#include "helpers.h"
-#include "training_rules/stdp.h"
-
-#include "neuron_models/lif_neuron.h"
-#include "neuron_models/GPU_lif_neuron.cuh"
-
-#include "simulations/simulations.h"
-
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
 
+#include "snn_library.h"
+#include "load_data.h"
 
+#include "simulations/simulations.h"
+#include "cuda/GPU_simulations.cuh"
+
+#include "neuron_models/lif_neuron.h"
+#include "neuron_models/GPU_lif_neuron.cuh"
+
+#include "training_rules/stdp.h"
+
+#include "helpers.h"
+#include "cuda/cuda_helpers.cuh"
 
 /* main.c */
 int main(int argc, char *argv[]) {
@@ -55,11 +56,8 @@ int main(int argc, char *argv[]) {
     if(conf.test_provided == 1)
         load_dataset_from_file(&test_dataset, conf.test_set, conf.test_labels, conf.n_test, &conf);
     
-
     printf(" > Datasets loaded!\n");
-    /*printf(" > Loading input spike trains...\n");
-    load_input_spike_trains_on_snn(conf.input_spikes_file, &snn);
-    printf(" > Spike trains loaded!\n");*/
+
 
     // initialize struct to store results
     printf(" > Initializing results struct...\n");
@@ -80,18 +78,6 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
 #endif
  
-
-    // copy the network n times // TODO: this can be paralelized
-/*#ifdef PAR_SAMPLES 
-    printf(" > Copying network %d times...\n", conf.n_process);
-    pr_snns = (spiking_nn_t *)malloc(conf.n_process * sizeof(spiking_nn_t));
-    for(i = 0; i<conf.n_process; i++){
-        cp_network(&(pr_snns[i]), &snn, &conf);
-    }
-    printf(" > Network copied!\n");
-    fflush(stdout);
-#endif*/
-
     printf("Initializing training / simulation\n");
     fflush(stdout);
 
@@ -105,7 +91,45 @@ int main(int argc, char *argv[]) {
     }
     else{
         #ifdef CUDA
-        simulate_in_GPU(&snn, &conf, &train_dataset, &train_results);
+        
+        double elpt;
+        struct timespec start, end; // to measure simulation complete time
+        
+        // start timing
+        clock_gettime(CLOCK_MONOTONIC, &start);
+
+        // get gpu properties
+        cuda_info_t *cuda_info = getProperties();
+        // compute_cuda_sim_conf(cuda_info);
+
+
+        // map data structures to GPU structures in CPU
+        GPU_SNN_t *gpu_snn = SNN_CPU2GPU_mapping(&snn, &conf);
+        GPU_dataset_t *gpu_dataset = dataset_CPU2GPU_mapping(&train_dataset, &conf);
+
+        // configure cuda simulation
+        configure_cuda_simulation(cuda_info, gpu_snn, gpu_dataset, &conf);
+
+        // copy data structures to GPU memory
+        GPU_SNN_t *d_gpu_snn = cpy_SNN2GPU(gpu_snn, cuda_info); // structure in GPU
+        GPU_dataset_t *d_gpu_dataset = cpy_dataset2GPU(gpu_dataset, cuda_info);
+
+        // free memory of GPU structs allocated in CPU memory
+        free_gpu_snn_in_CPU(gpu_snn);
+        free_gpu_dataset_in_CPU(gpu_dataset);
+     
+
+        // perform the simulation
+        simulate_in_GPU(d_gpu_snn, d_gpu_dataset, &conf, cuda_info, &snn, &train_dataset); // refactorize
+
+
+
+        // end timing
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        elpt = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    
+        printf(" Elapsed total GPU time: %lf\n", elpt);
+
         #endif
     }
 

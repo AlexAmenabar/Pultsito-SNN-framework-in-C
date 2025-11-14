@@ -1,6 +1,7 @@
 #ifndef SNN_LIBRARY_H
 #define SNN_LIBRARY_H
 
+#include "stdio.h"
 
 // TODO: Max spikes should be an input parameter?
 
@@ -155,7 +156,6 @@ typedef struct{
 } input_data_t;
 
 
-
 /* Network structs */
 
 /// @brief LIF neuron model structure
@@ -266,6 +266,106 @@ struct spiking_nn_t{
     lif_neuron_t *input_lif_neurons; // only used to introduce data in the network
 
 };
+
+
+
+// GPU / cuda structs
+
+typedef struct {
+
+    // gpu info
+    int nDevices;
+    double *gpu_mem; // free memory in the GPU
+    double gpu_usable_mem;
+
+    // cuda simulation details
+    double dataset_size;
+    double network_size;
+    double results_size;
+
+    int n_networks;
+
+} cuda_info_t;
+
+
+
+/// @brief LIF neuron model structure
+typedef struct {
+
+    int n_neurons;
+    int n_input_neurons;
+    int n_output_neurons;
+    int n_synapses;
+    int n_input_synapses;
+    int n_output_synapses;
+    int max_spikes;
+
+    // neccessary parameters for all neurons
+    float *v; // [n_neurons]
+    float *v_thresh; // [n_neurons]
+    float *v_rest; // [n_neurons]
+    int *r_period; // [n_neurons]
+    int *r_period_remain; // [n_neurons]
+    int *res; // [n_neurons]
+    int *t_last_spike; // [n_neurons]
+    int *n_neuron_input_synapses; // [n_neurons]
+    int *neuron_input_synapses_offset; // [n_neurons]
+
+    //int *next_spk; // next spike in input synapses [n_synapses - n_output_synapses] // the same offsets of the previous
+    //int *last_spk; // last spike [n_neurons]
+    
+
+    // synapses
+    float *w; // [n_synapses]
+    float *dw; // [n_synapses]
+    int *delay; // [n_synapses]
+    int *lr; // [n_synapses]
+    int *pre_neuron_index; // [n_synapses]
+    int *post_neuron_index; // [n_synapses]
+
+
+    int *spk_matrix; // [(n_neurons + n_input_neurons) * T]
+    // FLOAT(3N + 2M) + INT(7N + 5M) + NT = 32(10N + 7M) + 32NT bit
+
+    // N = 1.000; M = 100.000; T = 500; 32(10.000 + 700.000 + 500.000) = 32 * 1.210.000 = 38.720.000 = 0,0045 GB
+    // N = 100.000; M = 100.000.000; T = 500; COST = 24.032.000.000 = 2,8 GB
+
+    int n_networks;
+
+  // it should be helpfull to add output synapses to compute STDP easier?
+  // neurons are processed? Those variables could help
+
+} GPU_SNN_t;
+
+
+/// @brief LIF neuron model structure
+typedef struct {
+
+    int type;
+    int n_classes;
+
+    int n_samples; // number of samples in the dataset
+    int n_features; // number of features of the samples
+    int *n_spikes_per_feature; // n spikes per each sample element [n_samples * n_features]
+
+    int *sample_offset; // indicates where each sample starts [n_samples] in the 
+    int *feature_offset; // indicates the local offset of each element in the sample [n_samples * ~sample_size]. Sample size can be different for each sample
+    //int *sample_offset_in_n_spikes; // offset of the sample in the array of the number of spikes. This is necessary for cases in which samples have different number of features
+
+    int *spikes; // the entire dataset is stored in a 1D array
+    int n_spikes;
+
+} GPU_dataset_t;
+
+
+typedef struct {
+
+  int *nspk; // [n_samples * n_neurons]
+  char *gs; // [n_samples * n_neurons * timesteps] // TODO: remove in the future
+
+} GPU_results_t;
+
+
 
 
 /* General function to network initialization */
@@ -380,6 +480,22 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
 void reorder_synapse_list(spiking_nn_t *snn);
 
 
+
+/* CPU2GPU mapping functions */
+GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *conf);
+GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configuration_t *conf);
+
+// Functions to compute the memory occupated by GPU structures
+double get_gpu_snn_size(GPU_SNN_t *gpu_snn);
+double get_gpu_dataset_size(GPU_dataset_t *gpu_dataset);
+double get_gpu_results_size(int n_neurons, int n_samples, int L);
+
+//
+void free_gpu_snn_in_CPU(GPU_SNN_t *gpu_snn);
+void free_gpu_dataset_in_CPU(GPU_dataset_t *gpu_dataset);
+void free_gpu_results_in_CPU(GPU_results_t *gpu_results);
+
+void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu, GPU_dataset_t *gpu_dataset_in_cpu, simulation_configuration_t *conf);
 
 
 /* Functions for results structs */

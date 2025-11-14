@@ -141,6 +141,9 @@ void generate_random_synaptic_connections(network_data_t *network_data, configur
             u = (double)rand() / RAND_MAX;
             synapses = (int)(-log(1-u) / lambda) / 2;
 
+            if(synapses == 0 && j == (network_data->n_neurons - 1))
+                synapses = 1;
+
             if(synapses>0){
                 // check if synapses amount is bigger than maximum
                 if(synapses > conf->max_connections_pair_neurons)

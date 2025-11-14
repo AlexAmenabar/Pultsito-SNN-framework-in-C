@@ -7,12 +7,12 @@ LCC=g++
 
 # CC compiler options:
 CC=gcc
-CC_FLAGS= -O2 -DCUDA #-fPIE
+CC_FLAGS= -O2 -DCUDA -DREORDER #-fPIE
 CC_LIBS=
 
 # NVCC compiler options:
 NVCC=nvcc
-NVCC_FLAGS=  -O2 -Xcompiler -DCUDA # -fPIC
+NVCC_FLAGS=  -O2 -Xcompiler -DCUDA -DREORDER# -fPIC
 NVCC_LIBS=
 
 
@@ -41,7 +41,7 @@ BIN = bin
 EXE = cuda_simulation_inference 
 
 # Object files:
-OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/snn_library.o $(OBJ_DIR)/load_data.o $(OBJ_DIR)/helpers.o $(OBJ_DIR)/lif_neuron.o $(OBJ_DIR)/simulations.o $(OBJ_DIR)/stdp.o $(OBJ_DIR)/metrics.o $(OBJ_DIR)/GPU_lif_neuron.o
+OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/snn_library.o $(OBJ_DIR)/load_data.o $(OBJ_DIR)/helpers.o $(OBJ_DIR)/lif_neuron.o $(OBJ_DIR)/simulations.o $(OBJ_DIR)/stdp.o $(OBJ_DIR)/metrics.o $(OBJ_DIR)/GPU_lif_neuron.o $(OBJ_DIR)/cuda_helpers.o $(OBJ_DIR)/GPU_simulations.o
 
 ## Compile ##
 # Link c and CUDA compiled object files to target executable:
@@ -50,7 +50,7 @@ $(BIN)/$(EXE) : $(OBJS)
 
 # Compile main.c file to object files:
 $(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+	$(CC) $(CC_FLAGS) -DREORDER -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
 
 # Compile C source files to object files:
 $(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
@@ -70,6 +70,9 @@ $(OBJ_DIR)/%.o : $(SRC_DIR)/%.cu $(INC_DIR)/%.cuh
 	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ $(NVCC_LIBS)
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/neuron_models/%.cu 
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ $(NVCC_LIBS) -I$(INC_DIR)
+
+$(OBJ_DIR)/%.o : $(SRC_DIR)/cuda/%.cu 
 	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ $(NVCC_LIBS) -I$(INC_DIR)
 
 # Clean objects in object directory.
