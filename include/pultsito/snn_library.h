@@ -282,8 +282,21 @@ typedef struct {
     double dataset_size;
     double network_size;
     double results_size;
+    double network_cpy_size;
 
     int n_networks;
+    int n_samples;
+    int batch_size;
+    int time_steps;
+
+    // number of threads and blocks per kernel
+    int n_threads_per_blk_rsm_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
+    int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
+    int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
+
+    int n_blk_rsm_x, n_blk_rsm_y, n_blk_rsm_z;
+    int n_blk_ls_x, n_blk_ls_y, n_blk_ls_z;
+    int n_blk_nrs_x, n_blk_nrs_y, n_blk_nrs_z;
 
 } cuda_info_t;
 
@@ -338,7 +351,8 @@ typedef struct {
 } GPU_SNN_t;
 
 
-/// @brief LIF neuron model structure
+/// @brief LIF neuron model structure: the variables that can be very large are size_t
+// TODO: Chunks?
 typedef struct {
 
     int type;
@@ -348,12 +362,12 @@ typedef struct {
     int n_features; // number of features of the samples
     int *n_spikes_per_feature; // n spikes per each sample element [n_samples * n_features]
 
-    int *sample_offset; // indicates where each sample starts [n_samples] in the 
-    int *feature_offset; // indicates the local offset of each element in the sample [n_samples * ~sample_size]. Sample size can be different for each sample
+    size_t *sample_offset; // indicates where each sample starts [n_samples] in the 
+    size_t *feature_offset; // indicates the local offset of each element in the sample [n_samples * ~sample_size]. Sample size can be different for each sample
     //int *sample_offset_in_n_spikes; // offset of the sample in the array of the number of spikes. This is necessary for cases in which samples have different number of features
 
     int *spikes; // the entire dataset is stored in a 1D array
-    int n_spikes;
+    size_t n_spikes;
 
 } GPU_dataset_t;
 
@@ -487,8 +501,10 @@ GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configu
 
 // Functions to compute the memory occupated by GPU structures
 double get_gpu_snn_size(GPU_SNN_t *gpu_snn);
+double get_gpu_snn_cpy_size(GPU_SNN_t *gpu_snn);
 double get_gpu_dataset_size(GPU_dataset_t *gpu_dataset);
 double get_gpu_results_size(int n_neurons, int n_samples, int L);
+
 
 //
 void free_gpu_snn_in_CPU(GPU_SNN_t *gpu_snn);

@@ -6,6 +6,7 @@
 extern "C" {
 #endif
 
+
 // copy structure from CPU to GPU
 GPU_SNN_t* cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info);
 GPU_dataset_t* cpy_dataset2GPU(GPU_dataset_t *cpu_dataset, cuda_info_t *cuda_info);

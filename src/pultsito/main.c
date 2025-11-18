@@ -73,6 +73,14 @@ int main(int argc, char *argv[]) {
 
 #ifdef REORDER
     printf(" > Reordering synapses list...\n");
+
+    #ifdef CUDA
+    if(conf.cuda != 0)
+        for(int i = 0; i<snn.n_input_synapses; i++){
+            snn.synapses[i].delay = 0;
+        }
+    #endif
+
     reorder_synapse_list(&snn);
     printf(" > List of synapses reordered!\n");
     fflush(stdout);
@@ -134,7 +142,7 @@ int main(int argc, char *argv[]) {
     }
 
     // store results
-    store_results(&train_results, &conf, &snn, &train_dataset);
+    //store_results(&train_results, &conf, &snn, &train_dataset);
 
     // free memory
 

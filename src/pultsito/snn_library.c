@@ -664,7 +664,7 @@ GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *co
 GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configuration_t *conf){
 
     int i, j, l;
-    int next_spike, next_feature;
+    size_t next_spike, next_feature;
     int n_samples, n_features;
 
     GPU_dataset_t *gpu_dataset;
@@ -677,8 +677,8 @@ GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configu
     gpu_dataset->n_features = dataset->image_size; // TODO: generalize
     gpu_dataset->n_spikes_per_feature = (int*)malloc(dataset->n_samples * dataset->image_size * sizeof(int)); 
 
-    gpu_dataset->sample_offset = (int*)malloc(gpu_dataset->n_samples * sizeof(int));
-    gpu_dataset->feature_offset = (int*)malloc(gpu_dataset->n_samples * gpu_dataset->n_features * sizeof(int));
+    gpu_dataset->sample_offset = (size_t*)malloc(gpu_dataset->n_samples * sizeof(size_t));
+    gpu_dataset->feature_offset = (size_t*)malloc(gpu_dataset->n_samples * gpu_dataset->n_features * sizeof(size_t));
 
     gpu_dataset->n_spikes = 0;
 
@@ -690,7 +690,7 @@ GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configu
         for(j = 0; j<dataset->image_size; j++){ // TODO: Generalize
         
             // count the number of spikes
-            gpu_dataset->n_spikes += dataset->samples[i].st[j].n_spikes;
+            gpu_dataset->n_spikes += (size_t)(dataset->samples[i].st[j].n_spikes);
         }
     }
 
@@ -707,7 +707,7 @@ GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configu
     for(i = 0; i<n_samples; i++){
 
         gpu_dataset->sample_offset[i] = next_spike;
-        next_feature = 0; // local for sample
+        //next_feature = 0; // local for sample
 
         // loop over features
         for(j = 0; j<n_features; j++){
@@ -745,6 +745,17 @@ double get_gpu_snn_size(GPU_SNN_t *gpu_snn){
     );
 }
 
+double get_gpu_snn_cpy_size(GPU_SNN_t *gpu_snn){
+
+    // n_input neurons or synapses?
+    // v, r_period_remain, t_last_spike, w, dw, spk_matrix
+    return (
+        (sizeof(int) * gpu_snn->n_neurons * 2 + sizeof(float) * gpu_snn->n_neurons + 
+        sizeof(float) * gpu_snn->n_synapses * 2 + 
+        sizeof(int) * (gpu_snn->n_neurons + gpu_snn->n_input_neurons) * gpu_snn->max_spikes) / 8.0
+    );
+}
+
 double get_gpu_dataset_size(GPU_dataset_t *gpu_dataset){
     
     return (
@@ -767,49 +778,111 @@ double get_gpu_results_size(int n_neurons, int n_samples, int L){
 
 void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu, GPU_dataset_t *gpu_dataset_in_cpu, simulation_configuration_t *conf){
 
-    // compute number of networks that can be simulated by free memory
+    // store information in cuda info struct
+    cuda_info->n_samples = gpu_dataset_in_cpu->n_samples;
+    cuda_info->time_steps = conf->time_steps;
+    cuda_info->batch_size = conf->batch_size;
+
+    // get memory occupation data for GPU by data structures
     cuda_info->network_size = get_gpu_snn_size(gpu_snn_in_cpu);
-    cuda_info->dataset_size = get_gpu_dataset_size(gpu_dataset_in_cpu); // b2B
+    cuda_info->network_cpy_size = get_gpu_snn_cpy_size(gpu_snn_in_cpu);
+    cuda_info->dataset_size = get_gpu_dataset_size(gpu_dataset_in_cpu); 
     cuda_info->results_size = get_gpu_results_size(gpu_snn_in_cpu->n_neurons, gpu_dataset_in_cpu->n_samples, conf->max_input_spikes);
 
-    printf(" > SNN size = %.2f, dataset size = %.2f, results size = %.2f (MB)\n",
-            cuda_info->network_size / 1024.0 / 1024.0, cuda_info->dataset_size / 1024.0 / 1024.0, cuda_info->results_size / 1024.0 / 1024.0);
+    printf(" > Free memory in GPU = %.2f\n", cuda_info->gpu_usable_mem / 1024.0 / 1024.0);
+
+    printf(" >> SNN size = %.2f MB (cpy size = %.2f MB)\n >> Dataset size = %.2f MB\n >> Results struct size = %.2f MB\n",
+            cuda_info->network_size / 1024.0 / 1024.0, cuda_info->network_cpy_size / 1024.0 / 1024.0,
+            cuda_info->dataset_size / 1024.0 / 1024.0, cuda_info->results_size / 1024.0 / 1024.0);
     fflush(stdout);
+
 
     // get free memory
     cuda_info->gpu_usable_mem -= cuda_info->dataset_size;
     cuda_info->gpu_usable_mem -= cuda_info->results_size;
+    cuda_info->gpu_usable_mem -= cuda_info->network_size;
 
-    // do not allocate all the memory // (100 MB free)
-    cuda_info->gpu_usable_mem -= (100 * 1024 * 1024 * 8);
+    // store memory for cuda (500 MB)
+    cuda_info->gpu_usable_mem -= (500 * 1024 * 1024); // B
 
-    // compute number of networks that can be stored
-    cuda_info->n_networks = (int)((cuda_info->gpu_usable_mem) / (cuda_info->network_size));
-    printf(" > Usable memory in GPU for network = %.2f MB (%.2f GB) / %.2f. Number of networks = %d\n", 
-        cuda_info->gpu_usable_mem / 1024.0 / 1024.0, cuda_info->gpu_usable_mem / 1024.0 / 1024.0 / 1024.0, cuda_info->gpu_mem[0] / 1024.0 / 1024.0, cuda_info->n_networks);
+    // usable memory
+    printf(" > Free memory in GPU = %.2f\n", cuda_info->gpu_usable_mem / 1024.0 / 1024.0);
+
+
+    // find the maximum number of possible copies
+
+    // memory of each kernel for thread (bits)
     
-    fflush(stdout);
+    int max_copies = (int)(cuda_info->gpu_usable_mem / cuda_info->network_cpy_size);
+    int n_cps = max_copies;
+    int valid = 0;
 
-    // the maximum number of copies that can be used is defined by the batch size
-    if(cuda_info->n_networks > conf->batch_size)
+    // cost of each kernel (in Bytes)
+    double reinit_kernel = 64 / 8;
+    double load_sample_kernel = 672 / 8;
+    double reinit_neurons_kernel = 256 / 8;
+    double lif_in = 832 / 8;
+    double lif_out = 480 / 8;
+
+    int n_rk_threads, n_lsk_threads, n_neur_threads;
+
+    while(valid == 0){
+
+        n_rk_threads = ((((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * gpu_snn_in_cpu->max_spikes * n_cps) / 1024) + 1) * 1024;
+        n_lsk_threads = ((gpu_snn_in_cpu->n_input_neurons * gpu_snn_in_cpu->max_spikes * n_cps / 1024) + 1) * 1024;
+        n_neur_threads = (((gpu_snn_in_cpu->n_neurons * n_cps) / 516) + 1) * 516;
+        
+        if((n_rk_threads * reinit_kernel) < cuda_info->gpu_usable_mem && (n_lsk_threads * load_sample_kernel) < cuda_info->gpu_usable_mem &&
+            (n_neur_threads * lif_in) < cuda_info->gpu_usable_mem){
+                valid = 1;
+        }
+        else{
+            n_cps --;
+        }
+    }
+    
+    // compute the number of networks
+    if(conf->batch_size < n_cps) {
         cuda_info->n_networks = conf->batch_size;
+    }
+    else { // conf->batch_size > n_cps
+        // batch_size should be multiple of batch_size
+        cuda_info->n_networks = conf->batch_size / 2;
+        
+        while(cuda_info->n_networks > n_cps){
+            cuda_info->n_networks /= 2;
+        }
+    }
+
+    printf(" > Selected number of copies = %d (max possible = %d)\n", cuda_info->n_networks, n_cps);
 
     gpu_snn_in_cpu->n_networks = cuda_info->n_networks;
+
 
     // compute kernel configuration for each execution part
     // The execution is done by a 3D grid, where each dimension of the grid
     // contains the blocks and thredas to simulate a cpy
 
+    cuda_info->n_threads_per_blk_rsm_x = 1024;
+    cuda_info->n_threads_per_blk_rsm_y = 1;
+    cuda_info->n_threads_per_blk_rsm_z = 1;
+    cuda_info->n_blk_rsm_x = ((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * gpu_snn_in_cpu->max_spikes * cuda_info->n_networks) / cuda_info->n_threads_per_blk_rsm_x + 1;
+    cuda_info->n_blk_rsm_y = 1;
+    cuda_info->n_blk_rsm_z = 1;
 
-    // these numbers are only temporal
-    int n_spkmatrix_reinit_blk = ((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * conf->max_input_spikes) / 1024 + 1;
-    int n_spkmatrix_reinit_threads_per_blk = 1024;
-    
-    int n_ls_threads_per_block = 1024;
-    int n_ls_blk = (gpu_snn_in_cpu->n_input_neurons) / 1024 + 1;
+    cuda_info->n_threads_per_blk_ls_x = 1024;
+    cuda_info->n_threads_per_blk_ls_y = 1;
+    cuda_info->n_threads_per_blk_ls_z = 1;
+    cuda_info->n_blk_ls_x = (gpu_snn_in_cpu->n_input_neurons * gpu_snn_in_cpu->n_networks) / cuda_info->n_threads_per_blk_ls_x + 1;
+    cuda_info->n_blk_ls_y = 1;
+    cuda_info->n_blk_ls_z = 1;
 
-    int n_pn_threads_per_block = 516;
-    int n_pn_blk = (gpu_snn_in_cpu->n_neurons) / 516 + 1;
+    cuda_info->n_threads_per_blk_nrs_x = 516;
+    cuda_info->n_threads_per_blk_nrs_y = 1;
+    cuda_info->n_threads_per_blk_nrs_z = 1;
+    cuda_info->n_blk_nrs_x = (gpu_snn_in_cpu->n_neurons * cuda_info->n_networks) / cuda_info->n_threads_per_blk_nrs_x + 1;
+    cuda_info->n_blk_nrs_y = 1;
+    cuda_info->n_blk_nrs_z = 1;
 }
 
 

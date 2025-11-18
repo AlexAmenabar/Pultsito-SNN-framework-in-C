@@ -64,7 +64,16 @@ extern "C" cuda_info_t* getProperties(){
         printf("  minor-major: %d-%d\n", prop.minor, prop.major);
         printf("  Warp-size: %d\n", prop.warpSize);
         printf("  Concurrent kernels: %s\n", prop.concurrentKernels ? "yes" : "no");
-        printf("  Concurrent computation/communication: %s\n\n",prop.deviceOverlap ? "yes" : "no");
+        printf("  Concurrent computation/communication: %s\n",prop.deviceOverlap ? "yes" : "no");
+        printf("  Max Threads per Multiprocessor: %d\n", prop.maxThreadsPerMultiProcessor);
+        printf("  Multiprocessor count: %d\n", prop.multiProcessorCount);
+        printf("  Max blocks dim x: %d\n", prop.maxGridSize[0]);
+        printf("  Max blocks dim y: %d\n", prop.maxGridSize[1]);
+        printf("  Max blocks dim z: %d\n", prop.maxGridSize[2]);
+        printf("  Max thredas dim x: %d\n", prop.maxThreadsDim[0]);
+        printf("  Max thredas dim y: %d\n", prop.maxThreadsDim[1]);
+        printf("  Max thredas dim z: %d\n", prop.maxThreadsDim[2]);
+        printf("  Max threads per block: %d\n", prop.maxThreadsPerBlock);
 
         // set i device as active and get memory info
         cudaSetDevice(i);

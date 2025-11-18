@@ -38,7 +38,7 @@ INC_DIR_LIBS = lib
 
 # Target executable name:
 BIN = bin
-EXE = cuda_simulation_inference 
+EXE = cuda_simulation_inference
 
 # Object files:
 OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/snn_library.o $(OBJ_DIR)/load_data.o $(OBJ_DIR)/helpers.o $(OBJ_DIR)/lif_neuron.o $(OBJ_DIR)/simulations.o $(OBJ_DIR)/stdp.o $(OBJ_DIR)/metrics.o $(OBJ_DIR)/GPU_lif_neuron.o $(OBJ_DIR)/cuda_helpers.o $(OBJ_DIR)/GPU_simulations.o
