@@ -41,7 +41,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     toml_table_t *tbl, *tbl_general, *tbl_simulation, *tbl_dataset, *tbl_output, *tbl_network;
     
     // [general] section
-    toml_value_t execution_type, neuron_type, execution_obj, n_process, n_inner_process, cuda, 
+    toml_value_t execution_type, neuron_type, execution_obj, n_process, n_inner_process, cuda, multigpu, 
                 learn, encode, batch_size;
     
     // [simulation] section
@@ -84,6 +84,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     n_process = toml_table_int(tbl_general, "n_process"); // number of CPU processes
     n_inner_process = toml_table_int(tbl_general, "n_inner_process");
     cuda = toml_table_int(tbl_general, "cuda"); // simulated on cuda
+    multigpu = toml_table_int(tbl_general, "multi_gpu"); // simulated on cuda
     learn = toml_table_int(tbl_general, "learn"); // inference or training
     encode = toml_table_int(tbl_general, "encode"); // encode input or not
     batch_size = toml_table_int(tbl_general, "batch_size");
@@ -107,6 +108,9 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     if(!cuda.ok)
         cuda.u.i = 0; // no cuda
 
+    if(!multigpu.ok)
+        multigpu.u.i = 0; // no multigpu
+
     if(!learn.ok)
         learn.u.i = 0; // inference
 
@@ -123,6 +127,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     conf->n_process = n_process.u.i;
     conf->n_inner_process = n_inner_process.u.i;
     conf->cuda = cuda.u.i;
+    conf->multi_gpu = multigpu.u.i;
     conf->learn = learn.u.i;
     conf->encode = encode.u.i;
     conf->batch_size = batch_size.u.i;
@@ -136,6 +141,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     // check that all is correctly loaded
     if(!time_steps.ok){
         printf(" >> It is necessary to provide simulation time steps!\n");
+        fflush(stdout);
         exit(1);
     }
 
@@ -169,11 +175,13 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     // check that all is correctly loaded
     if(!train_set.ok){
         printf(" >> File to load the train / simulation dataset must be provided!\n");
+        fflush(stdout);
         exit(1);
     }
 
     if(!n_train.ok){
         printf(" >> The number of samples in the set must be provided!\n");
+        fflush(stdout);
         exit(1);    
     }
 
@@ -186,11 +194,13 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
 
         if(!test_set.ok){
             printf(" >> File to load the test dataset must be provided for ML!\n");
+            fflush(stdout);
             exit(1);
         }
 
         if(!n_test.ok){
             printf(" >> The number of samples in the test set must be provided!\n");
+            fflush(stdout);
             exit(1);    
         }
 
@@ -205,16 +215,19 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
 
     if(!n_classes.ok && conf->simulation_obj == 1){
         printf(" >> In ML mode, the number of classes in the dataset is necessary!\n");
+        fflush(stdout);
         exit(1);
     }
 
     if(!epochs.ok && conf->simulation_obj == 1){
         printf(" >> In ML mode the number of epochs to be simulated is necessary!\n");
+        fflush(stdout);
         exit(1);
     }
 
     if(!input_size.ok){
         printf(" >> The input size is necessary!\n");
+        fflush(stdout);
         exit(1);
     }
     
@@ -244,14 +257,17 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     // check that everything is loaded
     if(!generated_spikes_file.ok){
         printf("A file to store generated spikes must be provided!\n");
+        fflush(stdout);
         exit(1);
     }
     if(!execution_times_file.ok){
         printf("A file to store execution times must be provided!\n");
+        fflush(stdout);
         exit(1);
     }
     if(!n_spikes_per_neuron_file.ok){
         printf("A file to store the number of spikes generated per neuron must be provided!\n");
+        fflush(stdout);
         exit(1);
     }
 
@@ -265,6 +281,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     }
     else if(store_network.u.i == 1 && !store_network_file.ok){
         printf("The file name to store the final network must be provided!\n");
+        fflush(stdout);
         exit(1);
     }
 
@@ -308,6 +325,7 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
     if(!network_file.ok)
     {
         printf(" > The file to load the network from must be provided!\n");
+        fflush(stdout);
         exit(1);
     }
 
@@ -437,6 +455,7 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
     // check that all the information has been loaded correctly
     if(!(n_neurons.ok && n_input_neurons.ok && n_output_neurons.ok && n_synapses.ok && n_input_synapses.ok && n_output_synapses.ok)){
         printf("The number of neurons, input neurons, output neurons, synapses, input synapses and output synapses must be provided in the network file!");
+        fflush(stdout);
         exit(1);
     }
 
@@ -625,6 +644,7 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
             // check that data has been correctly loaded
             if(!n_connections.ok){
                 printf(" > Connection list is incorrect. Exiting.\n");
+                fflush(stdout);
                 exit(1);
             }
 
@@ -639,6 +659,7 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
                 // check that the information have been correctly loaded
                 if(!(neuron_id.ok && n_synapses_to_neuron.ok)){
                     printf("Connection list data is incorrect. Exiting\n");
+                    fflush(stdout);
                     exit(1);
                 }
 

@@ -7,15 +7,19 @@
 #include "load_data.h"
 
 #include "simulations/simulations.h"
-#include "cuda/GPU_simulations.cuh"
 
 #include "neuron_models/lif_neuron.h"
-#include "neuron_models/GPU_lif_neuron.cuh"
 
 #include "training_rules/stdp.h"
 
 #include "helpers.h"
-#include "cuda/cuda_helpers.cuh"
+
+#ifdef CUDA
+    #include "cuda/GPU_simulations.cuh"
+
+#include "neuron_models/GPU_lif_neuron.cuh"
+    #include "cuda/cuda_helpers.cuh"
+#endif
 
 /* main.c */
 int main(int argc, char *argv[]) {
@@ -37,12 +41,13 @@ int main(int argc, char *argv[]) {
     printf(" > Loading simulation configuration file information...\n");
     load_configuration_params_from_toml(argv[1], &conf);
     printf(" > Simulation configuration file loaded!\n\n");
+    fflush(stdout);
 
     // load information about the snn from the network file //
     printf(" > Loading network data...\n");
     load_network_information(conf.network_file, &snn, &lists, &conf); // I don't like that this function loads some data into the SNN structure directly, it's confusing
     printf(" > Network data loaded!\n\n");
-
+    fflush(stdout);
 
     // initialize the network
     printf(" > Initializing network...\n"); 
@@ -102,7 +107,8 @@ int main(int argc, char *argv[]) {
         
         double elpt;
         struct timespec start, end; // to measure simulation complete time
-        
+        struct timespec start_cpy, end_cpy;
+
         // start timing
         clock_gettime(CLOCK_MONOTONIC, &start);
 
@@ -119,8 +125,12 @@ int main(int argc, char *argv[]) {
         configure_cuda_simulation(cuda_info, gpu_snn, gpu_dataset, &conf);
 
         // copy data structures to GPU memory
-        GPU_SNN_t *d_gpu_snn = cpy_SNN2GPU(gpu_snn, cuda_info); // structure in GPU
-        GPU_dataset_t *d_gpu_dataset = cpy_dataset2GPU(gpu_dataset, cuda_info);
+        clock_gettime(CLOCK_MONOTONIC, &start_cpy);        
+        GPU_SNN_t **d_gpu_snn = cpy_SNN2GPU(gpu_snn, cuda_info); // structure in GPU
+        GPU_dataset_t **d_gpu_dataset = cpy_dataset2GPU(gpu_dataset, cuda_info);
+        clock_gettime(CLOCK_MONOTONIC, &end_cpy);
+        elpt = (end_cpy.tv_sec - start_cpy.tv_sec) + (end_cpy.tv_nsec - start_cpy.tv_nsec) / 1e9;
+        printf(" Elapsed time copying data: %lf\n", elpt);
 
         // free memory of GPU structs allocated in CPU memory
         free_gpu_snn_in_CPU(gpu_snn);
@@ -131,12 +141,11 @@ int main(int argc, char *argv[]) {
         simulate_in_GPU(d_gpu_snn, d_gpu_dataset, &conf, cuda_info, &snn, &train_dataset); // refactorize
 
 
-
         // end timing
         clock_gettime(CLOCK_MONOTONIC, &end);
         elpt = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     
-        printf(" Elapsed total GPU time: %lf\n", elpt);
+        printf(" Elapsed total time: %lf\n", elpt);
 
         #endif
     }

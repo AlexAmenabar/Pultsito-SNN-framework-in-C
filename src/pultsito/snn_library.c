@@ -782,6 +782,7 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu
     cuda_info->n_samples = gpu_dataset_in_cpu->n_samples;
     cuda_info->time_steps = conf->time_steps;
     cuda_info->batch_size = conf->batch_size;
+    cuda_info->multi_gpu_allowed = conf->multi_gpu;
 
     // get memory occupation data for GPU by data structures
     cuda_info->network_size = get_gpu_snn_size(gpu_snn_in_cpu);
@@ -852,25 +853,85 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu
         while(cuda_info->n_networks > n_cps){
             cuda_info->n_networks /= 2;
         }
+
+        // multi gpu
+        if(cuda_info->multi_gpu_allowed == 1){
+
+            int n_required_devices = cuda_info->batch_size / cuda_info->n_networks;
+        
+            // set the number of devices that will be used
+            if(n_required_devices < cuda_info->nDevices){
+                cuda_info->nDevices = n_required_devices;
+            }
+
+            // compute the number of networks per GPU
+            cuda_info->n_batch_per_dev = cuda_info->batch_size / cuda_info->nDevices;
+
+            // compute the number of networks per each device (ideally, the number of samples to be computed)
+            cuda_info->n_networks_per_dev = cuda_info->n_batch_per_dev;
+
+            // if the number of network per device is bigger than the maximum, change
+            if(cuda_info->n_networks_per_dev > cuda_info->n_networks)
+                cuda_info->n_networks_per_dev = cuda_info->n_networks;
+        }
+        // balance work in all available gpus
+        else if(cuda_info->multi_gpu_allowed == 2){
+
+            // compute how much samples are simulated on each device
+            cuda_info->n_batch_per_dev = cuda_info->batch_size / cuda_info->nDevices; 
+
+            // try to use one network per each sample
+            cuda_info->n_networks_per_dev = cuda_info->n_batch_per_dev;
+            // if a devoce do not have enough memory to store the ideal number of copies, reduce the number
+            if(cuda_info->n_networks_per_dev > cuda_info->n_networks){
+                
+                int valid = 0;
+
+                while(valid == 0){
+                    
+                    cuda_info->n_networks_per_dev /= 2;
+
+                    if(cuda_info->n_networks_per_dev <= cuda_info->n_networks)
+                        valid = 1;
+                }
+            }
+
+        }
+
+        // if multigpu not allowed, then copy all information for unigpu
+        else{
+
+            cuda_info->nDevices = 1;
+            cuda_info->n_batch_per_dev = cuda_info->batch_size;
+            cuda_info->n_networks_per_dev = cuda_info->n_networks;
+
+        }
     }
 
-    printf(" > Selected number of copies = %d (max possible = %d)\n", cuda_info->n_networks, n_cps);
+    gpu_snn_in_cpu->n_networks = cuda_info->n_networks_per_dev;
 
-    gpu_snn_in_cpu->n_networks = cuda_info->n_networks;
 
+    printf("\n\n > Printing cuda simulation info:\n");
+    printf(" >> Batch size = %d\n", cuda_info->batch_size);
+    printf(" >> Number of networks = %d\n", cuda_info->n_networks);
+    printf(" >> Number of devices = %d\n", cuda_info->nDevices);
+    printf(" >> Number of samples in batch simulated by each device = %d\n", cuda_info->n_batch_per_dev);
+    printf(" >> Number of networks in each device = %d\n\n", cuda_info->n_networks_per_dev);
 
     // compute kernel configuration for each execution part
     // The execution is done by a 3D grid, where each dimension of the grid
     // contains the blocks and thredas to simulate a cpy
 
-    cuda_info->n_threads_per_blk_rsm_x = 1024;
+
+    // REVISE THIS FOR MULTIGPU
+    cuda_info->n_threads_per_blk_rsm_x = 516;
     cuda_info->n_threads_per_blk_rsm_y = 1;
     cuda_info->n_threads_per_blk_rsm_z = 1;
-    cuda_info->n_blk_rsm_x = ((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * gpu_snn_in_cpu->max_spikes * cuda_info->n_networks) / cuda_info->n_threads_per_blk_rsm_x + 1;
+    cuda_info->n_blk_rsm_x = ((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * gpu_snn_in_cpu->max_spikes * gpu_snn_in_cpu->n_networks) / cuda_info->n_threads_per_blk_rsm_x + 1;
     cuda_info->n_blk_rsm_y = 1;
     cuda_info->n_blk_rsm_z = 1;
 
-    cuda_info->n_threads_per_blk_ls_x = 1024;
+    cuda_info->n_threads_per_blk_ls_x = 516;
     cuda_info->n_threads_per_blk_ls_y = 1;
     cuda_info->n_threads_per_blk_ls_z = 1;
     cuda_info->n_blk_ls_x = (gpu_snn_in_cpu->n_input_neurons * gpu_snn_in_cpu->n_networks) / cuda_info->n_threads_per_blk_ls_x + 1;
@@ -880,7 +941,7 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu
     cuda_info->n_threads_per_blk_nrs_x = 516;
     cuda_info->n_threads_per_blk_nrs_y = 1;
     cuda_info->n_threads_per_blk_nrs_z = 1;
-    cuda_info->n_blk_nrs_x = (gpu_snn_in_cpu->n_neurons * cuda_info->n_networks) / cuda_info->n_threads_per_blk_nrs_x + 1;
+    cuda_info->n_blk_nrs_x = (gpu_snn_in_cpu->n_neurons * gpu_snn_in_cpu->n_networks) / cuda_info->n_threads_per_blk_nrs_x + 1;
     cuda_info->n_blk_nrs_y = 1;
     cuda_info->n_blk_nrs_z = 1;
 }

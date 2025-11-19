@@ -18,6 +18,7 @@ typedef struct{
     int n_process; // number of CPU processes
     int n_inner_process;
     int cuda; // simulation done in cuda
+    int multi_gpu; // multi gpu simulation allowed or not: not (0), auto (1), maximize (2, use all available gpus)
     int learn; // inference (0) / training (1)
     int encode; // input encoded (0) / encode input (1) // TODO
     int batch_size; // batch size
@@ -277,6 +278,7 @@ typedef struct {
     int nDevices;
     double *gpu_mem; // free memory in the GPU
     double gpu_usable_mem;
+    int multi_gpu_allowed;
 
     // cuda simulation details
     double dataset_size;
@@ -288,6 +290,12 @@ typedef struct {
     int n_samples;
     int batch_size;
     int time_steps;
+
+    // multigpu info
+    int n_batch_per_dev; // sample simulated by each device in the batch
+    int gpuId; // used to index the correct information on each GPU
+    int n_networks_per_dev;
+
 
     // number of threads and blocks per kernel
     int n_threads_per_blk_rsm_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;

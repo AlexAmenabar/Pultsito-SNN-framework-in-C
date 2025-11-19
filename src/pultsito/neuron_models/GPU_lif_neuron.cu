@@ -4,6 +4,8 @@
 
 #include "snn_library.h"
 #include "neuron_models/GPU_lif_neuron.cuh"
+#include "cuda/GPU_simulations.cuh"
+
 
 #define cudaCheckError(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -15,6 +17,9 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
     }
 }
 
+__constant__ int c_n_samples;
+
+//__constant__ size_t L;
 
 __global__ void reinit_spk_matrix(GPU_SNN_t *snn){
     
@@ -41,7 +46,7 @@ __global__ void reinit_spk_matrix(GPU_SNN_t *snn){
 }
 
 
-__global__ void load_sample_kernel(GPU_SNN_t *snn, GPU_dataset_t *dataset, int b, int n_samples)
+__global__ void load_sample_kernel(GPU_SNN_t *snn, GPU_dataset_t *dataset, int b, int batch_last_sample)
 {
     //lortu hariaren identifikadorea
 
@@ -85,7 +90,7 @@ __global__ void load_sample_kernel(GPU_SNN_t *snn, GPU_dataset_t *dataset, int b
         int s = b + (int)(network_number); // the i.th network computes the s + i sample
 
 
-        if(s < n_samples){
+        if(s < batch_last_sample && s < c_n_samples){
 
             // get the feature
             int f = local_neuron_index; // the neuron index is also the feature index
@@ -244,7 +249,7 @@ __global__ void reinit_synapses_kernel(GPU_SNN_t *snn, int s)
     }
 }
 
-__global__ void lif_neuron_input(GPU_SNN_t *snn, int b, int t, int n_samples)
+__global__ void lif_neuron_input(GPU_SNN_t *snn, int b, int t, int batch_last_sample)
 {
     //lortu hariaren identifikadorea
 
@@ -273,7 +278,7 @@ __global__ void lif_neuron_input(GPU_SNN_t *snn, int b, int t, int n_samples)
 
         size_t s = (size_t)(b) + network_number;
 
-        if(s < (size_t)(n_samples)){
+        if(s < (size_t)(batch_last_sample) && (int)(s) < c_n_samples){
 
             // loop over input synapses to check if the index should be updated in one of them
             if(snn->r_period_remain[global_n] <= 0){
@@ -315,7 +320,7 @@ __global__ void lif_neuron_input(GPU_SNN_t *snn, int b, int t, int n_samples)
     }
 }
 
-__global__ void lif_neuron_output(GPU_SNN_t *snn, int b, int t, GPU_results_t *results, int n_samples)
+__global__ void lif_neuron_output(GPU_SNN_t *snn, int b, int t, GPU_results_t *results, int batch_last_sample)
 {
     //lortu hariaren identifikadorea
 
@@ -343,7 +348,7 @@ __global__ void lif_neuron_output(GPU_SNN_t *snn, int b, int t, GPU_results_t *r
 
         int s = b + (int)network_number;
 
-        if(s < n_samples){
+        if(s < batch_last_sample && s < c_n_samples){
 
             // v has copies for each network, v_thresh only one original copy
             if(snn->v[global_n] >= snn->v_thresh[local_n]){
@@ -374,23 +379,24 @@ __global__ void lif_neuron_output(GPU_SNN_t *snn, int b, int t, GPU_results_t *r
 }
 
 
-extern "C" void simulate_LIF_in_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, simulation_configuration_t *conf, cuda_info_t *cuda_info, spiking_nn_t *cpu_snn, input_data_t *cpu_dataset){
+extern "C" void simulate_LIF_in_single_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, simulation_configuration_t *conf, cuda_info_t *cuda_info, spiking_nn_t *cpu_snn, input_data_t *cpu_dataset){
     
 
     printf(" > Simulating LIF neurons network in GPU...\n");
     fflush(stdout);
 
     // call kernels
-    int n_samples, time_steps, batch_size, n_networks;
-    int t, s, b, snn;
+    int n_samples, time_steps, batch_size, n_networks, n_epochs;
+    int t, s, b, snn, e;
     cudaError_t err;
 
     n_samples = cuda_info->n_samples;
     time_steps = cuda_info->time_steps;
     batch_size = cuda_info->batch_size;
     n_networks = cuda_info->n_networks;
+    n_epochs = conf->epochs;
 
-
+    // set dim3 struct to launch kernels
     dim3 grid_n_spkmatrix_reinit_blk((unsigned int)(cuda_info->n_threads_per_blk_rsm_x), cuda_info->n_threads_per_blk_rsm_y, cuda_info->n_threads_per_blk_rsm_z );
     dim3 block_n_spkmatrix_reinit_threads_per_blk((unsigned int)(cuda_info->n_threads_per_blk_rsm_x), cuda_info->n_threads_per_blk_rsm_y, cuda_info->n_threads_per_blk_rsm_z );    
 
@@ -402,56 +408,190 @@ extern "C" void simulate_LIF_in_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_datas
 
 
 
-    // loop over batches
-    for(b = 0; b < n_samples; b = b + batch_size){
+    // compute epochs
+    for(e = 0; e < n_epochs; e++){
+    
+        // loop over batches
+        for(b = 0; b < n_samples; b = b + batch_size){
 
-        for(snn = 0; snn < batch_size; snn = snn + n_networks){
-            
-            // reinit the entire matrix: number of elements = (n_neurons + n_input_neurons) * L
-            // max 1024 threads per block: n_neurons * n_input_neurons threads, each L iterations
-            // n_blocks = (n_neurons + n_input_neurons / 1024) + 1
-            
-            reinit_spk_matrix<<<grid_n_spkmatrix_reinit_blk, block_n_spkmatrix_reinit_threads_per_blk>>>(gpu_snn);
-            err = cudaGetLastError();
-            //printf("Launch error: %s\n", cudaGetErrorString(err));
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
-
-            load_sample_kernel<<<grid_n_ls_blk, block_n_ls_threads_per_block>>>(gpu_snn, gpu_dataset, b + snn, n_samples);
-            err = cudaGetLastError();
-            //printf("Launch error: %s\n", cudaGetErrorString(err));
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
-
-            // reinit neurons
-            reinit_neurons_kernel<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn); // n_neurons 8784
-            err = cudaGetLastError();
-            //printf("Launch error: %s\n", cudaGetErrorString(err));
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
-            
-            // reinit synapses
-            //reinit_synapses_kernel<<<2792, 516>>>(gpu_snn, s); // n_synapses 1440187
-            
-            for(t = 0; t<time_steps; t++){
-
-                // input step
-                lif_neuron_input<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn, b + snn, t, n_samples);
+            for(snn = 0; snn < batch_size; snn = snn + n_networks){
+                
+                // reinit the entire matrix: number of elements = (n_neurons + n_input_neurons) * L
+                // max 1024 threads per block: n_neurons * n_input_neurons threads, each L iterations
+                // n_blocks = (n_neurons + n_input_neurons / 1024) + 1
+                
+                reinit_spk_matrix<<<grid_n_spkmatrix_reinit_blk, block_n_spkmatrix_reinit_threads_per_blk>>>(gpu_snn);
                 err = cudaGetLastError();
                 //printf("Launch error: %s\n", cudaGetErrorString(err));
                 cudaCheckError(cudaPeekAtLastError());  // check launch errors
-                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors        
-                
-                // output step
-                lif_neuron_output<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn, b + snn, t, gpu_results, n_samples);
+                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+                load_sample_kernel<<<grid_n_ls_blk, block_n_ls_threads_per_block>>>(gpu_snn, gpu_dataset, b + snn, n_samples);
                 err = cudaGetLastError();
                 //printf("Launch error: %s\n", cudaGetErrorString(err));
                 cudaCheckError(cudaPeekAtLastError());  // check launch errors
-                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors          
-                // learning
+                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+                // reinit neurons
+                reinit_neurons_kernel<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn); // n_neurons 8784
+                err = cudaGetLastError();
+                //printf("Launch error: %s\n", cudaGetErrorString(err));
+                cudaCheckError(cudaPeekAtLastError());  // check launch errors
+                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
                 
+                // reinit synapses
+                //reinit_synapses_kernel<<<2792, 516>>>(gpu_snn, s); // n_synapses 1440187
+                
+                for(t = 0; t<time_steps; t++){
+
+                    // input step
+                    lif_neuron_input<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn, b + snn, t, n_samples);
+                    err = cudaGetLastError();
+                    //printf("Launch error: %s\n", cudaGetErrorString(err));
+                    cudaCheckError(cudaPeekAtLastError());  // check launch errors
+                    cudaCheckError(cudaDeviceSynchronize());  // check runtime errors        
+                    
+                    // output step
+                    lif_neuron_output<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn, b + snn, t, gpu_results, n_samples);
+                    err = cudaGetLastError();
+                    //printf("Launch error: %s\n", cudaGetErrorString(err));
+                    cudaCheckError(cudaPeekAtLastError());  // check launch errors
+                    cudaCheckError(cudaDeviceSynchronize());  // check runtime errors          
+                    // learning
+                    
+                }
             }
+
+            // update weights
         }
     }
 }
 
+extern "C" void simulate_LIF_in_multi_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, simulation_configuration_t *conf, cuda_info_t *cuda_info, spiking_nn_t *cpu_snn, input_data_t *cpu_dataset, int dev, int batch){
+    
+    // call kernels
+    int time_steps, batch_size, dev_batch_size, n_networks;
+    int t, s, b, snn;
+    cudaError_t err;
+
+    time_steps = cuda_info->time_steps;
+    batch_size = cuda_info->batch_size;
+    dev_batch_size = cuda_info->n_batch_per_dev;
+    n_networks = cuda_info->n_networks_per_dev;
+
+    // set dim3 struct to launch kernels
+    dim3 grid_n_spkmatrix_reinit_blk((unsigned int)(cuda_info->n_threads_per_blk_rsm_x), cuda_info->n_threads_per_blk_rsm_y, cuda_info->n_threads_per_blk_rsm_z );
+    dim3 block_n_spkmatrix_reinit_threads_per_blk((unsigned int)(cuda_info->n_threads_per_blk_rsm_x), cuda_info->n_threads_per_blk_rsm_y, cuda_info->n_threads_per_blk_rsm_z );    
+
+    dim3 grid_n_ls_blk( (unsigned int)(cuda_info->n_blk_ls_x), cuda_info->n_blk_ls_y, cuda_info->n_blk_ls_z );
+    dim3 block_n_ls_threads_per_block( (unsigned int)(cuda_info->n_threads_per_blk_ls_x), cuda_info->n_threads_per_blk_ls_y, cuda_info->n_threads_per_blk_ls_z );    
+
+    dim3 grid_n_pn_blk( (unsigned int)(cuda_info->n_blk_nrs_x), cuda_info->n_blk_nrs_y, cuda_info->n_blk_nrs_z );
+    dim3 block_n_pn_threads_per_block( (unsigned int)(cuda_info->n_threads_per_blk_nrs_x), cuda_info->n_threads_per_blk_nrs_y, cuda_info->n_threads_per_blk_nrs_z );  
+
+    
+    // compute the sample index that will be simulated by this device
+    int fsample = batch_size * batch + dev * dev_batch_size; 
+
+
+    // simulate the batch using the available number of copies
+    for(snn = 0; snn < dev_batch_size; snn = snn + n_networks){
+        
+        // reinit the entire matrix: number of elements = (n_neurons + n_input_neurons) * L
+        // max 1024 threads per block: n_neurons * n_input_neurons threads, each L iterations
+        // n_blocks = (n_neurons + n_input_neurons / 1024) + 1
+        
+        reinit_spk_matrix<<<grid_n_spkmatrix_reinit_blk, block_n_spkmatrix_reinit_threads_per_blk>>>(gpu_snn);
+        err = cudaGetLastError();
+        //printf("Launch error: %s\n", cudaGetErrorString(err));
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+        load_sample_kernel<<<grid_n_ls_blk, block_n_ls_threads_per_block>>>(gpu_snn, gpu_dataset, fsample + snn, fsample + dev_batch_size);
+        err = cudaGetLastError();
+        //printf("Launch error: %s\n", cudaGetErrorString(err));
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+        // reinit neurons
+        reinit_neurons_kernel<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn); // n_neurons 8784
+        err = cudaGetLastError();
+        //printf("Launch error: %s\n", cudaGetErrorString(err));
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        
+        // reinit synapses
+        //reinit_synapses_kernel<<<2792, 516>>>(gpu_snn, s); // n_synapses 1440187
+        
+        for(t = 0; t<time_steps; t++){
+
+            // input step
+            lif_neuron_input<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn, fsample + snn, t, fsample + dev_batch_size);
+            err = cudaGetLastError();
+            //printf("Launch error: %s\n", cudaGetErrorString(err));
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors        
+            
+            // output step
+            lif_neuron_output<<<grid_n_pn_blk, block_n_pn_threads_per_block>>>(gpu_snn, fsample + snn, t, gpu_results, fsample + dev_batch_size);
+            err = cudaGetLastError();
+            //printf("Launch error: %s\n", cudaGetErrorString(err));
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors          
+            // learning
+            
+        }
+    }
+}
+
+
+extern "C" void simulate_LIF_in_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, simulation_configuration_t *conf, cuda_info_t *cuda_info, spiking_nn_t *cpu_snn, input_data_t *cpu_dataset){
+
+
+    // copy constant(s) to gpu
+    for(int i = 0; i<cuda_info->nDevices; i++){
+        
+        cudaSetDevice(i);
+        cudaError_t err = cudaMemcpyToSymbol(c_n_samples,
+                                            &cpu_dataset->n_samples,
+                                            sizeof(int));
+    }
+
+    if(cuda_info->nDevices == 1){
+        
+        cudaSetDevice(0);
+        simulate_LIF_in_single_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], conf, cuda_info, cpu_snn, cpu_dataset);
+    }
+    // multi GPU
+    else{
+
+        int e, b, dev, batch_number = 0;
+
+        // simulate epochs
+        for(e=0; e<conf->epochs; e++){
+
+            // simulate batches in GPUs
+            int n_batches = cuda_info->n_samples / cuda_info->batch_size;
+
+            if(cuda_info->n_samples % cuda_info->batch_size != 0)
+                n_batches += 1;
+
+            for(b=0; b<n_batches; b++){
+     
+                printf(" > In batch %d\n", b);
+                fflush(stdout);
+     
+                // loop over devices (openMP threads)
+                #pragma omp parallel for private(dev)
+                for(dev = 0; dev<cuda_info->nDevices; dev++){
+
+                    cudaSetDevice(dev);
+                    simulate_LIF_in_multi_GPU(gpu_snn[dev], gpu_dataset[dev], gpu_results[dev], conf, cuda_info, cpu_snn, cpu_dataset, dev, b);
+                }
+
+
+                // wait until all finished and receive weights // TODO
+            }
+        }
+    }
+}
