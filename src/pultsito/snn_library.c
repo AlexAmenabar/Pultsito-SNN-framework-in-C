@@ -845,6 +845,11 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu
     // compute the number of networks
     if(conf->batch_size < n_cps) {
         cuda_info->n_networks = conf->batch_size;
+
+        // revise this, only works for unigpu
+        cuda_info->nDevices = 1;
+        cuda_info->n_batch_per_dev = cuda_info->batch_size;
+        cuda_info->n_networks_per_dev = cuda_info->n_networks;
     }
     else { // conf->batch_size > n_cps
         // batch_size should be multiple of batch_size
@@ -853,6 +858,8 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu
         while(cuda_info->n_networks > n_cps){
             cuda_info->n_networks /= 2;
         }
+
+
 
         // multi gpu
         if(cuda_info->multi_gpu_allowed == 1){

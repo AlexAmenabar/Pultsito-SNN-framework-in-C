@@ -17,7 +17,7 @@
 #ifdef CUDA
     #include "cuda/GPU_simulations.cuh"
 
-#include "neuron_models/GPU_lif_neuron.cuh"
+    #include "neuron_models/GPU_lif_neuron.cuh"
     #include "cuda/cuda_helpers.cuh"
 #endif
 
