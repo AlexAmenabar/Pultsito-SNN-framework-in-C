@@ -23,8 +23,6 @@
 
 /* main.c */
 int main(int argc, char *argv[]) {
-    // variables definition
-    int i, j;
 
     // I think that too much structures are used, probably this should be refactorized
     spiking_nn_t snn; // base SNN structure and copies to process samples in parallel
@@ -33,18 +31,24 @@ int main(int argc, char *argv[]) {
     network_construction_lists_t lists; // structures to 
     input_data_t train_dataset, test_dataset; // train and test datasets
 
+
     // randomize execution
     srand(time(NULL));
 
+    /*
+    Load and initialize
+    */
+
+    printf(" ============================= \n Loading and initializing data \n ============================= \n");
+
     // load configuration parameters from input file
-    //load_configuration_params(argv[1], &conf);
-    printf(" > Loading simulation configuration file information...\n");
+    printf(" > Loading configuration file...\n");
     load_configuration_params_from_toml(argv[1], &conf);
-    printf(" > Simulation configuration file loaded!\n\n");
+    printf(" > Configuration file loaded!\n\n");
     fflush(stdout);
 
     // load information about the snn from the network file //
-    printf(" > Loading network data...\n");
+    printf(" > Loading network data from file...\n");
     load_network_information(conf.network_file, &snn, &lists, &conf); // I don't like that this function loads some data into the SNN structure directly, it's confusing
     printf(" > Network data loaded!\n\n");
     fflush(stdout);
@@ -56,18 +60,15 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
 
     // load input spike train from file (different depending on execution type) // ESTO DEBERÍA CAMBIARLO; NO ME TERMINA DE GUSTAR COMO ESTÁ PASANDO DIRECTAMENTE EL PARÁMETRO DE ENTRADA
-    printf(" > Loading datasets...\n");
+    printf(" > Loading dataset...\n");
     load_dataset_from_file(&train_dataset, conf.train_set, conf.train_labels, conf.n_train, &conf);
     if(conf.test_provided == 1)
         load_dataset_from_file(&test_dataset, conf.test_set, conf.test_labels, conf.n_test, &conf);
-    
-    printf(" > Datasets loaded!\n");
+    printf(" > Dataset loaded!\n");
 
 
-    // initialize struct to store results
+    // initialize struct to store results // REVISE THIS
     printf(" > Initializing results struct...\n");
-    
-    // TODO: this is too much, probably one struct for each process and a file for each sample? Epoch?
     initialize_results_struct(&train_results, &conf, train_dataset.n_samples, snn.n_neurons);
     if(conf.test_provided == 1)
         initialize_results_struct(&test_results, &conf, test_dataset.n_samples, snn.n_neurons);
@@ -77,30 +78,51 @@ int main(int argc, char *argv[]) {
 
 
 #ifdef REORDER
-    printf(" > Reordering synapses list...\n");
+
+    printf(" > Reordering array of synapses...\n");
 
     #ifdef CUDA
+    // if cuda is used, initialized delays to 0
     if(conf.cuda != 0)
         for(int i = 0; i<snn.n_input_synapses; i++){
             snn.synapses[i].delay = 0;
         }
     #endif
 
+    // reorder array
     reorder_synapse_list(&snn);
-    printf(" > List of synapses reordered!\n");
+
+    printf(" > Array of synapses reordered!\n");
     fflush(stdout);
+
 #endif
  
-    printf("Initializing training / simulation\n");
+    printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
+
+    //printf(" > Simulation properties:\n");
+    //printf(" > > ")
+
     fflush(stdout);
 
     // train the network
     if(conf.cuda == 0){
-        train_network(&snn, &conf, &train_results, &train_dataset);
 
-        // test the network
-        if(conf.test_provided == 1)
-            test_network(&snn, &conf, &test_results, &test_dataset);
+        // biological simulation
+        if(conf.simulation_obj == 0){
+
+            simulate_samples(&snn, &conf, &train_results, &train_dataset);
+        }
+        // ML
+        else{
+            if(conf.train_provided == 1)
+                train_network(&snn, &conf, &train_results, &train_dataset);
+
+            // test the network
+            if(conf.test_provided == 1)
+                test_network(&snn, &conf, &test_results, &test_dataset);
+
+            // another function to integrate train and test?
+        }
     }
     else{
         #ifdef CUDA
@@ -150,11 +172,8 @@ int main(int argc, char *argv[]) {
         #endif
     }
 
-    // store results
-    //store_results(&train_results, &conf, &snn, &train_dataset);
-
+    
     // free memory
-
 
     return 0;
 }

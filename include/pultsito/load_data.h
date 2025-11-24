@@ -101,15 +101,20 @@ int load_configuration_params(const char *file_name, simulation_configuration_t 
 int load_configuration_params_from_toml(const char *file_name, simulation_configuration_t *conf);
 
 
+
+
+void open_results_files(simulation_configuration_t *conf);
+void close_results_files(simulation_configuration_t *conf);
+
 /// @brief Function that stores the obtained results in files
 /// @param results Structure that contains the results of the simulation
 /// @param conf Structure to read where to store the results
 /// @param snn Spiking neural network structure
-void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset);
+void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset, int *batches, int batch);
 
-void store_generated_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset);
+void store_generated_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset, int *batches, int batch);
 void store_network(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
-void store_number_of_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset);
+void store_number_of_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset, int *batches, int batch);
 void store_times(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset);
 
 #endif

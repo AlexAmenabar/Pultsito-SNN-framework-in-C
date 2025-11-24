@@ -10,7 +10,7 @@
 
 void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, network_construction_lists_t *data){ 
     
-    int i, j;
+    int i;
 
     // initialize general information
     snn->neuron_type = conf->neuron_type;
@@ -109,7 +109,9 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         neuron->r_time = 0;
         neuron->r_time_rest = 0;
         neuron->last_spike = 0;
-        neuron->t_last_spike = 0;
+
+        // TODO: TEMP: Not necessary in input neurons????
+        neuron->t_last_spikes = 0;
     }
 }
 
@@ -218,11 +220,10 @@ void initialize_synapses(spiking_nn_t *snn, int n_synapses, simulation_configura
 
 void initialize_synapse(synapse_t *synapse, network_construction_lists_t *data, spiking_nn_t *snn, int synapse_id){
     
-    int i;
-
     // read synapse parameters from lists
     synapse->w = data->weight_list[synapse_id];
     synapse->dw = 0; // initialize difference in weights
+    synapse->init_w = synapse->w;
     synapse->delay = data->delay_list[synapse_id];
 
     // input synapses do not have delay
@@ -238,19 +239,19 @@ void initialize_synapse(synapse_t *synapse, network_construction_lists_t *data, 
     switch (data->training_zones[synapse_id]) // get synapse training zone from list
     {
         case 0:
-            synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
+            synapse->learning_rule = &addSTDP;//(void (*)())&add_stdp;
             break;
         case 1:
-            synapse->learning_rule = &mult_stdp;//(void (*)())&mult_stdp;
+            synapse->learning_rule = &mltSTDP;//(void (*)())&mult_stdp;
             break;
         case 2:
-            synapse->learning_rule = &anti_stdp;//(void (*)())&anti_stdp;
+            synapse->learning_rule = &antiSTDP;//(void (*)())&anti_stdp;
             break;
         //case 3:
         //    synapse->learning_rule = &triplet_stdp;//(void (*)())&triplet_stdp;
         //    break;*/
         default:
-            synapse->learning_rule = &add_stdp;//(void (*)())&add_stdp;
+            synapse->learning_rule = &mltSTDP;//(void (*)())&add_stdp;
             break;
     }
 }
@@ -267,13 +268,8 @@ void re_initialize_synapses(spiking_nn_t *snn){
 
 void re_initialize_synapse(synapse_t *synapse){
     
-    synapse->dw = 0; // reinitialize difference in weights
-    // reinitialize synapse control variables
-    //synapse->t_last_post_spike = -1;
-    //synapse->t_last_pre_spike = -1;
-    
-    //synapse->last_spike = 0; 
-    //synapse->next_spike = 0;
+    // reinitialize weight
+    synapse->w = synapse->init_w;
 }
 
 void update_weights(spiking_nn_t *snn){
@@ -299,12 +295,10 @@ void update_weight(synapse_t *synapse){
 
 void connect_neurons_and_synapses(spiking_nn_t *snn, int **synaptic_connections){
     
-    int n_neurons, n_input, n_output, i, j, l, i_synapse;
+    int n_neurons, i, j, l, i_synapse;
     
     // copy data for legibility
     n_neurons = snn->n_neurons;
-    n_input = snn->n_input;
-    n_output = snn->n_output;
     i_synapse = 0; // index of the actual synapse
 
     // add network input synapses (the firt neurons and synapses)
@@ -400,8 +394,6 @@ void cp_network(spiking_nn_t *cp_snn, spiking_nn_t *or_snn, simulation_configura
 
 void cp_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
 
-    int i;
-
     switch(or_snn->neuron_type){
         case 0:
             // allocate memory
@@ -420,8 +412,6 @@ void cp_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
 }
 
 void cp_input_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
-
-    int i;
 
     switch(or_snn->neuron_type){
         case 0:
@@ -442,7 +432,7 @@ void cp_input_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
 
 void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
 
-    int i, j;
+    int i;
     synapse_t *cp_synapse, *or_synapse;
 
     // allocate memory for synapses
@@ -454,10 +444,12 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
         cp_synapse = &(cp_snn->synapses[i]);
 
         cp_synapse->w = or_synapse->w;
+        cp_synapse->init_w = or_synapse->init_w;
         cp_synapse->dw = or_synapse->dw; // should be 0
         cp_synapse->delay = or_synapse->delay;
         cp_synapse->lr = or_synapse->lr;
         cp_synapse->learning_rule = or_synapse->learning_rule; // copy function pointer
+        cp_synapse->stdp_steps = or_synapse->stdp_steps;
 
         cp_synapse->pre_neuron_index = or_synapse->pre_neuron_index;
         cp_synapse->post_neuron_index = or_synapse->post_neuron_index;
@@ -487,9 +479,9 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
 void reorder_synapse_list(spiking_nn_t *snn){
     
     int *new_order_indexes, *map_indexes;
-    int i, j, l, next_pos = 0, n_synap;
-    lif_neuron_t *lif_neuron, *pre_neuron;
-    synapse_t *new_list, *synapse;    
+    int i, j, next_pos = 0, n_synap;
+    lif_neuron_t *lif_neuron;
+    synapse_t *new_list;    
 
     // allocate memory
     new_order_indexes = (int *)malloc(snn->n_synapses * sizeof(int));
@@ -1010,8 +1002,10 @@ void initialize_results_struct(simulation_results_t *results, simulation_configu
     
     int i;
 
-    results->elapsed_time_epoch = 0;
-    results->elapsed_time = 0;
+    if(conf->store_execution_times == 1){
+        results->elapsed_time_epoch = 0;
+        results->elapsed_time = 0;
+    }
 
     // initialize struct to store simulation configuration and outputs
     results->results_per_sample = (simulation_results_per_sample_t *)malloc(n_samples * sizeof(simulation_results_per_sample_t));
@@ -1024,27 +1018,36 @@ void initialize_sample_results_struct(simulation_results_per_sample_t *results_p
     
     int i;
 
-    // initialize results struct
-    results_per_sample->elapsed_time_neurons = 0;
-    results_per_sample->elapsed_time_neurons_input = 0;
-    results_per_sample->elapsed_time_neurons_output = 0;  
-    results_per_sample->elapsed_time_synapses = 0;  
-    results_per_sample->elapsed_time_synapses_input = 0;  
-    results_per_sample->elapsed_time_synapses_output = 0;  
-    results_per_sample->elapsed_time_learning = 0;  
-    results_per_sample->elapsed_time_sample = 0;
-    results_per_sample->elapsed_time_load_sample = 0;  
-    results_per_sample->elapsed_time_re_neurons = 0;
-    results_per_sample->elapsed_time_re_synapses = 0;
+    // initialize simulation time variables
+    if(conf->store_execution_times == 1){
+        results_per_sample->elapsed_time_neurons = 0;
+        results_per_sample->elapsed_time_neurons_input = 0;
+        results_per_sample->elapsed_time_neurons_output = 0;  
+        results_per_sample->elapsed_time_synapses = 0;  
+        results_per_sample->elapsed_time_synapses_input = 0;  
+        results_per_sample->elapsed_time_synapses_output = 0;  
+        results_per_sample->elapsed_time_learning = 0;  
+        results_per_sample->elapsed_time_sample = 0;
+        results_per_sample->elapsed_time_load_sample = 0;  
+        results_per_sample->elapsed_time_re_neurons = 0;
+        results_per_sample->elapsed_time_re_synapses = 0;
+    }
 
+    // spikes info
+    if(conf->store_generated_spikes == 1)
+        results_per_sample->generated_spikes = (unsigned char **)calloc(n_neurons, sizeof(unsigned char *));
     
-    results_per_sample->generated_spikes = (unsigned char **)calloc(n_neurons, sizeof(unsigned char *));
-    results_per_sample->n_spikes_per_neuron = (int *)calloc(n_neurons, sizeof(int));
+    if(conf->store_n_spikes == 1)
+        results_per_sample->n_spikes_per_neuron = (int *)calloc(n_neurons, sizeof(int));
 
     // initialize generated spikes
     for (i = 0; i<n_neurons; i++){
-        results_per_sample->generated_spikes[i] = (unsigned char *)calloc((conf->time_steps), sizeof(unsigned char));
-        results_per_sample->n_spikes_per_neuron[i] = 0;
+        
+        if(conf->store_generated_spikes == 1)
+            results_per_sample->generated_spikes[i] = (unsigned char *)calloc((conf->time_steps), sizeof(unsigned char));
+        
+        if(conf->store_n_spikes == 1)
+            results_per_sample->n_spikes_per_neuron[i] = 0;
     }
 }
 
@@ -1053,8 +1056,10 @@ void reinitialize_results_struct(simulation_results_t *results, simulation_confi
     int i;
 
     // initialize struct to store simulation configuration and outputs    
-    results->elapsed_time_epoch = 0;//(double *)calloc(conf->n_epochs, sizeof(double));
-    results->elapsed_time = 0;
+    if(conf->store_execution_times == 1){
+        results->elapsed_time_epoch = 0;//(double *)calloc(conf->n_epochs, sizeof(double));
+        results->elapsed_time = 0;
+    }
 
     for(i = 0; i<n_samples; i++)
         reinitialize_sample_results_struct(&(results->results_per_sample[i]), conf, n_samples, n_neurons);
@@ -1065,22 +1070,29 @@ void reinitialize_sample_results_struct(simulation_results_per_sample_t *results
     
     int i, j;
     
-    results_per_sample->elapsed_time_neurons = 0;
-    results_per_sample->elapsed_time_neurons_input = 0;
-    results_per_sample->elapsed_time_neurons_output = 0;  
-    results_per_sample->elapsed_time_synapses = 0;  
-    results_per_sample->elapsed_time_synapses_input = 0;  
-    results_per_sample->elapsed_time_synapses_output = 0;  
-    results_per_sample->elapsed_time_learning = 0;    
-    results_per_sample->elapsed_time_sample = 0;
-    results_per_sample->elapsed_time_load_sample = 0;  
-    results_per_sample->elapsed_time_re_neurons = 0;
-    results_per_sample->elapsed_time_re_synapses = 0;    
+    if(conf->store_execution_times == 1){
+        results_per_sample->elapsed_time_neurons = 0;
+        results_per_sample->elapsed_time_neurons_input = 0;
+        results_per_sample->elapsed_time_neurons_output = 0;  
+        results_per_sample->elapsed_time_synapses = 0;  
+        results_per_sample->elapsed_time_synapses_input = 0;  
+        results_per_sample->elapsed_time_synapses_output = 0;  
+        results_per_sample->elapsed_time_learning = 0;    
+        results_per_sample->elapsed_time_sample = 0;
+        results_per_sample->elapsed_time_load_sample = 0;  
+        results_per_sample->elapsed_time_re_neurons = 0;
+        results_per_sample->elapsed_time_re_synapses = 0;    
+    }
    
     for (i = 0; i<n_neurons; i++){
-        for(j = 0; j<conf->time_steps; j++)
-            results_per_sample->generated_spikes[i][j] = 0;
-        results_per_sample->n_spikes_per_neuron[i] = 0;
+        for(j = 0; j<conf->time_steps; j++){
+            if(conf->store_generated_spikes == 1){
+                results_per_sample->generated_spikes[i][j] = 0;
+            }
+        }
+        if(conf->store_n_spikes == 1){
+            results_per_sample->n_spikes_per_neuron[i] = 0;
+        }
     }
 }
 

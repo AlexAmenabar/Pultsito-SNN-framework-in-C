@@ -23,14 +23,16 @@ int* create_batches(int *n_batches, input_data_t *dataset, int n_samples, int ba
     int i;
     int *batches;
 
+    if(n_samples < batch_size)
+        (*n_batches) = 1;
+
     // add empty elements to allow batches
-    if((float)n_samples / (float)batch_size > 0.0){
+    else if((n_samples % batch_size) > 0){
         
         (*n_batches) = (n_samples / batch_size) + 1;
     }
-    // only 1 batch 
-    else if((float)(n_samples) / (float)(batch_size) < 0.0){
-        *n_batches = 1;
+    else{
+        (*n_batches) = (n_samples / batch_size);
     }
 
     // allocate memory for batches

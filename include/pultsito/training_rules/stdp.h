@@ -3,23 +3,13 @@
 
 #include "snn_library.h"
 
-/// @brief Additive STDP computation
-/// @param synapse Synapse to be updated
-void add_stdp(synapse_t *synapse, int t);
-
-
-/// @brief Multiplicative STDP computation
-/// @param synapse Synapse to be updated
-void mult_stdp(synapse_t *synapse, int t);
-
-
-/// @brief Anti STDP computation
-/// @param synapse Synapse to be updated
-void anti_stdp(synapse_t *synapse, int t);
-
-
-/// @brief Tiplet STDP computation // TODO
-/// @param synapse Synapse to be updated
-void triplet_stdp(synapse_t *synapse, int t);
+/*
+STDP general functions
+*/
+int cond_stdp(synapse_t *synapse, int t);
+void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synapse, int time_diff));
+void addSTDP(synapse_t *synapse, int t, int n);
+void mltSTDP(synapse_t *synapse, int t, int n);
+void antiSTDP(synapse_t *synapse, int t, int n);
 
 #endif
