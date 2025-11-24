@@ -978,7 +978,6 @@ void store_times(simulation_results_t *results, simulation_configuration_t *conf
     fprintf(f, "%lf ", results->elapsed_time_epoch); // store total elapsed time
     fprintf(f, "%lf ", results->elapsed_time_neurons_input); // store total elapsed time
     fprintf(f, "%lf ", results->elapsed_time_neurons_output); // store total elapsed time
-    fprintf(f, "%lf ", results->elapsed_time_synapses); // store total elapsed time
     fprintf(f, "%lf ", results->elapsed_time_learning); // store total elapsed time
     fprintf(f, "%lf ", results->elapsed_time_re_neurons); // store total elapsed time
     fprintf(f, "%lf ", results->elapsed_time_re_synapses); // store total elapsed time

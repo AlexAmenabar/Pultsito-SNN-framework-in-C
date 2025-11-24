@@ -357,16 +357,20 @@ void cp_lif_neurons(lif_neuron_t *cp_lifs, lif_neuron_t *or_lifs, int n_neurons)
 
         // copy synapses data
         cp_lif->n_input_synapse = or_lif->n_input_synapse; // number of input synapses
-        cp_lif->input_synapse_indexes = (int *)malloc(cp_lif->n_input_synapse * sizeof(int));
-        for(j = 0; j<cp_lif->n_input_synapse; j++){
-            cp_lif->input_synapse_indexes[j] = or_lif->input_synapse_indexes[j];
+        if(cp_lif->n_input_synapse > 0){
+            cp_lif->input_synapse_indexes = (int *)malloc(cp_lif->n_input_synapse * sizeof(int));
+            for(j = 0; j<cp_lif->n_input_synapse; j++){
+                cp_lif->input_synapse_indexes[j] = or_lif->input_synapse_indexes[j];
+            }
         }
 
         // copy output synapses data
         cp_lif->n_output_synapse = or_lif->n_output_synapse;
-        cp_lif->output_synapse_indexes = (int *)malloc(cp_lif->n_output_synapse * sizeof(int));
-        for(j = 0; j<cp_lif->n_output_synapse; j++){
-            cp_lif->output_synapse_indexes[j] = or_lif->output_synapse_indexes[j];
+        if(cp_lif->n_output_synapse > 0){
+            cp_lif->output_synapse_indexes = (int *)malloc(cp_lif->n_output_synapse * sizeof(int));
+            for(j = 0; j<cp_lif->n_output_synapse; j++){
+                cp_lif->output_synapse_indexes[j] = or_lif->output_synapse_indexes[j];
+            }
         }
 
         // initialize the index of the next spikes to be processed
@@ -378,7 +382,7 @@ void cp_lif_neurons(lif_neuron_t *cp_lifs, lif_neuron_t *or_lifs, int n_neurons)
         cp_lif->is_output_neuron = or_lif->is_output_neuron;
 
         // copy general data
-        cp_lif->excitatory = or_lif->excitatory;
+        //cp_lif->excitatory = or_lif->excitatory;
         cp_lif->v = or_lif->v;
         cp_lif->r = or_lif->r;
         cp_lif->v_rest = or_lif->v_rest;
@@ -388,7 +392,11 @@ void cp_lif_neurons(lif_neuron_t *cp_lifs, lif_neuron_t *or_lifs, int n_neurons)
 
         cp_lif->n_last_spikes = or_lif->n_last_spikes;
         cp_lif->next_last_spike = 0;
-        cp_lif->t_last_spikes = (int*)malloc(cp_lif->n_last_spikes * sizeof(int));
+        if(cp_lif->n_last_spikes > 0)
+            cp_lif->t_last_spikes = (int*)malloc(cp_lif->n_last_spikes * sizeof(int));
+        else
+            cp_lif->t_last_spikes = 0;
+
         for(j = 0; j<cp_lif->n_last_spikes; j++){
             cp_lif->t_last_spikes[j] = -1;
         }

@@ -100,6 +100,8 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         neuron->max_spikes = conf->max_input_spikes;
 
         // connect input layer neurons with the rest 
+        neuron->n_input_synapse = 0;
+
         neuron->n_output_synapse = 1;
         neuron->output_synapse_indexes = (int *)malloc(neuron->n_output_synapse * sizeof(int));
         neuron->output_synapse_indexes[0] = i;
@@ -111,6 +113,8 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         neuron->last_spike = 0;
 
         // TODO: TEMP: Not necessary in input neurons????
+        neuron->n_last_spikes = 0;
+        neuron->next_last_spike = 0;
         neuron->t_last_spikes = 0;
     }
 }
