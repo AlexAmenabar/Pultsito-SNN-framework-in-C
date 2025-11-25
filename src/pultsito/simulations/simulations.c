@@ -357,8 +357,12 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                             #if !defined PAR_SAMPLES || defined NESTED
                             #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
                             #endif
-                            for(i = 0; i<tmp_snn->n_synapses; i++) // O(m)
+                            for(i = 0; i<tmp_snn->n_synapses; i++){ // O(m)
+                                printf(" > Synapse %d, lr %d, w = %lf\n", i, tmp_snn->synapses[i].lr, tmp_snn->synapses[i].w);
                                 tmp_snn->synapses[i].learning_rule(&(tmp_snn->synapses[i]), t, 3); // TODO: Change this!! 
+                                fflush(stdout);
+                            }
+                            printf("\n");
                         }
 
                         clock_gettime(CLOCK_MONOTONIC, &end_learning);
@@ -430,11 +434,14 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                     for(i = 0; i<snn->n_synapses; i++){
                         
                         // update w
-                        snn->synapses[i].w += snn->synapses[i].dw / batch_size;
-                        snn->synapses[i].init_w = snn->synapses[i].w;
+                        printf(" \n\nSynapse %d, w = %lf, dw = %lf\n", i, snn->synapses[i].w, snn->synapses[i].dw); 
+                        snn->synapses[i].init_w += (double)(snn->synapses[i].dw / (double)batch_size);
+                        snn->synapses[i].w = snn->synapses[i].init_w;
                         snn->synapses[i].dw = 0;
                     }    
-                #endif
+                        printf("\n\n");
+
+                    #endif
                 clock_gettime(CLOCK_MONOTONIC, &end_learning);
                 results->elapsed_time_learning += (end_learning.tv_sec - start_learning.tv_sec) + (end_learning.tv_nsec - start_learning.tv_nsec) / 1e9;
             }

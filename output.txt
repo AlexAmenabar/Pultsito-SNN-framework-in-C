@@ -1,0 +1,509 @@
+ ============================= 
+ Loading and initializing data 
+ ============================= 
+ > Loading configuration file...
+ > Configuration file loaded!
+
+ > Loading network data from file...
+ >> General information loaded
+ >> General section loaded
+ >> Neurons section loaded
+ >> Synapses loaded from file!
+ >> Synapses section loaded
+ > Network data loaded!
+
+ > Initializing network...
+ >> Neurons initialized!
+ >> Synapses initialized!
+ >> Connected!
+ > Network initialized!
+
+ > Loading dataset...
+ > Dataset loaded!
+ > Initializing results struct...
+ > Results strcut initialized!
+ > Reordering array of synapses...
+ > Array of synapses reordered!
+
+ ============================= 
+ ==== Starting simulation ==== 
+ ============================= 
+ > Epoch 0
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.000000
+ > Synapse 4, lr 2, w = 3.000000
+ > Synapse 5, lr 1, w = 3.000000
+ > Synapse 6, lr 1, w = 4.000000
+ > Synapse 7, lr 1, w = 3.000000
+ > Synapse 8, lr 0, w = 2.000000
+ > Synapse 9, lr 2, w = 4.000000
+ > Synapse 10, lr 2, w = 5.000000
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.000000
+ > Synapse 4, lr 2, w = 3.000000
+ > Synapse 5, lr 1, w = 3.000000
+ > Synapse 6, lr 1, w = 4.000000
+ > Synapse 7, lr 1, w = 3.000000
+ > Synapse 8, lr 0, w = 2.000000
+ > Synapse 9, lr 2, w = 4.000000
+ > Synapse 10, lr 2, w = 5.000000
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.000000
+ > Synapse 4, lr 2, w = 3.000000
+ > Synapse 5, lr 1, w = 3.000000
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 6, lr 1, w = 4.000000
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 7, lr 1, w = 3.000000
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 8, lr 0, w = 2.000000
+ > Synapse 9, lr 2, w = 4.000000
+ > Synapse 10, lr 2, w = 5.000000
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.000000
+ >>> t1_base = 3, t2_base = -1, t_compute = 2, tdiff = 1
+ > Synapse 4, lr 2, w = 3.000000
+ >>> t1_base = 3, t2_base = -1, t_compute = 1, tdiff = 2
+ > Synapse 5, lr 1, w = 3.818731
+ > Synapse 6, lr 1, w = 4.818731
+ > Synapse 7, lr 1, w = 3.818731
+ >>> t1_base = 3, t2_base = 1, t_compute = 2, tdiff = -1
+ > Synapse 8, lr 0, w = 2.000000
+ > Synapse 9, lr 2, w = 4.000000
+ > Synapse 10, lr 2, w = 5.000000
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ > Synapse 4, lr 2, w = 2.329680
+ >>> t1_base = 4, t2_base = 1, t_compute = 3, tdiff = -1
+ > Synapse 5, lr 1, w = 3.818731
+ >>> t1_base = 4, t2_base = 1, t_compute = 2, tdiff = -2
+ > Synapse 6, lr 1, w = 4.818731
+ >>> t1_base = 4, t2_base = 1, t_compute = 2, tdiff = -2
+ > Synapse 7, lr 1, w = 3.000000
+ > Synapse 8, lr 0, w = 2.000000
+ >>> t1_base = 4, t2_base = -1, t_compute = 3, tdiff = 1
+ > Synapse 9, lr 2, w = 4.000000
+ >>> t1_base = 4, t2_base = -1, t_compute = 3, tdiff = 1
+ > Synapse 10, lr 2, w = 5.000000
+ >>> t1_base = 4, t2_base = -1, t_compute = 2, tdiff = 2
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ > Synapse 4, lr 2, w = 3.148411
+ > Synapse 5, lr 1, w = 3.148411
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = 1
+ > Synapse 6, lr 1, w = 4.148411
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = 1
+ > Synapse 7, lr 1, w = 3.000000
+ >>> t1_base = 5, t2_base = 2, t_compute = 3, tdiff = 2
+ > Synapse 8, lr 0, w = 2.818731
+ > Synapse 9, lr 2, w = 3.181269
+ > Synapse 10, lr 2, w = 4.329680
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = -1
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ > Synapse 4, lr 2, w = 3.148411
+ > Synapse 5, lr 1, w = 3.967141
+ > Synapse 6, lr 1, w = 4.967141
+ > Synapse 7, lr 1, w = 3.670320
+ > Synapse 8, lr 0, w = 2.818731
+ > Synapse 9, lr 2, w = 3.181269
+ > Synapse 10, lr 2, w = 5.148411
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ > Synapse 4, lr 2, w = 3.148411
+ > Synapse 5, lr 1, w = 3.967141
+ > Synapse 6, lr 1, w = 4.967141
+ > Synapse 7, lr 1, w = 3.670320
+ > Synapse 8, lr 0, w = 2.818731
+ > Synapse 9, lr 2, w = 3.181269
+ > Synapse 10, lr 2, w = 5.148411
+ > Synapse 11, lr 2, w = 1.000000
+
+ 
+
+Synapse 0, w = 4.000000, dw = 0.000000
+ 
+
+Synapse 1, w = 3.000000, dw = 0.000000
+ 
+
+Synapse 2, w = 5.000000, dw = 0.000000
+ 
+
+Synapse 3, w = 3.818731, dw = 0.818731
+ 
+
+Synapse 4, w = 3.148411, dw = 0.148411
+ 
+
+Synapse 5, w = 3.967141, dw = 0.967141
+ 
+
+Synapse 6, w = 4.967141, dw = 0.967141
+ 
+
+Synapse 7, w = 3.670320, dw = 0.670320
+ 
+
+Synapse 8, w = 2.818731, dw = 0.818731
+ 
+
+Synapse 9, w = 3.181269, dw = -0.818731
+ 
+
+Synapse 10, w = 5.148411, dw = 0.148411
+ 
+
+Synapse 11, w = 1.000000, dw = 0.000000
+
+
+ > Epoch 1
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ > Synapse 4, lr 2, w = 3.148411
+ > Synapse 5, lr 1, w = 3.967141
+ > Synapse 6, lr 1, w = 4.967141
+ > Synapse 7, lr 1, w = 3.670320
+ > Synapse 8, lr 0, w = 2.818731
+ > Synapse 9, lr 2, w = 3.181269
+ > Synapse 10, lr 2, w = 5.148411
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ > Synapse 4, lr 2, w = 3.148411
+ > Synapse 5, lr 1, w = 3.967141
+ > Synapse 6, lr 1, w = 4.967141
+ > Synapse 7, lr 1, w = 3.670320
+ > Synapse 8, lr 0, w = 2.818731
+ > Synapse 9, lr 2, w = 3.181269
+ > Synapse 10, lr 2, w = 5.148411
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ > Synapse 4, lr 2, w = 3.148411
+ > Synapse 5, lr 1, w = 3.967141
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 6, lr 1, w = 4.967141
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 7, lr 1, w = 3.670320
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 8, lr 0, w = 2.818731
+ > Synapse 9, lr 2, w = 3.181269
+ > Synapse 10, lr 2, w = 5.148411
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 3.818731
+ >>> t1_base = 3, t2_base = -1, t_compute = 2, tdiff = 1
+ > Synapse 4, lr 2, w = 3.148411
+ >>> t1_base = 3, t2_base = -1, t_compute = 1, tdiff = 2
+ > Synapse 5, lr 1, w = 4.785872
+ > Synapse 6, lr 1, w = 5.785872
+ > Synapse 7, lr 1, w = 4.489051
+ >>> t1_base = 3, t2_base = 1, t_compute = 2, tdiff = -1
+ > Synapse 8, lr 0, w = 2.818731
+ > Synapse 9, lr 2, w = 3.181269
+ > Synapse 10, lr 2, w = 5.148411
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ > Synapse 4, lr 2, w = 2.478091
+ >>> t1_base = 4, t2_base = 1, t_compute = 3, tdiff = -1
+ > Synapse 5, lr 1, w = 4.785872
+ >>> t1_base = 4, t2_base = 1, t_compute = 2, tdiff = -2
+ > Synapse 6, lr 1, w = 5.785872
+ >>> t1_base = 4, t2_base = 1, t_compute = 2, tdiff = -2
+ > Synapse 7, lr 1, w = 3.670320
+ > Synapse 8, lr 0, w = 2.818731
+ >>> t1_base = 4, t2_base = -1, t_compute = 3, tdiff = 1
+ > Synapse 9, lr 2, w = 3.181269
+ >>> t1_base = 4, t2_base = -1, t_compute = 3, tdiff = 1
+ > Synapse 10, lr 2, w = 5.148411
+ >>> t1_base = 4, t2_base = -1, t_compute = 2, tdiff = 2
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ > Synapse 4, lr 2, w = 3.296821
+ > Synapse 5, lr 1, w = 4.115552
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = 1
+ > Synapse 6, lr 1, w = 5.115552
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = 1
+ > Synapse 7, lr 1, w = 3.670320
+ >>> t1_base = 5, t2_base = 2, t_compute = 3, tdiff = 2
+ > Synapse 8, lr 0, w = 3.637462
+ > Synapse 9, lr 2, w = 2.362538
+ > Synapse 10, lr 2, w = 4.478091
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = -1
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ > Synapse 4, lr 2, w = 3.296821
+ > Synapse 5, lr 1, w = 4.934283
+ > Synapse 6, lr 1, w = 5.934283
+ > Synapse 7, lr 1, w = 4.340640
+ > Synapse 8, lr 0, w = 3.637462
+ > Synapse 9, lr 2, w = 2.362538
+ > Synapse 10, lr 2, w = 5.296821
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ > Synapse 4, lr 2, w = 3.296821
+ > Synapse 5, lr 1, w = 4.934283
+ > Synapse 6, lr 1, w = 5.934283
+ > Synapse 7, lr 1, w = 4.340640
+ > Synapse 8, lr 0, w = 3.637462
+ > Synapse 9, lr 2, w = 2.362538
+ > Synapse 10, lr 2, w = 5.296821
+ > Synapse 11, lr 2, w = 1.000000
+
+ 
+
+Synapse 0, w = 4.000000, dw = 0.000000
+ 
+
+Synapse 1, w = 3.000000, dw = 0.000000
+ 
+
+Synapse 2, w = 5.000000, dw = 0.000000
+ 
+
+Synapse 3, w = 4.637462, dw = 0.818731
+ 
+
+Synapse 4, w = 3.296821, dw = 0.148411
+ 
+
+Synapse 5, w = 4.934283, dw = 0.967141
+ 
+
+Synapse 6, w = 5.934283, dw = 0.967141
+ 
+
+Synapse 7, w = 4.340640, dw = 0.670320
+ 
+
+Synapse 8, w = 3.637462, dw = 0.818731
+ 
+
+Synapse 9, w = 2.362538, dw = -0.818731
+ 
+
+Synapse 10, w = 5.296821, dw = 0.148411
+ 
+
+Synapse 11, w = 1.000000, dw = 0.000000
+
+
+ > Epoch 2
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ > Synapse 4, lr 2, w = 3.296821
+ > Synapse 5, lr 1, w = 4.934283
+ > Synapse 6, lr 1, w = 5.934283
+ > Synapse 7, lr 1, w = 4.340640
+ > Synapse 8, lr 0, w = 3.637462
+ > Synapse 9, lr 2, w = 2.362538
+ > Synapse 10, lr 2, w = 5.296821
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ > Synapse 4, lr 2, w = 3.296821
+ > Synapse 5, lr 1, w = 4.934283
+ > Synapse 6, lr 1, w = 5.934283
+ > Synapse 7, lr 1, w = 4.340640
+ > Synapse 8, lr 0, w = 3.637462
+ > Synapse 9, lr 2, w = 2.362538
+ > Synapse 10, lr 2, w = 5.296821
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ > Synapse 4, lr 2, w = 3.296821
+ > Synapse 5, lr 1, w = 4.934283
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 6, lr 1, w = 5.934283
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 7, lr 1, w = 4.340640
+ >>> t1_base = 2, t2_base = -1, t_compute = 1, tdiff = 1
+ > Synapse 8, lr 0, w = 3.637462
+ > Synapse 9, lr 2, w = 2.362538
+ > Synapse 10, lr 2, w = 5.296821
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 4.637462
+ >>> t1_base = 3, t2_base = -1, t_compute = 2, tdiff = 1
+ > Synapse 4, lr 2, w = 3.296821
+ >>> t1_base = 3, t2_base = -1, t_compute = 1, tdiff = 2
+ > Synapse 5, lr 1, w = 5.753014
+ > Synapse 6, lr 1, w = 6.753014
+ > Synapse 7, lr 1, w = 5.159371
+ >>> t1_base = 3, t2_base = 1, t_compute = 2, tdiff = -1
+ > Synapse 8, lr 0, w = 3.637462
+ > Synapse 9, lr 2, w = 2.362538
+ > Synapse 10, lr 2, w = 5.296821
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 5.456192
+ > Synapse 4, lr 2, w = 2.626501
+ >>> t1_base = 4, t2_base = 1, t_compute = 3, tdiff = -1
+ > Synapse 5, lr 1, w = 5.753014
+ >>> t1_base = 4, t2_base = 1, t_compute = 2, tdiff = -2
+ > Synapse 6, lr 1, w = 6.753014
+ >>> t1_base = 4, t2_base = 1, t_compute = 2, tdiff = -2
+ > Synapse 7, lr 1, w = 4.340640
+ > Synapse 8, lr 0, w = 3.637462
+ >>> t1_base = 4, t2_base = -1, t_compute = 3, tdiff = 1
+ > Synapse 9, lr 2, w = 2.362538
+ >>> t1_base = 4, t2_base = -1, t_compute = 3, tdiff = 1
+ > Synapse 10, lr 2, w = 5.296821
+ >>> t1_base = 4, t2_base = -1, t_compute = 2, tdiff = 2
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 5.456192
+ > Synapse 4, lr 2, w = 3.445232
+ > Synapse 5, lr 1, w = 5.082694
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = 1
+ > Synapse 6, lr 1, w = 6.082694
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = 1
+ > Synapse 7, lr 1, w = 4.340640
+ >>> t1_base = 5, t2_base = 2, t_compute = 3, tdiff = 2
+ > Synapse 8, lr 0, w = 4.456192
+ > Synapse 9, lr 2, w = 1.543808
+ > Synapse 10, lr 2, w = 4.626501
+ >>> t1_base = 5, t2_base = 2, t_compute = 4, tdiff = -1
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 5.456192
+ > Synapse 4, lr 2, w = 3.445232
+ > Synapse 5, lr 1, w = 5.901424
+ > Synapse 6, lr 1, w = 6.901424
+ > Synapse 7, lr 1, w = 5.010960
+ > Synapse 8, lr 0, w = 4.456192
+ > Synapse 9, lr 2, w = 1.543808
+ > Synapse 10, lr 2, w = 5.445232
+ > Synapse 11, lr 2, w = 1.000000
+
+ > Synapse 0, lr 0, w = 4.000000
+ > Synapse 1, lr 1, w = 3.000000
+ > Synapse 2, lr 0, w = 5.000000
+ > Synapse 3, lr 0, w = 5.456192
+ > Synapse 4, lr 2, w = 3.445232
+ > Synapse 5, lr 1, w = 5.901424
+ > Synapse 6, lr 1, w = 6.901424
+ > Synapse 7, lr 1, w = 5.010960
+ > Synapse 8, lr 0, w = 4.456192
+ > Synapse 9, lr 2, w = 1.543808
+ > Synapse 10, lr 2, w = 5.445232
+ > Synapse 11, lr 2, w = 1.000000
+
+ 
+
+Synapse 0, w = 4.000000, dw = 0.000000
+ 
+
+Synapse 1, w = 3.000000, dw = 0.000000
+ 
+
+Synapse 2, w = 5.000000, dw = 0.000000
+ 
+
+Synapse 3, w = 5.456192, dw = 0.818731
+ 
+
+Synapse 4, w = 3.445232, dw = 0.148411
+ 
+
+Synapse 5, w = 5.901424, dw = 0.967141
+ 
+
+Synapse 6, w = 6.901424, dw = 0.967141
+ 
+
+Synapse 7, w = 5.010960, dw = 0.670320
+ 
+
+Synapse 8, w = 4.456192, dw = 0.818731
+ 
+
+Synapse 9, w = 1.543808, dw = -0.818731
+ 
+
+Synapse 10, w = 5.445232, dw = 0.148411
+ 
+
+Synapse 11, w = 1.000000, dw = 0.000000
+
+
+ > Total elapsed time 0.003007
+Incorrect

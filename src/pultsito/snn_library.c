@@ -113,9 +113,12 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         neuron->last_spike = 0;
 
         // TODO: TEMP: Not necessary in input neurons????
-        neuron->n_last_spikes = 0;
-        neuron->next_last_spike = 0;
-        neuron->t_last_spikes = 0;
+        neuron->n_last_spikes = 3;
+        neuron->t_last_spikes = (int*)malloc(neuron->n_last_spikes * sizeof(int));
+        for(int j = 0; j<neuron->n_last_spikes; j++){
+            neuron->t_last_spikes[j] = -1;
+        }
+        neuron->next_last_spike = 0;   
     }
 }
 
@@ -229,6 +232,7 @@ void initialize_synapse(synapse_t *synapse, network_construction_lists_t *data, 
     synapse->dw = 0; // initialize difference in weights
     synapse->init_w = synapse->w;
     synapse->delay = data->delay_list[synapse_id];
+    synapse->stdp_steps = 3;
 
     // input synapses do not have delay
     if(synapse_id < snn->n_input_synapses) 

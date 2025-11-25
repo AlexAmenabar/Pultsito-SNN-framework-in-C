@@ -244,7 +244,8 @@ int load_configuration_params_from_toml(const char *file_name, simulation_config
         exit(1);
     }
 
-    if(conf->simulation_obj == 0){
+    // if there is no learn it makes no sense to simulate more than one epochs
+    if(conf->simulation_obj == 0 && conf->learn == 0){
         epochs.u.i = 1;
     }
 
