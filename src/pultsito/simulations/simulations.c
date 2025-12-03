@@ -153,8 +153,10 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     spiking_nn_t *tmp_snn;
     
 
+    /*#if defined PAR_SAMPLES || defined NESTED
     if(conf->n_process > conf->batch_size)
         conf->n_process = conf->batch_size;
+    #endif*/
 
     // cpy important information
     epochs = conf->epochs;
@@ -177,7 +179,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
 
     // create array for batches
     int n_batches;
-    int *batches = create_batches(&n_batches, dataset, n_samples, batch_size);
+    int extra_samples;
+    int *batches = create_batches(&n_batches, &extra_samples, dataset, n_samples, batch_size);
 
     // TODO: revise this
     simulation_results_per_sample_t *results_per_sample;
@@ -186,8 +189,10 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     // configure the OpenMP parameters depending on parallelization strategy
-    int p_outer = 0, p_inner = 0, n_outer = 0, n_inner = 0;
+    int p_outer = 0, p_inner = 0, n_outer = 0, n_inner = 0, s_inner = 0, s_rem = 0;
     #ifdef NESTED
+    
+        // allow nedted parallelism
         omp_set_dynamic(0); // disable dynamic threads (I do not understand this very well)
         omp_set_nested(1); // allow nested parallelism
         omp_set_max_active_levels(2);
@@ -195,29 +200,53 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         // number of processes
         p_inner = conf->n_inner_process;
         n_inner = snn->n_neurons / p_inner * 0.1;
-        if(n_inner == 0) n_inner = 1;
+        if(n_inner == 0) 
+            n_inner = 1;
         
         p_outer = n_process / p_inner;
         n_outer = 1;//snn->n_neurons / p_outer * 0.1;
 
+        // it makes no sense to have more outer processes than batch_size
+        if(p_outer > batch_size)
+            p_outer = batch_size;
+
     #elif PAR_SAMPLES
-        p_outer = n_process;
+
+        // it makes no sense to have more outer processes than batch size
+        int tmp_n_process = n_process;
+        if(tmp_n_process > batch_size)
+            tmp_n_process = batch_size;
+
+        p_outer = tmp_n_process;
         n_outer = 1;//snn->n_neurons / p_outer * 0.1;
+
+        // initialize whether it is necessary to use them
+        p_inner = n_process;
+        n_inner = 1;
+
     #else
+
         p_inner = n_process;
         n_inner = snn->n_neurons / p_inner * 0.1;
-        if(n_inner == 0) n_inner = 1;
+        if(n_inner == 0) 
+            n_inner = 1;
+        
+        s_inner = snn->n_synapses / p_inner * 0.1;
+
+        // initialize whether it is necessary to use them
+        p_outer = n_process;
+        n_outer = 1;
+    
     #endif
 
 
-    // create network copies if necessary
+    // if it is necessary, create network copies
     #if defined PAR_SAMPLES || defined NESTED 
         pr_snns = (spiking_nn_t *)malloc(p_outer * sizeof(spiking_nn_t));
         for(i = 0; i<p_outer; i++){
             cp_network(&(pr_snns[i]), snn, conf);
         }
     #endif
-
 
 
     // open files for results storage
@@ -230,8 +259,7 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
         printf(" > Epoch %d\n", e);
         fflush(stdout);
 
-
-        // shuffle samples in batch
+        // shuffle samples in batch if it is necessary
         if(conf->shuffle_samples == 1)
             shuffle_sample_indexes(batches, n_samples);
 
@@ -257,6 +285,9 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
 
             // loop over batch samples
             // func simulate_batch()
+
+
+            // loop over batch samples and accumulate weight changes in dw
 
             #if defined PAR_SAMPLES || defined NESTED
             #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
@@ -315,7 +346,7 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                     #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
                     #endif
                     for(i = 0; i<tmp_snn->n_synapses; i++){
-                        re_initialize_synapse(&(tmp_snn->synapses[i]));
+                        re_initialize_synapse(&(tmp_snn->synapses[i])); // reinitialize w to init_w
                     }
                     clock_gettime(CLOCK_MONOTONIC, &end_re_synapses);
 
@@ -324,9 +355,11 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                     tmp_snn->load_sample(tmp_snn, &(dataset->samples[sample_index]));
                     clock_gettime(CLOCK_MONOTONIC, &end_load_sample);
 
-                    // simulate time steps for each sample
+                    // simulate time steps for each sample // t starts from 1 since in t=0 no neuron can spike
                     for(t = 0; t<time_steps; t++){
 
+                        printf(" T = %d, I\n", t);
+                        fflush(stdout);
                         // input step
                         clock_gettime(CLOCK_MONOTONIC, &start_neurons_input);
 
@@ -337,6 +370,8 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                             tmp_snn->input_step(tmp_snn, t, i, results_per_sample);
 
                         clock_gettime(CLOCK_MONOTONIC, &end_neurons_input);
+                        printf(" T = %d, O\n", t);
+                        fflush(stdout);
 
                         // output step
                         clock_gettime(CLOCK_MONOTONIC, &start_neurons_output);
@@ -348,21 +383,22 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
                             tmp_snn->output_step(tmp_snn, t, i, results_per_sample);
 
                         clock_gettime(CLOCK_MONOTONIC, &end_neurons_output);
-
+                        printf(" T = %d, L\n", t);
+                        fflush(stdout);
                         // learning rule
                         clock_gettime(CLOCK_MONOTONIC, &start_learning);
                         
                         if(conf->learn == 1){
 
                             #if !defined PAR_SAMPLES || defined NESTED
-                            #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
+                            #pragma omp parallel for num_threads(p_inner) schedule(guided, 50) private(i) 
                             #endif
                             for(i = 0; i<tmp_snn->n_synapses; i++){ // O(m)
-                                printf(" > Synapse %d, lr %d, w = %lf\n", i, tmp_snn->synapses[i].lr, tmp_snn->synapses[i].w);
+                                //printf(" > Synapse %d, lr %d, w = %lf\n", i, tmp_snn->synapses[i].lr, tmp_snn->synapses[i].w);
                                 tmp_snn->synapses[i].learning_rule(&(tmp_snn->synapses[i]), t, 3); // TODO: Change this!! 
-                                fflush(stdout);
+                                //fflush(stdout);
                             }
-                            printf("\n");
+                            //printf("\n");
                         }
 
                         clock_gettime(CLOCK_MONOTONIC, &end_learning);
@@ -398,50 +434,73 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
             // update weights (in case there are copies, first sum all copies)
             // copies // FUNCTION???
             
+            printf(" Finished!\n");
+            fflush(stdout);
+
             // func update_weighs()
             if(conf->learn == 1){
+                
+                int tmp_batch_size = batch_size;
+
+                // if it is the last batch, rest extra samples
+                if(b == n_batches - 1)
+                    tmp_batch_size = batch_size - extra_samples;
+
                 clock_gettime(CLOCK_MONOTONIC, &start_learning);
+
+                // if there are several network copies, compute the average dw and update weights
                 #if defined PAR_SAMPLES || defined NESTED
 
-                    // sum weight differences of all copies
-                    for(s = 0; s<p_outer; s++){
-                        #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
+                    // sum all the dw of the copies in the original SNN structure
+                    #pragma omp parallel for num_threads(p_inner) private(i)
+                    for(i = 0; i < snn->n_synapses; i++){
+                        snn->synapses[i].dw = pr_snns[0].synapses[i].dw;
+                    }
+                    for(s = 1; s<p_outer; s++){
+                        #pragma omp parallel for num_threads(p_inner) private(i)
                         for(i = 0; i < snn->n_synapses; i++){
                             snn->synapses[i].dw += pr_snns[s].synapses[i].dw;
                         }
                     }
                     
                     // update weights in original snn
-                    #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
+                    #pragma omp parallel for num_threads(p_inner) private(i)
                     for(i = 0; i<snn->n_synapses; i++){    
-                        snn->synapses[i].w += snn->synapses[i].dw / batch_size;
-                        snn->synapses[i].init_w = snn->synapses[i].w;
-                        snn->synapses[i].dw = 0;
+                        //printf("Synapse %d, init_w = %lf, dw = %lf, b = %d, fw = %lf\n", i, snn->synapses[i].init_w, (double)(snn->synapses[i].dw / (double)tmp_batch_size), tmp_batch_size, snn->synapses[i].init_w + (double)(snn->synapses[i].dw / (double)tmp_batch_size)); 
+                        snn->synapses[i].init_w += (double)(snn->synapses[i].dw / (double)tmp_batch_size); // update init_w
+                        snn->synapses[i].w = snn->synapses[i].init_w; // set w to init_w
+                        snn->synapses[i].dw = 0; // reinit dw
                     }    
 
                     // update weights in copies
-                    #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s, t, tmp_snn, results_per_sample, start_sample, end_sample, start_re_neurons, end_re_neurons, start_re_synapses, end_re_synapses, start_load_sample, end_load_sample, start_neurons_input, end_neurons_input, start_neurons_output, end_neurons_output, start_learning, end_learning)
+                    #pragma omp parallel for num_threads(p_outer) schedule(dynamic, n_outer) private(i, s)
                     for(s = 0; s<p_outer; s++){
                         for(i = 0; i < snn->n_synapses; i++){
+
+                            // update w
                             pr_snns[s].synapses[i].w = snn->synapses[i].w;
                             pr_snns[s].synapses[i].init_w = snn->synapses[i].init_w;
                             pr_snns[s].synapses[i].dw = 0;
                         }
                     }
-
+                    //printf("\n\n");
+                
                 #else
-                    #pragma omp parallel for num_threads(p_inner) schedule(guided, n_inner) private(i) 
+                
+                    // no copies
+                    #pragma omp parallel for num_threads(p_inner) private(i) 
                     for(i = 0; i<snn->n_synapses; i++){
                         
                         // update w
-                        printf(" \n\nSynapse %d, w = %lf, dw = %lf\n", i, snn->synapses[i].w, snn->synapses[i].dw); 
-                        snn->synapses[i].init_w += (double)(snn->synapses[i].dw / (double)batch_size);
-                        snn->synapses[i].w = snn->synapses[i].init_w;
-                        snn->synapses[i].dw = 0;
-                    }    
-                        printf("\n\n");
+                        //printf("Synapse %d, init_w = %lf, dw = %lf, b = %d, fw = %lf\n", i, snn->synapses[i].init_w, (double)(snn->synapses[i].dw / (double)tmp_batch_size), tmp_batch_size, snn->synapses[i].init_w + (double)(snn->synapses[i].dw / (double)tmp_batch_size)); 
+                        snn->synapses[i].init_w += (double)(snn->synapses[i].dw / (double)tmp_batch_size); // update init_w
+                        snn->synapses[i].w = snn->synapses[i].init_w; // set w to init_w
+                        snn->synapses[i].dw = 0; // reinit dw
+                    }
+                    //printf("\n\n");
 
-                    #endif
+                #endif
+
                 clock_gettime(CLOCK_MONOTONIC, &end_learning);
                 results->elapsed_time_learning += (end_learning.tv_sec - start_learning.tv_sec) + (end_learning.tv_nsec - start_learning.tv_nsec) / 1e9;
             }
@@ -476,6 +535,10 @@ void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simul
     results->elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     
     printf(" > Total elapsed time %lf\n", results->elapsed_time);
+
+    // store total execution time
+    if(conf->store_execution_times == 1)
+        fprintf(conf->f_et, "%lf\n", results->elapsed_time);
 
     // close results files
     close_results_files(conf);

@@ -46,6 +46,7 @@ int main(int argc, char *argv[]) {
 
     // read the probability to generate a spike in a time step
     prob = strtoul(argv[3],NULL, 10);
+    prob = 100 - prob;
 
     // open file
     f = fopen(argv[4], "w"); //f = fopen("input_spikes.txt", "w");

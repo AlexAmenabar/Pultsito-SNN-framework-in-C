@@ -18,11 +18,15 @@ void shuffle_sample_indexes(int *indexes, int n) {
 
 
 // creates batches from the dataset
-int* create_batches(int *n_batches, input_data_t *dataset, int n_samples, int batch_size){
+int* create_batches(int *n_batches, int *extra_samples, input_data_t *dataset, int n_samples, int batch_size){
 
     int i;
     int *batches;
+    
+    // initialize extra samples
+    (*extra_samples) = 0;
 
+    // set number of batches
     if(n_samples < batch_size)
         (*n_batches) = 1;
 
@@ -42,9 +46,15 @@ int* create_batches(int *n_batches, input_data_t *dataset, int n_samples, int ba
     for(i=0; i<n_samples; i++){
         batches[i] = i;
     } 
-    for(i=i; i<(*n_batches) * batch_size; i++){
+
+    for(i; i<(*n_batches) * batch_size; i++){
         batches[i] = -1;
     }
+
+    (*extra_samples) = ((*n_batches) * batch_size) - n_samples;
+
+    printf("N batches = %d, batch_size = %d\n", (*n_batches), batch_size);
+    printf("Total n = %d, n = %d, Extra samples = %d\n", (*n_batches) * batch_size, n_samples, (*extra_samples));
 
     return batches;
 }

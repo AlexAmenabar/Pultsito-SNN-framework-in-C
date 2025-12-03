@@ -101,8 +101,11 @@ void generate_random_synaptic_connections(network_data_t *network_data, configur
 
     // generate network input synaptic connections
     for(i = 0; i<network_data->n_input_neurons; i++){ 
+        
         u = (double)rand() / RAND_MAX;
-        synapses = (int)(-log(1-u) / lambda) / 2;
+        synapses = (int)(-log(1-u) / lambda);
+
+        //synapses = network_data->tmp_n_synapses / network_data->n_neurons;
 
         // 
         if(synapses == 0){
@@ -136,10 +139,36 @@ void generate_random_synaptic_connections(network_data_t *network_data, configur
         next_pos = 1;
         number_neuron_connections = 0;
 
+        if(i % 1000 == 0){
+            printf(" > In neuron %d\n", i);
+            fflush(stdout);
+        }
+
+        /*synapses = network_data->tmp_n_synapses / network_data->n_neurons;
+
+        // add some randomization
+
+        
+        // decide to which neurons is connected
+        int *connected_neurons = (int*)malloc(synapses * sizeof(int));
+
+
+        for(j = 0; j<synapses; j++){
+
+            int neur = rand() % network_data->n_neurons;
+            connected_neurons[j] = neur;
+        }*/
+
+
         // for each neuron, generate synapses
         for(j=0; j<(network_data->n_neurons); j++){ // j == n_neurons --> network output synapses
+            
             u = (double)rand() / RAND_MAX;
-            synapses = (int)(-log(1-u) / lambda) / 2;
+            synapses = (int)(-log(1.0-u) / lambda);
+
+            //synapses = network_data->tmp_n_synapses / network_data->n_neurons;
+
+            // add some randomization
 
             if(synapses == 0 && j == (network_data->n_neurons - 1))
                 synapses = 1;
@@ -473,7 +502,7 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
     // define table and variables to store configuration parameters
     toml_table_t *tbl, *tbl_general, *tbl_neurons, *tbl_synapses;
     
-    toml_value_t neurons, synapses, n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses, output_file_name, lambda, lambda_delays, 
+    toml_value_t neurons, synapses, n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses, tmp_n_synapses, output_file_name, lambda, lambda_delays, 
                 max_connections_pair_neurons, integers, behaviour, min_behaviour, max_behaviour, R, min_R, max_R, refract_time, min_refract_time, max_refract_time, 
                 v_thres, min_v_thres, max_v_thres, v_rest, min_v_rest, max_v_rest,
                 latency, min_latency, max_latency, training_zone, min_training_zone, max_training_zone, weight, min_weight, max_weight,
@@ -507,6 +536,7 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
     n_synapses = toml_table_int(tbl_general, "n_synapses"); // number of synapses to initialize the network with
     n_input_synapses = toml_table_int(tbl_general, "n_input_synapses");
     n_output_synapses = toml_table_int(tbl_general, "n_output_synapses");
+    tmp_n_synapses = toml_table_int(tbl_general, "n_synapses");
 
     output_file_name = toml_table_string(tbl_general, "output_file"); // file to store the network
     output_is_separated = toml_table_int(tbl_general, "output_is_separated"); // indicates whether the network should be stored in separated files
@@ -564,6 +594,7 @@ void read_configuration_file(char *file_name, network_data_t *network_data, conf
     network_data->n_synapses = n_synapses.u.i;
     network_data->n_input_synapses = n_input_synapses.u.i;
     network_data->n_output_synapses = n_output_synapses.u.i;
+    network_data->tmp_n_synapses = tmp_n_synapses.u.i;
 
     conf->output_file_name = output_file_name.u.s;
     conf->output_is_separated = output_is_separated.u.i;

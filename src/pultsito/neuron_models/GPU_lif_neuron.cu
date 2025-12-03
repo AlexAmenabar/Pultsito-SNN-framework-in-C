@@ -198,7 +198,11 @@ __global__ void reinit_neurons_kernel(GPU_SNN_t *snn)
         
         snn->v[global_neuron_index] = snn->v_rest[local_neuron_index];
         snn->r_period_remain[global_neuron_index] = 0;
-        snn->t_last_spike[global_neuron_index] = 0;
+
+        // reinit last spikes array
+        for(int i = 0; i<snn->n_last_spikes; i++)
+            snn->t_last_spikes[global_neuron_index * snn->n_last_spikes + i] = 0;
+        snn->next_last_spike[global_neuron_index] = 0;
     }
 
 }
@@ -227,7 +231,7 @@ __global__ void reinit_neurons_kernel(GPU_SNN_t *snn, int s)
 
 */
 
-__global__ void reinit_synapses_kernel(GPU_SNN_t *snn, int s)
+__global__ void reinit_synapses_kernel(GPU_SNN_t *snn)
 {
     //lortu hariaren identifikadorea
 
@@ -242,10 +246,10 @@ __global__ void reinit_synapses_kernel(GPU_SNN_t *snn, int s)
         (blockDim.x * blockDim.y * blockDim.z) +
         (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
 
-    if(threadId < snn->n_synapses){
+    if(threadId < (size_t)(snn->n_synapses)){
 
-        //continue;
-        
+        // reinitialize synapse weight
+        snn->w[threadId] = snn->init_w[threadId];
     }
 }
 
@@ -343,7 +347,8 @@ __global__ void lif_neuron_output(GPU_SNN_t *snn, int b, int t, GPU_results_t *r
         size_t network_number = (size_t)(threadId / (size_t)(snn->n_neurons));
         size_t local_n = (size_t)(threadId % (size_t)snn->n_neurons);
         size_t global_n = network_number * (size_t)(snn->n_neurons) + local_n;
-
+        size_t ind_last_spike;
+        
         snn->r_period_remain[global_n] --;
 
         int s = b + (int)network_number;
@@ -366,8 +371,13 @@ __global__ void lif_neuron_output(GPU_SNN_t *snn, int b, int t, GPU_results_t *r
 
                 // reinit neuron values
                 snn->r_period_remain[global_n] = snn->r_period[local_n];
-                snn->t_last_spike[global_n] = t;
-                snn->v[global_n] = snn->v_rest[local_n];
+                
+                // add last spike to the neuron
+                ind_last_spike = (size_t)(global_n * (size_t)(snn->n_last_spikes) + (size_t)snn->next_last_spike[global_n]);
+                snn->t_last_spikes[ind_last_spike] = t;
+                snn->next_last_spike[global_n] = (snn->next_last_spike[global_n] + 1) % snn->n_last_spikes;
+                
+                snn->v[global_n] = snn->v_rest[local_n]; // reinit v_rest
 
                 // 
                 size_t rs_index = (size_t)s * (size_t)snn->n_neurons + local_n;
@@ -378,6 +388,159 @@ __global__ void lif_neuron_output(GPU_SNN_t *snn, int b, int t, GPU_results_t *r
     }
 }
 
+
+__device__ int mod_gpu(int a, int m){
+    return ( (a % m) + m ) % m;
+}
+
+/* STDP function */
+__global__ void stdp_kernel(GPU_SNN_t *snn, int t)
+{
+    //lortu hariaren identifikadorea
+
+    //size_t threadsPerBlock = blockDim.x * blockDim.y * blockDim.z;
+    //size_t threadNumInBlock = threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z; //(alternatively: threadIdx.y + blockDim.y * threadIdx.x);
+    //size_t blockNumInGrid   = blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z;  //(alternatively: blockIdx.y  + gridDim.y  * blockIdx.x);
+
+    //size_t globalThreadNum = blockNumInGrid * threadsPerBlock + threadNumInBlock;
+
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+    
+    
+    if(threadId < (size_t)((size_t)snn->n_synapses * (size_t)snn->n_networks)){
+
+        // get identifiers
+        size_t network_number = (size_t)(threadId / (size_t)(snn->n_synapses));
+        size_t local_n = (size_t)(threadId % (size_t)snn->n_synapses); // local synapse index
+        size_t global_n = network_number * (size_t)(snn->n_synapses) + local_n; // global synapse index
+        size_t ind_last_spike;
+        
+        // 
+        float dw = 0.0;
+        size_t pre_neuron_local_index, post_neuron_local_index, pre_neuron_global_index, post_neuron_global_index;
+        int n_last_spikes;
+
+        // get pre and post neurons local and global indexes
+        pre_neuron_local_index = (size_t)(snn->pre_neuron_index[local_n]); // no copies
+        post_neuron_local_index = (size_t)(snn->pre_neuron_index[local_n]); // no copies
+        pre_neuron_global_index = 
+            (size_t)((size_t)(network_number) * (size_t)(snn->n_neurons) + (size_t)(pre_neuron_local_index));
+        post_neuron_global_index = 
+            (size_t)((size_t)(network_number) * (size_t)(snn->n_neurons) + (size_t)(post_neuron_local_index));
+
+
+        // initial condition: 
+        // -- not input synapse (pre synapses do not spike)
+        // -- both neurons already fired at least once
+        // -- at least one neuron fired in time step t
+        if(local_n > snn->n_input_synapses && 
+            snn->t_last_spikes[post_neuron_global_index + mod_gpu(snn->next_last_spike[post_neuron_global_index] - 1, n_last_spikes)] != -1 &&
+            snn->t_last_spikes[pre_neuron_global_index + mod_gpu(snn->next_last_spike[pre_neuron_global_index] - 1, n_last_spikes)] != -1 &&
+            (snn->t_last_spikes[post_neuron_global_index + mod_gpu(snn->next_last_spike[post_neuron_global_index] - 1, n_last_spikes)] == t ||
+            snn->t_last_spikes[pre_neuron_global_index + mod_gpu(snn->next_last_spike[pre_neuron_global_index] - 1, n_last_spikes)] == t)
+        ){
+
+
+            // get last spikes of those neurons
+            int tdiff1 = 
+                (snn->t_last_spikes[post_neuron_global_index + mod_gpu(snn->next_last_spike[post_neuron_global_index] - 1, n_last_spikes)]) - 
+                (snn->t_last_spikes[pre_neuron_global_index + mod_gpu(snn->next_last_spike[pre_neuron_global_index] - 1, n_last_spikes)]);
+            int tdiff2 = 
+                (snn->t_last_spikes[post_neuron_global_index + mod_gpu(snn->next_last_spike[post_neuron_global_index] - 2, n_last_spikes)]) - 
+                (snn->t_last_spikes[pre_neuron_global_index + mod_gpu(snn->next_last_spike[pre_neuron_global_index] - 2, n_last_spikes)]);
+
+            // base and compute neuron indexes
+            int local_base, global_base, local_compute, global_compute;
+            int d;
+
+            // decide how to compute STDP
+            if(tdiff1 > 0 || (tdiff1 == 0 && tdiff2 > 0)){
+            
+                local_base = post_neuron_local_index;
+                global_base = post_neuron_global_index;
+                local_compute = pre_neuron_local_index;
+                global_compute = pre_neuron_global_index;
+                d = 1;
+            }
+            else if(tdiff1 < 0 || (tdiff1 == 0 && tdiff2 < 0)){
+
+                local_compute = post_neuron_local_index;
+                global_compute = post_neuron_global_index;
+                local_base = pre_neuron_local_index;
+                global_base = pre_neuron_global_index;
+                d = 0; 
+            }
+
+            // check if there is something to compute
+            if(tdiff1 != 0 || tdiff2 != 0){
+            
+                int t1_base, t2_base, t_compute, step, tdiff;
+                step = 0; 
+
+                t1_base = (snn->t_last_spikes[global_base + mod_gpu(snn->next_last_spike[global_base] - 1, n_last_spikes)]);
+                t2_base = (snn->t_last_spikes[global_base + mod_gpu(snn->next_last_spike[global_base] - 2, n_last_spikes)]);
+                t_compute = (snn->t_last_spikes[global_compute + mod_gpu(snn->next_last_spike[global_compute] - step - 1, n_last_spikes)]);
+
+                // loop spikes and compute stdp
+                while(step < snn->n_last_spikes && t_compute < t1_base && t_compute >= t2_base && t_compute != -1){
+                                
+                    // compute compute time difference between spikes
+                    tdiff = t1_base - t_compute;
+
+                    if(d == 0) tdiff = -tdiff;
+
+                    // get spike timestamp
+                    
+                    //printf(" >>> t1_base = %d, t2_base = %d, t_compute = %d, tdiff = %d\n", t1_base, t2_base, t_compute, tdiff);
+
+                    // compute dw
+                    switch(snn->lr[local_n]){
+                        case 0:
+                            if(tdiff > 0 && tdiff < 50){
+                                dw += 1.0 * exp(-tdiff / 5.0);
+                            }
+                            else if(tdiff < 0 && tdiff > -75){
+                                dw -= 1.0 * exp(tdiff / 5.0);
+                            }
+                            break;
+                        case 1:
+                            if(tdiff > 0 && tdiff < 50){
+                                dw += 1.0 * exp(-tdiff / 5.0);
+                            }
+                            else if(tdiff < 0 && tdiff > -75){
+                                dw -= 1.0 * exp(tdiff / 5.0);
+                            }
+                            break;
+                        case 2:
+                            if(tdiff > 0 && tdiff < 50){
+                                dw -= 1.0 * exp(tdiff / 5.0);
+                            }
+                            else if(tdiff < 0 && tdiff > -75){
+                                dw += 1.0 * exp(-tdiff / 5.0);
+                            }
+                            break;
+                    }
+
+                    // update step
+                    step ++;
+                    t_compute = (snn->t_last_spikes[global_compute + mod_gpu(snn->next_last_spike[global_compute] - step - 1, n_last_spikes)]);
+                }
+            }
+
+            snn->dw[global_n] += dw;
+            snn->w[global_n] += dw;
+        }
+    }
+}
+
+
+
+/*
+ General simulation functions
+*/
 
 extern "C" void simulate_LIF_in_single_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, simulation_configuration_t *conf, cuda_info_t *cuda_info, spiking_nn_t *cpu_snn, input_data_t *cpu_dataset){
     
@@ -406,7 +569,8 @@ extern "C" void simulate_LIF_in_single_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gp
     dim3 grid_n_pn_blk( (unsigned int)(cuda_info->n_blk_nrs_x), cuda_info->n_blk_nrs_y, cuda_info->n_blk_nrs_z );
     dim3 block_n_pn_threads_per_block( (unsigned int)(cuda_info->n_threads_per_blk_nrs_x), cuda_info->n_threads_per_blk_nrs_y, cuda_info->n_threads_per_blk_nrs_z );  
 
-
+    dim3 grid_n_synapses_blk((unsigned int)(cuda_info->n_blk_synapses_x), cuda_info->n_blk_synapses_y, cuda_info->n_blk_synapses_z);
+    dim3 block_n_synapses_per_block((unsigned int)(cuda_info->n_threads_per_blk_synapses_x), cuda_info->n_threads_per_blk_synapses_y, cuda_info->n_threads_per_blk_synapses_z);
 
     // compute epochs
     for(e = 0; e < n_epochs; e++){
@@ -440,7 +604,9 @@ extern "C" void simulate_LIF_in_single_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gp
                 cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
                 
                 // reinit synapses
-                //reinit_synapses_kernel<<<2792, 516>>>(gpu_snn, s); // n_synapses 1440187
+                reinit_synapses_kernel<<<grid_n_synapses_blk, block_n_synapses_per_block>>>(gpu_snn); // n_synapses 1440187
+                cudaCheckError(cudaPeekAtLastError());  // check launch errors
+                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
                 
                 for(t = 0; t<time_steps; t++){
 
@@ -457,8 +623,14 @@ extern "C" void simulate_LIF_in_single_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gp
                     //printf("Launch error: %s\n", cudaGetErrorString(err));
                     cudaCheckError(cudaPeekAtLastError());  // check launch errors
                     cudaCheckError(cudaDeviceSynchronize());  // check runtime errors          
-                    // learning
                     
+                    
+                    // learning
+                    stdp_kernel<<<grid_n_synapses_blk, block_n_synapses_per_block>>>(gpu_snn, t);
+                    err = cudaGetLastError();
+                    //printf("Launch error: %s\n", cudaGetErrorString(err));
+                    cudaCheckError(cudaPeekAtLastError());  // check launch errors
+                    cudaCheckError(cudaDeviceSynchronize());  // check runtime errors  
                 }
             }
 

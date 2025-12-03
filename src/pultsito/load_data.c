@@ -7,6 +7,9 @@
 #include <ctype.h>
 #include <toml_c/toml-c.h>
 
+#include <time.h>
+
+
 int open_file(FILE **f, const char *file_name){
     
     *f = fopen(file_name, "r");
@@ -536,7 +539,7 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
         v_thres_lst = toml_table_array(tbl_neurons, "v_thres_list");
         v_rest_lst = toml_table_array(tbl_neurons, "v_rest_list");
         t_refract_lst = toml_table_array(tbl_neurons, "t_refract_list");
-        res_lst = toml_table_array(tbl_neurons, "res_list");
+        //res_lst = toml_table_array(tbl_neurons, "res_list");
 
         // load information into snn structure
         for(i=0; i<snn->n_neurons; i++){
@@ -561,10 +564,10 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
                 printf("Following configuration file, resting potentials for neurons must be provided, setting 50\n");
                 v_rest.u.d = 50;
             }
-            if((!res.ok && conf->R_provided == 1) || conf->R_provided == 0){
-                printf("Following configuration file, resistances for neurons not proveided, setting 1\n");
-                res.u.d = 1;
-            }
+            //if((!res.ok && conf->R_provided == 1) || conf->R_provided == 0){
+            //    printf("Following configuration file, resistances for neurons not proveided, setting 1\n");
+            //    res.u.d = 1;
+            //}
             if((!t_refract.ok && conf->refract_times_provided == 1) || conf->refract_times_provided == 0){
                 printf("Following configuration file, refractary times for neurons must be provided, setting 3\n");
                 t_refract.u.i = 3;
@@ -604,13 +607,17 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
 
     /* Synapses section */
 
+    struct timespec start, end; // to measure simulation complete time
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     // if network information is not separated into more than one files
     if(!network_is_separated.ok || (network_is_separated.ok && network_is_separated.u.i != 1)){
 
+               
         latency_lst = toml_table_array(tbl_synapses, "latency_list"); // load latencies
         weights_lst = toml_table_array(tbl_synapses, "weights"); // load weights
         training_zones_lst = toml_table_array(tbl_synapses, "training_zones_list"); // load training zones
-        connection_lst_lst = toml_table_array(tbl_synapses, "connections"); // load connections
+        //connection_lst_lst = toml_table_array(tbl_synapses, "connections"); // load connections
         
 
         // load information into snn structure
@@ -636,9 +643,9 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
             }
 
             // load data into lists structure
-            (lists->weight_list)[i] = (double)weight.u.d;
-            (lists->delay_list)[i] = (int)latency.u.i;
-            (lists->training_zones)[i] = (int)training_zone.u.i;
+            lists->weight_list[i] = weight.u.d;
+            lists->delay_list[i] = latency.u.i;
+            lists->training_zones[i] = training_zone.u.i;
         }
     }
     // if it is separated, read the information from the other file
@@ -654,7 +661,11 @@ void load_network_information(const char *file_name, spiking_nn_t *snn, network_
             fscanf(f_synapses, "%d", &(lists->training_zones[i]));
         }
     }
+    clock_gettime(CLOCK_MONOTONIC, &end);
 
+    double elpt = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    printf(" Elapsed time reading synapses data: %lf\n", elpt);
+    
     printf(" >> Synapses loaded from file!\n");
     fflush(stdout);
 

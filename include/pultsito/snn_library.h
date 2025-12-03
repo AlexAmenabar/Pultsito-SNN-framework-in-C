@@ -234,6 +234,7 @@ struct synapse_t {
     int lr; // learning rule index
     void (*learning_rule)(synapse_t*, int, int); // pointer to learning rule function // this parameter should be an struct?
     int stdp_steps; // to compute N step STDP;
+    int next_pre_spike, next_post_spike;
 
     //int t_last_pre_spike, t_last_post_spike; // times of last presynaptic neuron and postsynaptic neurons spikes // if the difference in performance is not critical, this should be removed and neurons directly used
 
@@ -319,10 +320,12 @@ typedef struct {
     int n_threads_per_blk_rsm_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
     int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
     int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
+    int n_threads_per_blk_synapses_x, n_threads_per_blk_synapses_y, n_threads_per_blk_synapses_z;
 
     int n_blk_rsm_x, n_blk_rsm_y, n_blk_rsm_z;
     int n_blk_ls_x, n_blk_ls_y, n_blk_ls_z;
     int n_blk_nrs_x, n_blk_nrs_y, n_blk_nrs_z;
+    int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z; 
 
 } cuda_info_t;
 
@@ -346,7 +349,9 @@ typedef struct {
     int *r_period; // [n_neurons]
     int *r_period_remain; // [n_neurons]
     int *res; // [n_neurons]
-    int *t_last_spike; // [n_neurons]
+    int *t_last_spikes; // [n_neurons * n_last_spikes] // TEMPORAL // DEPRECATED?
+    int *next_last_spike; // [n_neurons] // DEPRECATED?
+    int n_last_spikes; // DEPRECATED?
     int *n_neuron_input_synapses; // [n_neurons]
     int *neuron_input_synapses_offset; // [n_neurons]
 
@@ -356,12 +361,14 @@ typedef struct {
 
     // synapses
     float *w; // [n_synapses]
+    float *init_w; // [n_synapses]
     float *dw; // [n_synapses]
     int *delay; // [n_synapses]
     int *lr; // [n_synapses]
     int *pre_neuron_index; // [n_synapses]
+    int *next_pre_spike; // [n_synapses]
     int *post_neuron_index; // [n_synapses]
-
+    int *next_post_spike; // [n_synapses]
 
     int *spk_matrix; // [(n_neurons + n_input_neurons) * T]
     // FLOAT(3N + 2M) + INT(7N + 5M) + NT = 32(10N + 7M) + 32NT bit

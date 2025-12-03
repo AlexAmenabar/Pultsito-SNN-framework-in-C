@@ -13,7 +13,7 @@
 #define A 0.25 // modulation magnitude for STDP
 #define P_WINDOW 50
 #define N_WINDOW -75
-#define EPSILON 0.15
+
 
 int mod(int a, int m) {
     return ( (a % m) + m ) % m;
@@ -23,7 +23,7 @@ int mod(int a, int m) {
 Functions to do the simple computations of STDP based on the time difference between two spikes
 */
 
-double addSTDP_comp(synapse_t *synapse, double tdiff){
+double addSTDP_comp(synapse_t *synapse, int tdiff){
 
     double dw = 0.0;
 
@@ -48,7 +48,7 @@ double addSTDP_comp(synapse_t *synapse, double tdiff){
 }
 
 // TODO: not correctly implemented: max-min bounds?
-double mltSTDP_comp(synapse_t *synapse, double tdiff){
+double mltSTDP_comp(synapse_t *synapse, int tdiff){
 
     double dw = 0.0;
 
@@ -98,11 +98,6 @@ double antiSTDP_comp(synapse_t *synapse, int tdiff){
     return dw;
 }
 
-double tbSTDP_comp(synapse_t *synapse_t, int tdiff){
-
-    double dw = 0.0;
-}
-
 
 /*
 STDP general functions
@@ -125,107 +120,77 @@ int cond_stdp(synapse_t *synapse, int t){
     //    post->t_last_spikes[(post->next_last_spike - 1) % post->n_last_spikes] != pre->t_last_spikes[(pre->next_last_spike - 1) % pre->n_last_spikes] && // if both are equal STDP results is 0
     //    (post->t_last_spikes[(post->next_last_spike - 1) % post->n_last_spikes] == t || pre->t_last_spikes[(pre->next_last_spike - 1) % pre->n_last_spikes] == t); // one of both has to be actual t
 
-
-    // check that both neurons exist
-    if(pre == NULL || post == NULL)
-        return 0;
-
-    
-    // check that at least one of both is t
-    if(pre->spike_times_arr[synapse->next_pre_spike] + synapse->delay != t && post->spike_times_arr[synapse->next_post_spike] != t)
-        return 0;
-
-
-    return 1;
+    return pre != NULL && post != NULL && // is not input or output synapse
+        pre->n_last_spikes != 0 && post->n_last_spikes != 0 &&
+        post->t_last_spikes[mod(post->next_last_spike - 1, post->n_last_spikes)] != -1 &&
+        pre->t_last_spikes[mod(pre->next_last_spike - 1, pre->n_last_spikes)] != -1 && // at least one spike done by both synapses
+        (post->t_last_spikes[mod(post->next_last_spike - 1, post->n_last_spikes)] == t || 
+        pre->t_last_spikes[mod(pre->next_last_spike - 1, pre->n_last_spikes)] == t); // one of both last spike is in timestamp t
 }
 
 
-void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synapse, double tdiff_double)){
+void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synapse, int time_diff)){
 
     double dw = 0;
     
     // check conditions to compute STDP
     if(cond_stdp(synapse, t) == 1){
 
-        int delay;
-        double tdiff_double;
-        int tpost, tpre, prev_tpost, prev_tpre, tmp = 0;
-        lif_neuron_t *post, *pre;
-        int max_spikes, last_spike;
+        int d, tdiff1, tdiff2;
+        lif_neuron_t *post, *pre, *base = 0, *compute = 0;
 
         // store pre and postsynaptic neurons
         post = synapse->post_synaptic_lif_neuron;
         pre = synapse->pre_synaptic_lif_neuron;
-        delay = synapse->delay;
 
         // compute tdiffs
-        tpost = post->spike_times_arr[(synapse->next_post_spike) % post->max_spikes];
-        tpre = pre->spike_times_arr[(synapse->next_pre_spike) % pre->max_spikes] + delay;
+        tdiff1 = (post->t_last_spikes[mod(post->next_last_spike - 1, n)]) - (pre->t_last_spikes[mod(pre->next_last_spike - 1, n)]);
+        tdiff2 = (post->t_last_spikes[mod(post->next_last_spike - 2, n)]) - (pre->t_last_spikes[mod(pre->next_last_spike - 2, n)]); 
 
-        // get previous spikes for both
-        prev_tpost = post->spike_times_arr[mod(synapse->next_post_spike - 1, post->max_spikes)];
-        prev_tpre = pre->spike_times_arr[mod(synapse->next_pre_spike - 1, pre->max_spikes)] + delay;
+        //printf(" >> tdiff1 = %d, tdiff2 = %d\n", tdiff1, tdiff2);
 
-        // if tdiff == 0 --> random: incrase or decrease
-
-        int lower_bound;
-        int tmp_tdiff = tpost - tpre;
-
-        // LTP
-        if(tpost == t){
-
-            lower_bound = synapse->next_pre_spike;
-            max_spikes = pre->max_spikes;
-            last_spike = pre->last_spike;
-            tmp_tdiff = 100000;
-
-            // conditions to keep looping:
-            // - tpre - delay > -1, there is an spike
-            // - tpost >= tpre, there are spikes to be processed in STDP
-            // - lower_bound is smaller or equal to tpre
-            while((tpre - delay) > -1 && tpost >= tpre && tpost - tpre < tmp_tdiff){
-
-                // compute stdp
-                tmp_tdiff = tpost - tpre;
-                tdiff_double = (double)(tpost - tpre) + EPSILON;
-                dw += stdp_func(synapse, tdiff_double);
-                //printf(" >> tpost = %d, tpre = %d; tdiff %lf; dw = %lf\n", tpost, tpre, tdiff_double, dw);
-
-                // update tmp
-                tmp++;
-                tpre = pre->spike_times_arr[(synapse->next_pre_spike + tmp) % pre->max_spikes] + delay;
-            }
-
-            synapse->next_pre_spike = (synapse->next_pre_spike + tmp) % pre->max_spikes;
-
+        // decide how to compute STDP
+        if(tdiff1 > 0 || (tdiff1 == 0 && tdiff2 > 0)){
+           
+            base = post;
+            compute = pre;
+            d = 1;
         }
-        // LTD: if tpost != t, then tpre == t due to the cond_stdp(...) function
-        else{
-            
-            lower_bound = tpost - 1;
-            max_spikes = post->max_spikes;
-            last_spike = post->last_spike;
-            tmp_tdiff = -1000000;
+        else if(tdiff1 < 0 || (tdiff1 == 0 && tdiff2 < 0)){
 
-            // conditions to keep looping:
-            // - tpost > -1, there is an spike
-            // - tpost < tpre, there are spikes to be processed in STDP
-            // - lower_bound is smaller or equal to tpre
-            while(tpost > -1 && tpost < tpre && tpost - tpre > tmp_tdiff){
+            base = pre;
+            compute = post;
+            d = 0; 
+        }
 
-                // compute stdp
-                tmp_tdiff = tpost - tpre;
-                tdiff_double = (double)(tpost - tpre) - EPSILON; // I can ignore this epsilon?
-                dw += stdp_func(synapse, tdiff_double);
-                //printf(" >> tpre = %d, tpost = %d; tdiff %lf; dw = %lf\n", tpre, tpost, tdiff_double, dw);
+        // check if there is something to compute
+        if(tdiff1 != 0 || tdiff2 != 0){
 
-                // update tmp
-                tmp++;
-                tpost = post->spike_times_arr[(synapse->next_post_spike + tmp) % max_spikes];
+            int t1_base, t2_base, t_compute, step, tdiff;
+            t1_base = base->t_last_spikes[mod(base->next_last_spike - 1, n)];
+            t2_base = base->t_last_spikes[mod(base->next_last_spike - 2, n)];
+            step = 0; 
+            t_compute = compute->t_last_spikes[mod(compute->next_last_spike - step - 1, n)];
+
+            // loop spikes and compute stdp
+            while(step < synapse->stdp_steps && t_compute < t1_base && t_compute >= t2_base && t_compute != -1){
+                            
+                // compute compute time difference between spikes
+                tdiff = t1_base - t_compute;
+
+                if(d == 0) tdiff = -tdiff;
+
+                // get spike timestamp
+    
+                //printf(" >>> t1_base = %d, t2_base = %d, t_compute = %d, tdiff = %d\n", t1_base, t2_base, t_compute, tdiff);
+
+                // compute dw
+                dw += stdp_func(synapse, tdiff);
+
+                // update step
+                step ++;
+                t_compute = compute->t_last_spikes[mod(compute->next_last_spike - step - 1, n)];
             }
-
-            synapse->next_post_spike = (synapse->next_post_spike + tmp) % max_spikes;
-
         }
     }
 
@@ -249,7 +214,7 @@ void mltSTDP(synapse_t *synapse, int t, int n){
 
 void antiSTDP(synapse_t *synapse, int t, int n){
 
-    stdp(synapse, t, n, &addSTDP_comp);
+    stdp(synapse, t, n, &antiSTDP_comp);
 }
 
 

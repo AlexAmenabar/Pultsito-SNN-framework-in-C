@@ -96,8 +96,11 @@ void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, net
         
         lif_neuron_t *neuron = &(snn->input_lif_neurons[i]);
 
-        neuron->spike_times_arr = (int *)calloc(conf->max_input_spikes, sizeof(int));
         neuron->max_spikes = conf->max_input_spikes;
+        neuron->spike_times_arr = (int *)malloc(conf->max_input_spikes * sizeof(int));
+        for(int j = 0; j<neuron->max_spikes; j++){
+            neuron->spike_times_arr[j] = -1;
+        }
 
         // connect input layer neurons with the rest 
         neuron->n_input_synapse = 0;
@@ -233,6 +236,8 @@ void initialize_synapse(synapse_t *synapse, network_construction_lists_t *data, 
     synapse->init_w = synapse->w;
     synapse->delay = data->delay_list[synapse_id];
     synapse->stdp_steps = 3;
+    synapse->next_pre_spike = 0;
+    synapse->next_post_spike = 0;
 
     // input synapses do not have delay
     if(synapse_id < snn->n_input_synapses) 
@@ -278,6 +283,8 @@ void re_initialize_synapse(synapse_t *synapse){
     
     // reinitialize weight
     synapse->w = synapse->init_w;
+    synapse->next_pre_spike = 0;
+    synapse->next_post_spike = 0;
 }
 
 void update_weights(spiking_nn_t *snn){
@@ -458,6 +465,8 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
         cp_synapse->lr = or_synapse->lr;
         cp_synapse->learning_rule = or_synapse->learning_rule; // copy function pointer
         cp_synapse->stdp_steps = or_synapse->stdp_steps;
+        cp_synapse->next_pre_spike = 0;
+        cp_synapse->next_post_spike = 0;
 
         cp_synapse->pre_neuron_index = or_synapse->pre_neuron_index;
         cp_synapse->post_neuron_index = or_synapse->post_neuron_index;
@@ -469,7 +478,9 @@ void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn){
                     cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->input_lif_neurons[cp_synapse->pre_neuron_index]);
                 else
                     cp_synapse->pre_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->pre_neuron_index]);
-                cp_synapse->post_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->post_neuron_index]);
+                
+                if(i < or_snn->n_synapses - or_snn->n_output_synapses)
+                    cp_synapse->post_synaptic_lif_neuron = &(cp_snn->lif_neurons[cp_synapse->post_neuron_index]);
             break;
             default:
                 if(i < or_snn->n_input)
@@ -604,7 +615,9 @@ GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *co
     gpu_snn->r_period = (int *)malloc((snn->n_neurons) * sizeof(int));
     gpu_snn->r_period_remain = (int *)calloc(snn->n_neurons, sizeof(int)); // 0
     gpu_snn->res = (int *)malloc((snn->n_neurons) * sizeof(int));
-    gpu_snn->t_last_spike = (int*)calloc(snn->n_neurons, sizeof(int)); // 0
+    gpu_snn->n_last_spikes = 3; // TEMPORAL // TODO
+    gpu_snn->t_last_spikes = (int*)calloc(snn->n_neurons * gpu_snn->n_last_spikes, sizeof(int)); // 0
+    gpu_snn->next_last_spike = (int*)calloc(snn->n_neurons, sizeof(int)); // '
     gpu_snn->n_neuron_input_synapses = (int*)malloc(snn->n_neurons * sizeof(int));
     gpu_snn->neuron_input_synapses_offset = (int*)malloc(snn->n_neurons * sizeof(int));
 
@@ -618,7 +631,10 @@ GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *co
         gpu_snn->r_period[i] = snn->lif_neurons[i].r_time;
         gpu_snn->r_period_remain[i] = 0;
         gpu_snn->res[i] = snn->lif_neurons[i].r;
-        gpu_snn->t_last_spike[i] = 0;
+
+        // initialize t_last_spikes
+        for(j = 0; j<gpu_snn->n_last_spikes; j++)
+            gpu_snn->t_last_spikes[i * gpu_snn->n_last_spikes + j] = -1; // initialize to -1, no spikes
 
         // input synapses and offsets
         gpu_snn->n_neuron_input_synapses[i] = snn->lif_neurons[i].n_input_synapse;
@@ -635,6 +651,8 @@ GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *co
     gpu_snn->lr = (int*)malloc(snn->n_synapses * sizeof(int));
     gpu_snn->pre_neuron_index = (int*)malloc(snn->n_synapses * sizeof(int));
     gpu_snn->post_neuron_index = (int*)malloc(snn->n_synapses * sizeof(int));
+    gpu_snn->next_pre_spike = (int*)malloc(snn->n_synapses * sizeof(int));
+    gpu_snn->next_post_spike = (int*)malloc(snn->n_synapses * sizeof(int));
 
     for(i = 0; i<snn->n_synapses; i++){
 
@@ -644,6 +662,8 @@ GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *co
         gpu_snn->lr[i] = snn->synapses[i].lr;
         gpu_snn->pre_neuron_index[i] = snn->synapses[i].pre_neuron_index;
         gpu_snn->post_neuron_index[i] = snn->synapses[i].post_neuron_index;
+        gpu_snn->next_pre_spike[i] = 0;
+        gpu_snn->next_post_spike[i] = 0;
 
         // if it is an input synapse, then it's pre neuron is a virtual one. Map indexes
         if(gpu_snn->delay[i] > 0) // to detect input synapses
@@ -951,6 +971,13 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu
     cuda_info->n_blk_nrs_x = (gpu_snn_in_cpu->n_neurons * gpu_snn_in_cpu->n_networks) / cuda_info->n_threads_per_blk_nrs_x + 1;
     cuda_info->n_blk_nrs_y = 1;
     cuda_info->n_blk_nrs_z = 1;
+
+    cuda_info->n_threads_per_blk_synapses_x = 516;
+    cuda_info->n_threads_per_blk_synapses_y = 1;
+    cuda_info->n_threads_per_blk_synapses_z = 1;
+    cuda_info->n_blk_synapses_x = (gpu_snn_in_cpu->n_synapses * gpu_snn_in_cpu->n_networks) / cuda_info->n_threads_per_blk_synapses_x + 1;
+    cuda_info->n_blk_synapses_y = 1;
+    cuda_info->n_blk_synapses_z = 1;
 }
 
 
@@ -964,11 +991,13 @@ void free_gpu_snn_in_CPU(GPU_SNN_t *gpu_snn){
     free(gpu_snn->r_period);
     free(gpu_snn->r_period_remain);
     free(gpu_snn->res);
-    free(gpu_snn->t_last_spike);
+    free(gpu_snn->t_last_spikes);
+    free(gpu_snn->next_last_spike);
     free(gpu_snn->n_neuron_input_synapses);
     free(gpu_snn->neuron_input_synapses_offset);
     
     free(gpu_snn->w);
+    free(gpu_snn->init_w);
     free(gpu_snn->dw);
     free(gpu_snn->delay);
     free(gpu_snn->lr);
@@ -1051,8 +1080,10 @@ void initialize_sample_results_struct(simulation_results_per_sample_t *results_p
     // initialize generated spikes
     for (i = 0; i<n_neurons; i++){
         
-        if(conf->store_generated_spikes == 1)
+        if(conf->store_generated_spikes == 1){
             results_per_sample->generated_spikes[i] = (unsigned char *)calloc((conf->time_steps), sizeof(unsigned char));
+            results_per_sample->generated_spikes[i][0] = ' '; // first time step is not simulated
+        }
         
         if(conf->store_n_spikes == 1)
             results_per_sample->n_spikes_per_neuron[i] = 0;
