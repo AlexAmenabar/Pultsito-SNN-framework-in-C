@@ -7,12 +7,12 @@ LCC=g++
 
 # CC compiler options:
 CC=gcc
-CC_FLAGS= -O2 -DCUDA -DREORDER #-fPIE
+CC_FLAGS= -O2 -DCUDA -DREORDER -fopenmp #-fPIE
 CC_LIBS=
 
 # NVCC compiler options:
 NVCC=nvcc
-NVCC_FLAGS=  -O2 -Xcompiler -DCUDA -DREORDER# -fPIC
+NVCC_FLAGS=  -O2 -Xcompiler "-DCUDA -DREORDER -fopenmp" # -fPIC
 NVCC_LIBS=
 
 
@@ -46,7 +46,7 @@ OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/snn_library.o $(OBJ_DIR)/load_data.o $(OBJ_D
 ## Compile ##
 # Link c and CUDA compiled object files to target executable:
 $(BIN)/$(EXE) : $(OBJS)
-	$(LCC) $(CC_FLAGS) $(OBJS) -o $@ $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS) -no-pie -lm
+	$(LCC) $(CC_FLAGS) $(OBJS) -o $@ $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS) -no-pie -lm -fopenmp
 
 # Compile main.c file to object files:
 $(OBJ_DIR)/%.o : $(SRC_DIR)/%.c

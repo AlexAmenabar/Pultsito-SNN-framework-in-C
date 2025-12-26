@@ -4,58 +4,18 @@
 #include <stdio.h>
 #include "snn_library.h"
 
-// can be changed as input parameters 
-#ifndef INPUT_SYNAPSES
-#define INPUT_SYNAPSES 0
-#endif
-
-#ifndef INPUT_NEURON_BEHAVIOUR
-#define INPUT_NEURON_BEHAVIOUR 1
-#endif
-
-#ifndef INPUT_WEIGHTS
-#define INPUT_WEIGHTS 0
-#endif
-
-#ifndef INPUT_DELAYS
-#define INPUT_DELAYS 0
-#endif
-
-#ifndef INPUT_TRAINING_ZONES
-#define INPUT_TRAINING_ZONES 0
-#endif
-
-
-// configuration parameters NOT USED
-#ifndef EXECUTION_TYPE // clock or event driven
-#define EXECUTION_TYPE 0
-#endif
-
-#ifndef NEURON_TYPE // LIF, HH, ... NOT USED
-#define NEURON_TYPE 0
-#endif
-
-#ifndef EXECUTION_OBJ // simulation or ml
-#define EXECUTION_OBJ 0
-#endif
-
-#ifndef N_PROCESS // simulation or ml
-#define N_PROCESS 1
-#endif
-
-
 
 /**
-* Functions to load data from files: network configuration files, input data...
+* Functions to manage de Input/Output: load configuration files, networks, store results...
 */
 
+/* General */
 
 /// @brief Function to open a file
 /// @param f FILE pointer to stream file 
 /// @param file_name File name
 /// @return Execution code
 int open_file(FILE **f, const char *file_name);
-
 
 /// @brief Function to open a file in write mode without overwriting current contents
 /// @param f File to write in
@@ -64,13 +24,33 @@ int open_file(FILE **f, const char *file_name);
 int open_file_w(FILE **f, const char *file_name);
 
 
-// TODO
-void load_network();
+/* Input*/
 
-// TODO
-void store_network();
+/// @brief Read configuration parameters from configuration TOML file
+/// @param file_name Name of the file to load configuration information from
+/// @return Struct containing all the configuration data
+simulation_configuration_t* load_configuration_params_from_toml(const char *file_name);
+
+/// @brief Load network information from toml file to a struct of arrays
+/// @param conf struct containing configuration data
+/// @return Struct containing the arrays to initialize the network
+network_construction_lists_t* load_network_information_in_lists(simulation_configuration_t *conf);
+
+/// @brief Load dataset
+/// @param file_name file name to load data from
+/// @param labels_file_name file containing the labels
+/// @param n_samples number of samples in the dataset
+GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *labels_file_name, size_t n_samples);
 
 
+/* Output */
+
+
+
+
+/* Deprecated */
+
+/// [DEPRECATED]
 /// @brief Load network data from file (number of neurons, number of synapses, connections, weights of synapses...)
 /// @param file_name File to load information from
 /// @param snn Spiking nueral network structure to load information in
@@ -78,29 +58,28 @@ void store_network();
 /// @param conf Structure that contains the simulation configuration
 void load_network_information(const char *file_name, spiking_nn_t *snn, network_construction_lists_t *lists, simulation_configuration_t *conf);
 
-
+// [DEPRECATED]: usable for old SNN structure
 /// @brief Load input spike trains inside the SNN structure
 /// @param file_name File to load spike trains from
 /// @param snn Spiking Neural Network structure to store input spike trains on input synapses
 void load_input_spike_trains_on_snn(const char *file_name, spiking_nn_t *snn);
 
-/// @brief Load
-/// @param file_name 
-/// @param dataset 
-void load_dataset_from_file(input_data_t *dataset, const char *file_name, const char *labels_file_name, int n_samples, simulation_configuration_t *conf);
-
+/// [DEPRECATED]
 /// @brief Read configuration parameters from configuration file
 /// @param file_name Configuration file name
 /// @param conf struct to store configuration parameters
 int load_configuration_params(const char *file_name, simulation_configuration_t *conf);
 
+/// [DEPREACTED]: used for the old dataset struct
+/// @brief Load dataset from file in struct
+/// @param file_name 
+/// @param dataset 
+void load_dataset_from_file(input_data_t *dataset, const char *file_name, const char *labels_file_name, int n_samples, simulation_configuration_t *conf);
 
-/// @brief Read configuration parameters from configuration TOML file
-/// @param file_name Name of the file to load configuration information from
-/// @param conf struct to store configuration parameters
-int load_configuration_params_from_toml(const char *file_name, simulation_configuration_t *conf);
 
 
+/// [DREPRECATED]
+void load_network_information(const char *file_name, spiking_nn_t *snn, network_construction_lists_t *lists, simulation_configuration_t *conf);
 
 
 void open_results_files(simulation_configuration_t *conf);

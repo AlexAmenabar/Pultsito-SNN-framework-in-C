@@ -19,14 +19,14 @@
  /// @param t Actual time step
  /// @param neuron_id Identifier of the neuron to be processed
  /// @param results Structure to store results of the simulation
-void lif_neuron_compute_input_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results);
+void lif_neuron_compute_input_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results, simulation_configuration_t *conf);
 
 /// @brief Step to process the output synapses of a LIF neuron and generate a spike if it is necessary
 /// @param snn Spiking neural network structure
 /// @param t Actual time step
 /// @param neuron_id Identifier of the neuron to be processed
 /// @param results Structure to store results of the simulation
-void lif_neuron_compute_output_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results);
+void lif_neuron_compute_output_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results, simulation_configuration_t *conf);
 
 /// @brief Computes a time step for a lif neuron (process input synapse spikes and generate an spike if necessary)
 /// @param snn SNN structure

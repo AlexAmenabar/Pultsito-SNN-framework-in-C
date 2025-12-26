@@ -44,7 +44,8 @@
 /results/
 /experiments/
 /ISPASS2026_experiments/
-
+/performance_experiments/
+/tmp/
 
 # Debug files
 *.dSYM/

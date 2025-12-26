@@ -159,6 +159,7 @@ void generate_random_synaptic_connections(network_data_t *network_data, configur
             connected_neurons[j] = neur;
         }*/
 
+        int generated_synapses = 0;
 
         // for each neuron, generate synapses
         for(j=0; j<(network_data->n_neurons); j++){ // j == n_neurons --> network output synapses
@@ -166,11 +167,12 @@ void generate_random_synaptic_connections(network_data_t *network_data, configur
             u = (double)rand() / RAND_MAX;
             synapses = (int)(-log(1.0-u) / lambda);
 
+            generated_synapses += synapses;
             //synapses = network_data->tmp_n_synapses / network_data->n_neurons;
 
             // add some randomization
 
-            if(synapses == 0 && j == (network_data->n_neurons - 1))
+            if(generated_synapses == 0 && j == (network_data->n_neurons - 1))
                 synapses = 1;
 
             if(synapses>0){

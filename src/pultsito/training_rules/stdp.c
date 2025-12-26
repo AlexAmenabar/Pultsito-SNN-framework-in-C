@@ -8,11 +8,11 @@
 // TODO: This must be revised, since should be introduced as input or in the network, I guess?
 #define TAU_PLUS 5.0 // ms
 #define TAU_MINUS 5.0 // ms
-#define A_PLUS 1 // ms
-#define A_MINUS 1 // ms
+#define A_PLUS 1.0 // ms
+#define A_MINUS 1.0 // ms
 #define A 0.25 // modulation magnitude for STDP
-#define P_WINDOW 50
-#define N_WINDOW -75
+#define P_WINDOW 50.0
+#define N_WINDOW -75.0
 #define EPSILON 0.15
 
 int mod(int a, int m) {
@@ -163,18 +163,18 @@ void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synap
         tpre = pre->spike_times_arr[(synapse->next_pre_spike) % pre->max_spikes] + delay;
 
         // get previous spikes for both
-        prev_tpost = post->spike_times_arr[mod(synapse->next_post_spike - 1, post->max_spikes)];
-        prev_tpre = pre->spike_times_arr[mod(synapse->next_pre_spike - 1, pre->max_spikes)] + delay;
+        //prev_tpost = post->spike_times_arr[mod(synapse->next_post_spike - 1, post->max_spikes)]; // can be useful in the future?
+        //prev_tpre = pre->spike_times_arr[mod(synapse->next_pre_spike - 1, pre->max_spikes)] + delay;
 
         // if tdiff == 0 --> random: incrase or decrease
 
-        int lower_bound;
+        //int lower_bound;
         int tmp_tdiff = tpost - tpre;
 
         // LTP
         if(tpost == t){
 
-            lower_bound = synapse->next_pre_spike;
+            //lower_bound = synapse->next_pre_spike;
             max_spikes = pre->max_spikes;
             last_spike = pre->last_spike;
             tmp_tdiff = 100000;
@@ -202,7 +202,7 @@ void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synap
         // LTD: if tpost != t, then tpre == t due to the cond_stdp(...) function
         else{
             
-            lower_bound = tpost - 1;
+            //lower_bound = tpost - 1;
             max_spikes = post->max_spikes;
             last_spike = post->last_spike;
             tmp_tdiff = -1000000;
@@ -232,6 +232,9 @@ void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synap
     // update weight and store weight change
     synapse->dw += dw;
     synapse->w += dw;
+
+    //printf(" > Sample ?, dw[?] = %f, final dw[?] = %f\n", dw, synapse->dw);
+
 }
 
 
