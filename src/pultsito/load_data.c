@@ -109,6 +109,18 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     if(!batch_size.ok)
         batch_size.u.i = 1; // only one sample in the batch
 
+    // load information in configuration struct
+    conf->simulation_type = execution_type.u.i;
+    conf->neuron_type = neuron_type.u.i;
+    conf->simulation_obj = execution_obj.u.i;
+    conf->n_process = (size_t)n_process.u.i;
+    conf->n_inner_process = (size_t)n_inner_process.u.i;
+    conf->cuda = cuda.u.i;
+    conf->multi_gpu = multigpu.u.i;
+    conf->learn = learn.u.i;
+    conf->encode = encode.u.i;
+    conf->batch_size = (size_t)batch_size.u.i;
+
 
 
     /* read [simulation] section */
@@ -126,6 +138,11 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
         max_spikes.u.i = time_steps.u.i * 10; 
     if(!max_input_spikes.ok)
         max_input_spikes.u.i = time_steps.u.i * 10;
+
+    // load information in configuration struct
+    conf->time_steps = (size_t)time_steps.u.i;
+    conf->max_spikes = (size_t)max_spikes.u.i;
+    conf->max_input_spikes = (size_t)max_input_spikes.u.i;
 
 
     /* read [dataset] section */
@@ -212,6 +229,24 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     if(!shuffle_samples.ok){
         shuffle_samples.u.i = 0; // do not shuffle
     }
+
+    // store dataset information
+    conf->train_provided = train_provided.u.i;
+    conf->train_set = train_set.u.s;
+    conf->train_labels = train_labels.u.s;
+    conf->n_train = (size_t)n_train.u.i;
+
+    conf->test_provided = test_provided.u.i;
+    conf->test_set = test_set.u.s;
+    conf->test_labels = test_labels.u.s;
+    conf->n_test = (size_t)n_test.u.i;
+
+    conf->dataset_name = dataset_name.u.s;
+    conf->n_classes = (size_t)n_classes.u.i;
+    conf->epochs = (size_t)epochs.u.i;
+    conf->input_size = (size_t)input_size.u.i;
+
+    conf->shuffle_samples = shuffle_samples.u.i;
 
 
     /* read [outputt] section */
@@ -308,38 +343,6 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
         t_refract.u.i = 0;
 
 
-    /* Load all the information in the configuration struct */
-    conf->simulation_type = execution_type.u.i;
-    conf->neuron_type = neuron_type.u.i;
-    conf->simulation_obj = execution_obj.u.i;
-    conf->n_process = (size_t)n_process.u.i;
-    conf->n_inner_process = (size_t)n_inner_process.u.i;
-    conf->cuda = cuda.u.i;
-    conf->multi_gpu = multigpu.u.i;
-    conf->learn = learn.u.i;
-    conf->encode = encode.u.i;
-    conf->batch_size = (size_t)batch_size.u.i;
-
-    conf->time_steps = (size_t)time_steps.u.i;
-    conf->max_spikes = (size_t)max_spikes.u.i;
-    conf->max_input_spikes = (size_t)max_input_spikes.u.i;
-
-    conf->train_provided = train_provided.u.i;
-    conf->train_set = train_set.u.s;
-    conf->train_labels = train_labels.u.s;
-    conf->n_train = (size_t)n_train.u.i;
-
-    conf->test_provided = test_provided.u.i;
-    conf->test_set = test_set.u.s;
-    conf->test_labels = test_labels.u.s;
-    conf->n_test = (size_t)n_test.u.i;
-
-    conf->dataset_name = dataset_name.u.s;
-    conf->n_classes = (size_t)n_classes.u.i;
-    conf->epochs = (size_t)epochs.u.i;
-    conf->input_size = (size_t)input_size.u.i;
-
-    conf->shuffle_samples = shuffle_samples.u.i;
 
     conf->store_generated_spikes = store_generated_spikes.u.i;
     conf->generated_spikes_file = generated_spikes_file.u.s;
@@ -415,11 +418,11 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
 
     size_t N, iN, oN, S, iS, oS;
     N = (size_t)n_neurons.u.i;
-    iN = (size_t)n_neurons.u.i;
-    oN = (size_t)n_neurons.u.i;
-    S = (size_t)n_neurons.u.i;
-    iS = (size_t)n_neurons.u.i;
-    oS = (size_t)n_neurons.u.i;
+    iN = (size_t)n_input_neurons.u.i;
+    oN = (size_t)n_output_neurons.u.i;
+    S = (size_t)n_synapses.u.i;
+    iS = (size_t)n_input_synapses.u.i;
+    oS = (size_t)n_output_synapses.u.i;
     
     // load information in lists structure
     lists->n_neurons = N;
@@ -457,7 +460,7 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
     lists->training_zones = (int *)malloc(S * sizeof(int)); // learnin rules
 
     // allocate memory for connectibity
-    lists->synaptic_connections = (int **)malloc((N + 1) * sizeof(int *)); // +1, since the input layer is stored too
+    lists->synaptic_connections = (int **)malloc(N * sizeof(int *)); // +1, since the input layer is stored too
 
 
     /* load Neurons section */
@@ -648,11 +651,11 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
     // if network information is separated into more than one file
     else{
         int number_connections;
-        for(i=0; i<(snn->n_neurons + 1); i++){ // network input synapses are loaded first and output synapses last
+        for(i=0; i<N; i++){ // network input synapses are loaded first and output synapses last
             fscanf(f_synapses, "%d", &number_connections);
 
             // alloc memory
-            (lists->synaptic_connections)[i] = malloc((number_connections * 2 + 1) * sizeof(int)); // for each connection the neuron id and the number of synapses must be stored
+            (lists->synaptic_connections)[i] = (int*)malloc((number_connections * 2 + 1) * sizeof(int)); // for each connection the neuron id and the number of synapses must be stored
             (lists->synaptic_connections)[i][0] = number_connections;
 
             for(j = 0; j<number_connections; j++){
@@ -668,12 +671,87 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
     return lists;
 }
 
-GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *labels_file_name, size_t n_samples){
+GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *labels_file_name, size_t n_samples, simulation_configuration_t *conf){
 
+    size_t i, j, l;
+    FILE *f = NULL;
+
+    open_file(&f, file_name);
+
+    // allocate memory for dataset
     GPU_dataset_t *dataset = (GPU_dataset_t*)malloc(sizeof(GPU_dataset_t));
 
-    // TODO
+    // load general dataset information from configuration struct
+    dataset->type = 0;
+    dataset->n_classes = conf->n_classes;
+    dataset->n_samples = n_samples;
+    dataset->n_features = conf->input_size;
+    dataset->n_spikes = 0; // counted during loading
 
+    // allocate memory for arrays
+    dataset->n_spikes_per_feature = (size_t*)malloc(dataset->n_samples * dataset->n_features * sizeof(size_t)); 
+    dataset->sample_offset = (size_t*)malloc(dataset->n_samples * sizeof(size_t));
+    dataset->feature_offset = (size_t*)malloc(dataset->n_samples * dataset->n_features * sizeof(size_t));
+    
+
+    // count number of spikes in the dataset
+    size_t **tmp_spikes = (size_t **)malloc(dataset->n_samples * dataset->n_features * sizeof(size_t*));
+    size_t offset = 0;
+    size_t n_spikes;
+    for(i = 0; i<dataset->n_samples; i++){
+        
+        // set sample offset
+        dataset->sample_offset[i] = offset;
+
+        // loop over features
+        for(j = 0; j<dataset->n_features; j++){
+
+            // set feature offset
+            dataset->feature_offset[i * dataset->n_features + j] = offset;
+
+            // scan number of spikes of the feature
+            fscanf(f, "%zu", &(n_spikes));
+
+            // update offset
+            offset += n_spikes;
+            dataset->n_spikes += n_spikes;
+
+            // store number of spikes
+            dataset->n_spikes_per_feature[i * dataset->n_features + j] = n_spikes;
+
+            // store the spike times of the feature in tmp_spikes
+            tmp_spikes[i * dataset->n_features + j] = (size_t*)malloc(n_spikes * sizeof(size_t));
+            for(l = 0; l < n_spikes; l++){
+                fscanf(f, "%zu", &(tmp_spikes[i * dataset->n_features + j][l]));
+            }
+        }
+    }
+
+
+    // copy spikes to the dataset struct
+    dataset->spikes = (size_t*)malloc(dataset->n_spikes * sizeof(size_t));
+    size_t next_spike = 0;
+    for(i = 0; i<dataset->n_samples; i++){
+
+        // loop over features
+        for(j = 0; j<dataset->n_features; j++){
+
+            n_spikes = dataset->n_spikes_per_feature[i * dataset->n_features + j];
+            for(l = 0; l < n_spikes; l++){
+
+                dataset->spikes[next_spike] = tmp_spikes[i * dataset->n_features + j][l];
+                next_spike ++;
+            }
+
+            // deallocate memory
+            free(tmp_spikes[i * dataset->n_features + j]);
+        }
+    }
+
+    // free temporaly allocated memory
+    free(tmp_spikes);
+
+    // return dataset
     return dataset;
 }
 

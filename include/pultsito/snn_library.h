@@ -34,6 +34,7 @@ typedef struct{
     size_t time_steps; // time steps of the simulations
     size_t max_spikes; // length for arrays in the middle of the network
     size_t max_input_spikes; // length for input and output neurons arrays
+    size_t epochs; // number of epochs to simulate
 
     // [dataset] data
     int train_provided;
@@ -48,7 +49,6 @@ typedef struct{
     
     char *dataset_name; // name of the simulated dataset
     size_t n_classes; // number of classes in the dataset
-    size_t epochs; // number of epochs to simulate
     size_t input_size;
 
     int shuffle_samples; // whether samples should be shuffled or not
@@ -79,13 +79,14 @@ typedef struct{
 typedef struct{
     
     // general network information
-    int n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses;
+    size_t n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses;
 
     // connectivity
-    int **synaptic_connections, *neuron_excitatory, *training_zones; // change to uint in the future
+    int *neuron_excitatory, *training_zones; // change to uint in the future
     int *delay_list;
     double *weight_list;
-
+    int **synaptic_connections;
+    
     // LIF neuron
     double *v_list, *v_thres_list, *v_rest_list, *R_list; // parameters for all neurons [n_neurons]
     int *r_time_list; // refractory times for all neurons [n_neurons] 
@@ -360,11 +361,10 @@ typedef struct {
     float *arrI; // [n_neurons]: input current in the time step
     int *inR; // [n_neurons]: neuron in refractary period
     
-    int *n_neuron_input_synapses; // [n_neurons]: number of input synapses for the neuron
-    int *neuron_input_synapses_offset; // [n_neurons]: index of the first synapse for each neuron
-
-    //int *next_spk; // next spike in input synapses [n_synapses - n_output_synapses] // the same offsets of the previous
-    //int *last_spk; // last spike [n_neurons]
+    size_t *n_neuron_input_synapses; // [n_neurons]: number of input synapses for the neuron
+    size_t *neuron_input_synapses_offset; // [n_neurons]: index of the first input synapse for each neuron
+    size_t *n_neuron_output_synapses; // [n_neurons]: number of output synapses for the neuron
+    size_t *neuron_output_synapses_offset; // [n_neurons]: index of the first output synapse for each neuron
     
 
     // synapses
@@ -373,10 +373,10 @@ typedef struct {
     float *dw; // [n_synapses]: weight difference of the synapse
     int *delay; // [n_synapses]: delay or latency of the synapse
     int *lr; // [n_synapses]: learning rule of the synapse
-    int *pre_neuron_index; // [n_synapses]: index of the presynaptic neuron
-    int *next_pre_spike; // [n_synapses]: DEPRECATED?
-    int *post_neuron_index; // [n_synapses]: index of the postsynaptic neuron
-    int *next_post_spike; // [n_synapses]: DEPRECATED?
+    size_t *pre_neuron_index; // [n_synapses]: index of the presynaptic neuron
+    //int *next_pre_spike; // [n_synapses]: DEPRECATED?
+    size_t *post_neuron_index; // [n_synapses]: index of the postsynaptic neuron
+    //int *next_post_spike; // [n_synapses]: DEPRECATED?
     int *pre_fired; // [n_synapses]: describes if the presynaptic neuron fired
     float *pre_trace; // [n_synapses]: presynaptic trace
     float *post_trace; // [n_synapses]: postsynaptic trace
@@ -398,19 +398,18 @@ typedef struct {
 // TODO: Chunks?
 typedef struct {
 
-    int type;
-    int n_classes;
+    int type; // dataset type
+    size_t n_classes; // number of classes in the dataset
 
-    int n_samples; // number of samples in the dataset
-    int n_features; // number of features of the samples
-    int *n_spikes_per_feature; // n spikes per each sample element [n_samples * n_features]
+    size_t n_samples; // number of samples in the dataset
+    size_t n_features; // number of features of the samples
+    size_t *n_spikes_per_feature; // [n_samples * n_features]: number of spikes per each feature 
 
-    size_t *sample_offset; // indicates where each sample starts [n_samples] in the 
-    size_t *feature_offset; // indicates the local offset of each element in the sample [n_samples * ~sample_size]. Sample size can be different for each sample
-    //int *sample_offset_in_n_spikes; // offset of the sample in the array of the number of spikes. This is necessary for cases in which samples have different number of features
+    size_t *sample_offset; // [n_samples]: offset that indicates where each sample starts in "spikes" array   
+    size_t *feature_offset; // [n_samples * n_features]: offset that indicates where each feature starts in "spikes" array
 
-    int *spikes; // the entire dataset is stored in a 1D array
-    size_t n_spikes;
+    size_t *spikes; // entire dataset (spike times)
+    size_t n_spikes; // total number of spikes in the dataset
 
 } GPU_dataset_t;
 
@@ -426,6 +425,12 @@ typedef struct {
 
 
 /* General function to network initialization */
+
+///
+GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_construction_lists_t *data);
+void print_network(GPU_SNN_t *snn);
+
+
 
 /// @brief Function to initialize the SNN structure
 /// @param snn SNN structure to be initialized

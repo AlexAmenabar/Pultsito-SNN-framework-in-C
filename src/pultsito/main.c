@@ -36,32 +36,33 @@
 
 void cpy_snn(GPU_SNN_t *snn, int n_cps, simulation_configuration_t *conf){
 
+    size_t i, j, t;
+
     // temporal variables to store values
     float *tmp_v, *tmp_thresh, *tmp_rest, *tmp_w, *tmp_init_w, *tmp_dw, *tmp_pre_trace, *tmp_post_trace;
-    int *tmp_rperiod, *tmp_rperiod_remain, *tmp_res, *tmp_pstfired, *tmp_prefired, *tmp_n_insyn, 
-        *tmp_in_off, *tmp_delay, *tmp_lr, *tmp_pre_neuron_index, *tmp_post_neuron_index, *tmp_spk_mtrx;
-
+    int *tmp_rperiod, *tmp_rperiod_remain, *tmp_res, *tmp_pstfired, *tmp_prefired, *tmp_delay, *tmp_lr, *tmp_spk_mtrx;
+    size_t *tmp_in_off, *tmp_pre_neuron_index, *tmp_post_neuron_index, *tmp_n_insyn;
     // allocate neural properties
-    tmp_v = snn->v;
-    tmp_thresh = snn->v_thresh;
-    tmp_rest = snn->v_rest;
-    //tmp_rperiod                   = snn->r_period;
+    tmp_v                         = snn->v;
+    tmp_thresh                    = snn->v_thresh;
+    tmp_rest                      = snn->v_rest;
+    tmp_rperiod                   = snn->r_period;
     tmp_rperiod_remain            = snn->r_period_remain;
-    //tmp_res                       = snn->res;
+    tmp_res                       = snn->res;
     tmp_pstfired                  = snn->post_fired;
-    //tmp_n_insyn                   = snn->n_neuron_input_synapses;
-    //tmp_in_off                    = snn->neuron_input_synapses_offset;
+    tmp_n_insyn                   = snn->n_neuron_input_synapses;
+    tmp_in_off                    = snn->neuron_input_synapses_offset;
 
-    tmp_w = snn->w;
-    //tmp_init_w = snn->init_w;
-    tmp_dw = snn->dw;
-    tmp_pre_trace = snn->pre_trace;
-    tmp_post_trace = snn->post_trace;
+    tmp_w                         = snn->w;
+    tmp_init_w                    = snn->init_w;
+    tmp_dw                        = snn->dw;
+    tmp_pre_trace                 = snn->pre_trace;
+    tmp_post_trace                = snn->post_trace;
     tmp_prefired                  = snn->pre_fired;
-    //tmp_delay                     = snn->delay;
-    //tmp_lr                        = snn->lr;
-    //tmp_pre_neuron_index          = snn->pre_neuron_index;
-    //tmp_post_neuron_index         = snn->post_neuron_index;
+    tmp_delay                     = snn->delay;
+    tmp_lr                        = snn->lr;
+    tmp_pre_neuron_index          = snn->pre_neuron_index;
+    tmp_post_neuron_index         = snn->post_neuron_index;
 
     tmp_spk_mtrx                  = snn->spk_matrix;
 
@@ -70,65 +71,65 @@ void cpy_snn(GPU_SNN_t *snn, int n_cps, simulation_configuration_t *conf){
     snn->v                            = (float*)malloc(snn->n_neurons * n_cps * sizeof(float));
     snn->v_thresh                     = (float*)malloc(snn->n_neurons * n_cps * sizeof(float));
     snn->v_rest                       = (float*)malloc(snn->n_neurons * n_cps * sizeof(float));
-    //snn->r_period                     = (int*)malloc(snn->n_neurons * n_cps * sizeof(float));
+    snn->r_period                     = (int*)malloc(snn->n_neurons * n_cps * sizeof(float));
     snn->r_period_remain              = (int*)malloc(snn->n_neurons * n_cps * sizeof(int));
-    //snn->res                          = (int*)malloc(snn->n_neurons * n_cps * sizeof(int));
+    snn->res                          = (int*)malloc(snn->n_neurons * n_cps * sizeof(int));
     snn->post_fired                   = (int*)malloc(snn->n_neurons * n_cps * sizeof(int));
-    //snn->n_neuron_input_synapses      = (int*)malloc(snn->n_neurons * n_cps * sizeof(int));
-    //snn->neuron_input_synapses_offset = (int*)malloc(snn->n_neurons * n_cps * sizeof(int));
+    snn->n_neuron_input_synapses      = (size_t*)malloc(snn->n_neurons * n_cps * sizeof(size_t));
+    snn->neuron_input_synapses_offset = (size_t*)malloc(snn->n_neurons * n_cps * sizeof(size_t));
 
     snn->w                            = (float*)malloc(snn->n_synapses * n_cps * sizeof(float));
-    //snn->init_w                       = (float*)malloc(snn->n_synapses * n_cps * sizeof(float));
+    snn->init_w                       = (float*)malloc(snn->n_synapses * n_cps * sizeof(float));
     snn->dw                           = (float*)malloc(snn->n_synapses * n_cps * sizeof(float));
     snn->pre_trace                    = (float*)malloc(snn->n_synapses * n_cps * sizeof(float));
     snn->post_trace                   = (float*)malloc(snn->n_synapses * n_cps * sizeof(float));
     snn->pre_fired                    = (int*)malloc(snn->n_synapses * n_cps * sizeof(int));
-    //snn->delay                        = (int*)malloc(snn->n_synapses * n_cps * sizeof(int));
-    //snn->lr                           = (int*)malloc(snn->n_synapses * n_cps * sizeof(int));
-    //snn->pre_neuron_index             = (int*)malloc(snn->n_synapses * n_cps * sizeof(int));
-    //snn->post_neuron_index            = (int*)malloc(snn->n_synapses * n_cps * sizeof(int));
+    snn->delay                        = (int*)malloc(snn->n_synapses * n_cps * sizeof(int));
+    snn->lr                           = (int*)malloc(snn->n_synapses * n_cps * sizeof(int));
+    snn->pre_neuron_index             = (size_t*)malloc(snn->n_synapses * n_cps * sizeof(size_t));
+    snn->post_neuron_index            = (size_t*)malloc(snn->n_synapses * n_cps * sizeof(size_t));
 
-    snn->spk_matrix = (int*)malloc((snn->n_neurons + snn->n_input_neurons) * conf->time_steps * n_cps * sizeof(int));
+    snn->spk_matrix                   = (int*)malloc((snn->n_neurons + snn->n_input_neurons) * conf->time_steps * n_cps * sizeof(int));
 
 
     /* Initialization */
-    for(int i = 0; i<snn->n_neurons; i++){
+    for(i = 0; i<snn->n_neurons; i++){
 
-        for(int j = 0; j<n_cps; j++){
+        for(j = 0; j<n_cps; j++){
 
             snn->v_thresh[n_cps * i + j] = tmp_thresh[i];
             snn->v_rest[n_cps * i + j] = tmp_rest[i];
-            //snn->r_period[n_cps * i + j] = tmp_rperiod[i];
+            snn->r_period[n_cps * i + j] = tmp_rperiod[i];
             snn->r_period_remain[n_cps * i + j] = tmp_rperiod_remain[i];
-            //snn->res[n_cps * i + j] = tmp_res[i];
+            snn->res[n_cps * i + j] = tmp_res[i];
             snn->post_fired[n_cps * i + j] = tmp_pstfired[i];
-            //snn->n_neuron_input_synapses[n_cps * i + j] = tmp_n_insyn[i];
-            //snn->neuron_input_synapses_offset[n_cps * i + j] = tmp_in_off[i];
+            snn->n_neuron_input_synapses[n_cps * i + j] = tmp_n_insyn[i];
+            snn->neuron_input_synapses_offset[n_cps * i + j] = tmp_in_off[i];
         }
     }
 
-    for(int i = 0; i<snn->n_synapses; i++){
+    for(i = 0; i<snn->n_synapses; i++){
 
-        for(int j = 0; j<n_cps; j++){
+        for(j = 0; j<n_cps; j++){
 
             snn->w[n_cps * i + j] = tmp_w[i];
-            //snn->init_w[n_cps * i + j] = tmp_init_w[i];
+            snn->init_w[n_cps * i + j] = tmp_init_w[i];
             snn->dw[n_cps * i + j] = tmp_dw[i];
             snn->pre_trace[n_cps * i + j] = tmp_pre_trace[i];
             snn->post_trace[n_cps * i + j] = tmp_post_trace[i];
             snn->pre_fired[n_cps * i + j] = tmp_prefired[i];
-            //snn->delay[n_cps * i + j] = tmp_delay[i];
-            //snn->lr[n_cps * i + j] = tmp_lr[i];
-            //snn->pre_neuron_index[n_cps * i + j] = tmp_pre_neuron_index[i];
-            //snn->post_neuron_index[n_cps * i + j] = tmp_post_neuron_index[i];
+            snn->delay[n_cps * i + j] = tmp_delay[i];
+            snn->lr[n_cps * i + j] = tmp_lr[i];
+            snn->pre_neuron_index[n_cps * i + j] = tmp_pre_neuron_index[i];
+            snn->post_neuron_index[n_cps * i + j] = tmp_post_neuron_index[i];
         }
     }
 
-    for(int t = 0; t<conf->time_steps; t++){
+    for(t = 0; t<conf->time_steps; t++){
         
-        for(int i = 0; i<snn->n_neurons + snn->n_input_neurons; i++){
+        for(i = 0; i<snn->n_neurons + snn->n_input_neurons; i++){
             
-            for(int j = 0; j<n_cps; j++){
+            for(j = 0; j<n_cps; j++){
 
                 snn->spk_matrix[
                     (snn->n_neurons + snn->n_input_neurons) * n_cps * t + n_cps * i + j
@@ -148,10 +149,9 @@ static inline __mmask16 get_batch_mask(int batch_size)
 int main(int argc, char *argv[]) {
 
     // I think that too much structures are used, probably this should be refactorized
-    spiking_nn_t snn; // base SNN structure and copies to process samples in parallel
-    simulation_configuration_t conf; // simulation configuration data
+    //spiking_nn_t snn; // base SNN structure and copies to process samples in parallel
     simulation_results_t train_results, test_results; // simulation results
-    network_construction_lists_t lists; // structures to 
+    //network_construction_lists_t lists; // structures to 
     input_data_t train_dataset, test_dataset; // train and test datasets
 
 
@@ -167,68 +167,76 @@ int main(int argc, char *argv[]) {
 
     // load configuration parameters from input file
     printf(" > Loading configuration file...\n");
-    load_configuration_params_from_toml(argv[1], &conf);
+    simulation_configuration_t *conf = load_configuration_params_from_toml(argv[1]);
     printf(" > Configuration file loaded!\n\n");
     fflush(stdout);
 
-    // initialize network
-    initialize_network_from_toml(conf.network_file, &conf);
+    // load network initialization arrays
+    printf(" > Loading network information in lists...\n");
+    network_construction_lists_t *data = load_network_information_in_lists(conf);
+    printf(" > Network information loaded!\n\n");
+    fflush(stdout);
 
+    // initialize network
+    printf(" > Initializing network...\n");
+    GPU_SNN_t *snn = initialize_network_cpu(conf, data);
+    printf(" > Network initialized!\n");
+    fflush(stdout);
+
+    // load dataset
+    printf(" > Loading dataset... \n");
+    GPU_dataset_t *dataset = load_dataset_from_file_cpu(conf->train_set, conf->train_labels, conf->n_train, conf);
+    printf(" > Dataset loaded!\n");
+    fflush(stdout);
+
+    // TODO
+    GPU_results_t *cpu_results = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
+    cpu_results->n_spks = (int*)calloc(snn->n_neurons, sizeof(int));
+
+
+    print_network(snn);
+
+
+    printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
+
+    simulate_sample_CPU(snn, dataset, conf, cpu_results, 0);
+
+
+    /*
     // load information about the snn from the network file //
     printf(" > Loading network data from file...\n");
-    load_network_information(conf.network_file, &snn, &lists, &conf); // I don't like that this function loads some data into the SNN structure directly, it's confusing
+    load_network_information(conf->network_file, &snn, &lists, conf); // I don't like that this function loads some data into the SNN structure directly, it's confusing
     printf(" > Network data loaded!\n\n");
     fflush(stdout);
 
     // initialize the network
     printf(" > Initializing network...\n"); 
-    initialize_network(&snn, &conf, &lists);
+    initialize_network(&snn, conf, &lists);
     printf(" > Network initialized!\n\n");
     fflush(stdout);
 
     // load input spike train from file (different depending on execution type) // ESTO DEBERÍA CAMBIARLO; NO ME TERMINA DE GUSTAR COMO ESTÁ PASANDO DIRECTAMENTE EL PARÁMETRO DE ENTRADA
     printf(" > Loading dataset...\n");
-    load_dataset_from_file(&train_dataset, conf.train_set, conf.train_labels, conf.n_train, &conf);
-    if(conf.test_provided == 1)
-        load_dataset_from_file(&test_dataset, conf.test_set, conf.test_labels, conf.n_test, &conf);
+    load_dataset_from_file(&train_dataset, conf->train_set, conf->train_labels, conf->n_train, conf);
+    if(conf->test_provided == 1)
+        load_dataset_from_file(&test_dataset, conf->test_set, conf->test_labels, conf->n_test, conf);
     printf(" > Dataset loaded!\n");
     fflush(stdout);
 
 
     // initialize struct to store results // REVISE THIS
     printf(" > Initializing results struct...\n");
-    initialize_results_struct(&train_results, &conf, train_dataset.n_samples, snn.n_neurons);
-    if(conf.test_provided == 1)
-        initialize_results_struct(&test_results, &conf, test_dataset.n_samples, snn.n_neurons);
+    initialize_results_struct(&train_results, conf, train_dataset.n_samples, snn.n_neurons);
+    if(conf->test_provided == 1)
+        initialize_results_struct(&test_results, conf, test_dataset.n_samples, snn.n_neurons);
 
     printf(" > Results strcut initialized!\n");
-    fflush(stdout);
+    fflush(stdout);*/
 
 
-
-/*#ifdef REORDER
-
-    printf(" > Reordering array of synapses...\n");
-
-    #ifdef CUDA
-    // if cuda is used, initialized delays to 0
-    if(conf.cuda != 0)
-        for(int i = 0; i<snn.n_input_synapses; i++){
-            snn.synapses[i].delay = 0;
-        }
-    #endif
-
-    // reorder array
-    reorder_synapse_list(&snn);
-
-    printf(" > Array of synapses reordered!\n");
-    fflush(stdout);
-
-#endif*/
  
-    printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
 
-
+/*
     struct timespec start, end; // to measure simulation complete time
     struct timespec start_step1, end_step1; // to measure simulation complete time
     struct timespec start_step2, end_step2; // to measure simulation complete time
@@ -237,6 +245,7 @@ int main(int argc, char *argv[]) {
     struct timespec start_step5, end_step5; // to measure simulation complete time
 
     double elapsed_time, et1 =0.0, et2=0.0, et3=0.0, et4=0.0, et5=0.0;
+
     #ifdef REORDER
 
         printf(" > Reordering array of synapses...\n");
@@ -260,8 +269,8 @@ int main(int argc, char *argv[]) {
 
 
     printf(" > Mapping structures to new struct type\n");
-    GPU_SNN_t *cpu_snn = SNN_CPU2GPU_mapping(&snn, &conf);
-    GPU_dataset_t *cpu_dataset = dataset_CPU2GPU_mapping(&train_dataset, &conf);
+    GPU_SNN_t *cpu_snn = SNN_CPU2GPU_mapping(&snn, conf);
+    GPU_dataset_t *cpu_dataset = dataset_CPU2GPU_mapping(&train_dataset, conf);
     GPU_results_t *cpu_results = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
 
     // initialize results struct
@@ -275,14 +284,14 @@ int main(int argc, char *argv[]) {
 
     printf(" > Printing network information\n");
     
-    for(int i = 0; i<cpu_snn->n_synapses; i++){
-        printf(" Synapse %d: In(%d) Out(%d)\n", i, cpu_snn->pre_neuron_index[i], cpu_snn->post_neuron_index[i]);
+    for(size_t i = 0; i<cpu_snn->n_synapses; i++){
+        printf(" Synapse %ld: In(%ld) Out(%ld)\n", i, cpu_snn->pre_neuron_index[i], cpu_snn->post_neuron_index[i]);
     }
 
 
 
-    simulate_sample_CPU(cpu_snn, cpu_dataset, &conf, cpu_results, 0);
-
+    simulate_sample_CPU(cpu_snn, cpu_dataset, conf, cpu_results, 0);
+*/
     // start timing
 /*    clock_gettime(CLOCK_MONOTONIC, &start);
 

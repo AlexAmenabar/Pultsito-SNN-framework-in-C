@@ -220,6 +220,7 @@ void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results
     }
 }
 
+
 void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *data, int n_input_synapse, int n_output_synapse, int max_spikes){
  
     int i;

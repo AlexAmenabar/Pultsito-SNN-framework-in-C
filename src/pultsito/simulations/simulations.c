@@ -18,136 +18,6 @@
 #include <immintrin.h>  // AVX intrinsics
 
 
-
-// DEPRECATED???
-void simulate(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset){
-
-    // initialize several control variables
-    int n = snn->n_neurons / conf->n_process * 0.1;
-
-    int time_step = 0, i; 
-    int n_process = conf->n_process;
-    struct timespec start, end; // to measure simulation complete time
-    struct timespec start_neurons, end_neurons; // to measure neurons simulation time
-    struct timespec start_neurons_input, end_neurons_input; // to measure input synapses simulation time
-    struct timespec start_neurons_output, end_neurons_output; // to measure output synapses simulation time
-    struct timespec start_learning, end_learning; // to measure learning processing time
-    
-    // TODO: revise this
-    simulation_results_per_sample_t *results_per_sample = &(results->results_per_sample[0]);
-
-    printf(" > n_processes = %d\n", conf->n_process);
-    fflush(stdout);
-
-    // check simulation schema
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    if(conf->simulation_type == 0) // clock-based
-    { 
-        // simulate over simulation time steps
-        for(time_step = 0; time_step < conf->time_steps; time_step++)
-        {
-
-            #ifdef DEBUG 
-                printf("Processing time step %d\n", time_step);
-            #endif       
-
-            // process all neurons (input and output steps)
-            #pragma omp parallel num_threads(n_process)
-            {
-
-                // if OpenMP is used, simulate first input synapses and then output
-                #ifdef OPENMP
-                #pragma omp master
-                {
-                clock_gettime(CLOCK_MONOTONIC, &start_neurons);
-                clock_gettime(CLOCK_MONOTONIC, &start_neurons_input);
-                }
-
-                // simulate input step
-                #pragma omp for schedule(guided, n) private(i) 
-                for(i=0; i<snn->n_neurons; i++)
-                    snn->input_step(snn, time_step, i, results_per_sample, conf);
-                
-                #pragma omp master
-                {
-                clock_gettime(CLOCK_MONOTONIC, &end_neurons_input);
-                clock_gettime(CLOCK_MONOTONIC, &start_neurons_output);
-                }
-
-                // simulate output step
-                #pragma omp for schedule(guided, n) private(i)
-                for(i=0; i<snn->n_neurons; i++)
-                    snn->output_step(snn, time_step, i, results_per_sample, conf);
-     
-
-                // if it is serially simulated, do all on one step
-                #else  
-                for(i = 0; i<snn->n_neurons; i++)
-                    snn->complete_step(snn, time_step, i, results_per_sample);
-                #endif
-
-                // time measuring
-                #pragma omp master
-                {
-                    clock_gettime(CLOCK_MONOTONIC, &end_neurons_output);
-                    clock_gettime(CLOCK_MONOTONIC, &end_neurons);
-                    clock_gettime(CLOCK_MONOTONIC, &start_learning);
-                }
-
-                #ifdef DEBUG 
-                printf("Processing stdp on time step %d\n", time_step);
-                #endif      
-
-                // process learning if it is necessary
-                //#ifndef NOLEARN 
-                if(conf->learn == 1){
-                    #pragma omp for schedule(static, 50) private(i)
-                    for(i = 0; i<snn->n_synapses; i++)
-                            snn->synapses[i].learning_rule(&(snn->synapses[i]), time_step, 5); 
-                }
-                //#endif
-
-                #pragma omp master
-                {
-                    clock_gettime(CLOCK_MONOTONIC, &end_learning);
-                }
-
-            }
-                    
-            // store neuron simulation and training rule simulation times // TODO: revise
-            results_per_sample->elapsed_time_neurons += (end_neurons.tv_sec - start_neurons.tv_sec) + (end_neurons.tv_nsec - start_neurons.tv_nsec) / 1e9;
-            results_per_sample->elapsed_time_neurons_input += (end_neurons_input.tv_sec - start_neurons_input.tv_sec) + (end_neurons_input.tv_nsec - start_neurons_input.tv_nsec) / 1e9;
-            results_per_sample->elapsed_time_neurons_output += (end_neurons_output.tv_sec - start_neurons_output.tv_sec) + (end_neurons_output.tv_nsec - start_neurons_output.tv_nsec) / 1e9;
-            results_per_sample->elapsed_time_learning += (end_learning.tv_sec - start_learning.tv_sec) + (end_learning.tv_nsec - start_learning.tv_nsec) / 1e9;
-
-            // Print info about the simulation
-            if(time_step % 1000 == 0)
-                printf("Time step: %d/%d\n", time_step, conf->time_steps);
-
-            #ifdef DEBUG 
-                printf(" - Printing synapses weights: \n");
-                for(i = 0; i<snn->n_synapses; i++)
-                    printf(" -- Synapse %d: %f\n", i, snn->synapses[i].w);
-
-                printf("\n=======================================\n\n");
-            #endif      
-
-        }
-    }
-    // event-driven
-    else 
-    {
-        //TODO
-        printf(" > NOT IMPLEMENTED YET!\n");
-    }
-    
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-
-    results->elapsed_time += (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-}
-
 void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset){
 
     // initialize several control variables
@@ -1219,8 +1089,8 @@ void large_simulation(GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, simulation
             for(size_t i=0; i<(size_t)(cpu_snn->n_synapses); i++){
 
                 cpu_snn->w[i] = cpu_snn->init_w[i];
-                cpu_snn->next_pre_spike[i] = 0;
-                cpu_snn->next_post_spike[i] = 0;
+                //cpu_snn->next_pre_spike[i] = 0;
+                //cpu_snn->next_post_spike[i] = 0;
             }
 
             // load the sample
@@ -1904,8 +1774,8 @@ void simulate_sample_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_conf
     for(i=0; i<S; i++){
         
         snn->w[i] = snn->init_w[i];
-        snn->next_pre_spike[i] = 0;
-        snn->next_post_spike[i] = 0;
+        //snn->next_pre_spike[i] = 0;
+        //snn->next_post_spike[i] = 0;
         snn->pre_fired[i] = 0;
     }
 

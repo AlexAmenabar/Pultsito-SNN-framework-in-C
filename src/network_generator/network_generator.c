@@ -15,6 +15,10 @@ double randfrom(double min, double max)
 }
 
 
+void generate_network_input_crit(network_data_t *network_data, configuration_t *conf){
+
+}
+
 
 void generate_semi_random_synaptic_connections(network_data_t *network_data, configuration_t *conf){ // por ahora n_input_synapse y n_output_synapse no se utilizan, ya que por neurona de entrada/salida hay una unica sinapsis de entrada/salida
     // bigger the number of synapses lower the probability: exponential distribution or pareto distribution

@@ -5,7 +5,7 @@
 /// @brief Struct to store data of the generated network 
 typedef struct {
     // general information
-    int n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses, tmp_n_synapses;
+    size_t n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses, tmp_n_synapses;
 
     // neurons section
     int behaviour, *behaviour_list, refract_time, *refract_time_list, *n_input_synapses_per_neuron, *n_output_synapses_per_neuron;

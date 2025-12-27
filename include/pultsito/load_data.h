@@ -40,7 +40,7 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
 /// @param file_name file name to load data from
 /// @param labels_file_name file containing the labels
 /// @param n_samples number of samples in the dataset
-GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *labels_file_name, size_t n_samples);
+GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *labels_file_name, size_t n_samples, simulation_configuration_t *conf);
 
 
 /* Output */
@@ -76,8 +76,6 @@ int load_configuration_params(const char *file_name, simulation_configuration_t 
 /// @param dataset 
 void load_dataset_from_file(input_data_t *dataset, const char *file_name, const char *labels_file_name, int n_samples, simulation_configuration_t *conf);
 
-
-
 /// [DREPRECATED]
 void load_network_information(const char *file_name, spiking_nn_t *snn, network_construction_lists_t *lists, simulation_configuration_t *conf);
 
@@ -90,7 +88,6 @@ void close_results_files(simulation_configuration_t *conf);
 /// @param conf Structure to read where to store the results
 /// @param snn Spiking neural network structure
 void store_results(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset, int *batches, int batch);
-
 void store_generated_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset, int *batches, int batch);
 void store_network(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn);
 void store_number_of_spikes(simulation_results_t *results, simulation_configuration_t *conf, spiking_nn_t *snn, input_data_t *dataset, int *batches, int batch);

@@ -47,7 +47,7 @@ int* create_batches(int *n_batches, int *extra_samples, input_data_t *dataset, i
         batches[i] = i;
     } 
 
-    for(i; i<(*n_batches) * batch_size; i++){
+    for(; i<(*n_batches) * batch_size; i++){
         batches[i] = -1;
     }
 
@@ -62,7 +62,7 @@ int* create_batches(int *n_batches, int *extra_samples, input_data_t *dataset, i
 
 float accuracy_by_output_neurons(simulation_results_t *results, input_data_t *dataset, int *batches, int batch_size, int batch, int n_out){
     
-    int i, j, acc, *pred, *output_spikes, max, index;
+    int i, j, acc, max, index;
 
     // count the number of spikes produced by each output neuron
     /*for(i = 0; i<n_samples; i++){
