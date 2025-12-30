@@ -1393,9 +1393,131 @@ void allocate_memory_for_SNN(GPU_SNN_t *snn, simulation_configuration_t *conf){
     
 
     // spk matrix
-    snn->spk_matrix                    = (int*)malloc((snn->n_neurons + snn->n_input_synapses) * snn->max_spikes * conf->batch_size * sizeof(int)); // time steps is temporal
+    snn->spk_matrix                    = (int*)malloc((snn->n_neurons + snn->n_input_neurons) * snn->max_spikes * conf->batch_size * sizeof(int)); // time steps is temporal
 }
 
+void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
+
+    size_t i, j, t, B;
+
+    // temporal variables to store values
+    float *tmp_v, *tmp_thresh, *tmp_rest, *tmp_arrI, *tmp_w, *tmp_init_w, *tmp_dw, *tmp_pre_trace, *tmp_post_trace;
+    int *tmp_rperiod, *tmp_rperiod_remain, *tmp_res, *tmp_pstfired, *tmp_inR, *tmp_prefired, *tmp_delay, *tmp_lr, *tmp_spk_mtrx;
+    size_t *tmp_in_off, *tmp_pre_neuron_index, *tmp_post_neuron_index, *tmp_n_insyn;
+    
+    B = conf->batch_size;
+
+    // allocate neural properties
+    tmp_v                         = snn->v;
+    tmp_thresh                    = snn->v_thresh;
+    tmp_rest                      = snn->v_rest;
+    tmp_rperiod                   = snn->r_period;
+    tmp_rperiod_remain            = snn->r_period_remain;
+    tmp_res                       = snn->res;
+    tmp_pstfired                  = snn->post_fired;
+    tmp_arrI                      = snn->arrI;
+    tmp_inR                       = snn->inR;
+    tmp_n_insyn                   = snn->n_neuron_input_synapses;
+    tmp_in_off                    = snn->neuron_input_synapses_offset;
+
+    tmp_w                         = snn->w;
+    tmp_init_w                    = snn->init_w;
+    tmp_dw                        = snn->dw;
+    tmp_pre_trace                 = snn->pre_trace;
+    tmp_post_trace                = snn->post_trace;
+    tmp_prefired                  = snn->pre_fired;
+    tmp_delay                     = snn->delay;
+    tmp_lr                        = snn->lr;
+    tmp_pre_neuron_index          = snn->pre_neuron_index;
+    tmp_post_neuron_index         = snn->post_neuron_index;
+
+    tmp_spk_mtrx                  = snn->spk_matrix;
+
+
+    /* Memory allocation */
+    snn->v                            = (float*)malloc(snn->n_neurons * B * sizeof(float));
+    snn->v_thresh                     = (float*)malloc(snn->n_neurons * B * sizeof(float));
+    snn->v_rest                       = (float*)malloc(snn->n_neurons * B * sizeof(float));
+    snn->arrI                         = (float*)malloc(snn->n_neurons * B * sizeof(float));
+    snn->r_period                     = (int*)malloc(snn->n_neurons * B * sizeof(int));
+    snn->r_period_remain              = (int*)malloc(snn->n_neurons * B * sizeof(int));
+    snn->res                          = (int*)malloc(snn->n_neurons * B * sizeof(int));
+    snn->post_fired                   = (int*)malloc(snn->n_neurons * B * sizeof(int));
+    snn->inR                          = (int*)malloc(snn->n_neurons * B * sizeof(int));
+    snn->n_neuron_input_synapses      = (size_t*)malloc(snn->n_neurons * B * sizeof(size_t));
+    snn->neuron_input_synapses_offset = (size_t*)malloc(snn->n_neurons * B * sizeof(size_t));
+
+    snn->w                            = (float*)malloc(snn->n_synapses * B * sizeof(float));
+    snn->init_w                       = (float*)malloc(snn->n_synapses * B * sizeof(float));
+    snn->dw                           = (float*)malloc(snn->n_synapses * B * sizeof(float));
+    snn->pre_trace                    = (float*)malloc(snn->n_synapses * B * sizeof(float));
+    snn->post_trace                   = (float*)malloc(snn->n_synapses * B * sizeof(float));
+    snn->pre_fired                    = (int*)malloc(snn->n_synapses * B * sizeof(int));
+    snn->delay                        = (int*)malloc(snn->n_synapses * B * sizeof(int));
+    snn->lr                           = (int*)malloc(snn->n_synapses * B * sizeof(int));
+    snn->pre_neuron_index             = (size_t*)malloc(snn->n_synapses * B * sizeof(size_t));
+    snn->post_neuron_index            = (size_t*)malloc(snn->n_synapses * B * sizeof(size_t));
+
+    snn->spk_matrix                   = (int*)malloc((snn->n_neurons + snn->n_input_neurons) * snn->max_spikes * B * sizeof(int));
+
+
+    /* Initialization */
+    for(i = 0; i<snn->n_neurons; i++){
+
+        for(j = 0; j<B; j++){
+
+            // copy values
+            snn->v[i * B + j] = tmp_v[i];
+            snn->v_thresh[i * B + j] = tmp_thresh[i];
+            snn->v_rest[i * B + j] = tmp_rest[i];
+            snn->r_period[i * B + j] = tmp_rperiod[i];
+            snn->r_period_remain[i * B + j] = tmp_rperiod_remain[i];
+            snn->res[i * B + j] = tmp_res[i];
+            snn->post_fired[i * B + j] = tmp_pstfired[i];
+            snn->inR[i * B + j] = tmp_inR[i];
+            snn->arrI[i * B + j] = tmp_arrI[i];
+            snn->n_neuron_input_synapses[i * B + j] = tmp_n_insyn[i];
+
+            // scale values to several copies
+            snn->neuron_input_synapses_offset[i * B + j] = tmp_in_off[i];
+        }
+    }
+
+    for(i = 0; i<snn->n_synapses; i++){
+
+        for(j = 0; j<B; j++){
+
+            // copy values
+            snn->w[i * B + j] = tmp_w[i];
+            snn->init_w[i * B + j] = tmp_init_w[i];
+            snn->dw[i * B + j] = tmp_dw[i];
+            snn->pre_trace[i * B + j] = tmp_pre_trace[i];
+            snn->post_trace[i * B + j] = tmp_post_trace[i];
+            snn->pre_fired[i * B + j] = tmp_prefired[i];
+            snn->delay[i * B + j] = tmp_delay[i];
+            snn->lr[i * B + j] = tmp_lr[i];
+
+            // scale indexes
+            snn->pre_neuron_index[i * B + j] = tmp_pre_neuron_index[i];
+            snn->post_neuron_index[i * B + j] = tmp_post_neuron_index[i];
+        }
+    }
+
+    for(t = 0; t<snn->max_spikes; t++){
+        
+        for(i = 0; i<snn->n_neurons + snn->n_input_neurons; i++){
+            
+            for(j = 0; j<B; j++){
+
+                snn->spk_matrix[(snn->n_neurons + snn->n_input_neurons) * B * t + B * i + j] 
+                                            = tmp_spk_mtrx[t * snn->n_neurons + snn->n_input_neurons + j];
+            }
+        }
+    }
+
+    // TODO
+    // free original arrays memory
+}
 
 
 // this should allocate the arrays of LIF, instead of previously : generalization for new neuron models
@@ -1727,4 +1849,279 @@ void print_network(GPU_SNN_t *snn){
     printf("%f]\n", snn->post_trace[i]);
 
     fflush(stdout);
+}
+
+void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
+
+    size_t i, b, B;
+    B = conf->batch_size;
+
+    printf(" > Printing network:\n\n");
+
+    printf(" > > Network general information:\n");
+    printf(" > >>  N: %zu\n", snn->n_neurons);
+    printf(" > >> iN: %zu\n", snn->n_input_neurons);
+    printf(" > >> oN: %zu\n", snn->n_output_neurons);
+    printf(" > >>  S: %zu\n", snn->n_synapses);
+    printf(" > >> iS: %zu\n", snn->n_input_synapses);
+    printf(" > >> oS: %zu\n", snn->n_output_synapses);
+    printf(" > >> mS: %zu\n", snn->max_spikes);
+    //printf(" > >> nN: %zu\n\n", snn->n_networks);
+
+    printf(" > > Neurons data:\n");
+
+    printf(" > >> V: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+        
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->v[i * B + b]);
+
+        printf("%f]", snn->v[i * B + b]);
+    }
+    printf("%f]\n", snn->v[i * B + b]);
+
+    printf(" > >> Thresholds: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->v_thresh[i * B + b]);
+
+        printf("%f]", snn->v_thresh[i * B + b]);    
+    }
+    printf("%f]\n", snn->v_thresh[i * B + b]);
+
+    printf(" > >> Rests: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->v_rest[i * B + b]);
+
+        printf("%f]", snn->v_rest[i * B + b]);      
+    }
+    printf("%f]\n", snn->v_rest[i * B + b]);
+
+    printf(" > >> Refract: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%d (%d), ", snn->r_period[i * B + b], snn->r_period_remain[i * B + b]);
+
+        printf("%d (%d)]", snn->r_period[i * B + b], snn->r_period_remain[i * B + b]);      
+    }
+    printf("%d (%d)]\n", snn->r_period[i * B + b], snn->r_period_remain[i * B + b]);
+
+    printf(" > >> R: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%d, ", snn->res[i * B + b]);
+
+        printf("%d]", snn->res[i * B + b]);      
+    }
+    printf("%d]\n", snn->res[i * B + b]);
+
+    printf(" > >> Post fired: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%d, ", snn->post_fired[i * B + b]);
+
+        printf("%d]", snn->post_fired[i * B + b]);      
+    }
+    printf("%d]\n", snn->post_fired[i * B + b]);
+
+    printf(" > >> I: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->arrI[i * B + b]);
+
+        printf("%f]", snn->arrI[i * B + b]);      
+    }
+    printf("%f]\n", snn->arrI[i * B + b]);
+
+    printf(" > >> N input synapses: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%zu, ", snn->n_neuron_input_synapses[i * B + b]);
+
+        printf("%zu]", snn->n_neuron_input_synapses[i * B + b]);      
+    }
+    printf("%zu]\n", snn->n_neuron_input_synapses[i * B + b]);
+
+    printf(" > >> Input synapses off: [");
+    for(i = 0; i<snn->n_neurons-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%zu, ", snn->neuron_input_synapses_offset[i * B + b]);
+
+        printf("%zu]", snn->neuron_input_synapses_offset[i * B + b]);      
+    }
+    printf("%zu]\n", snn->neuron_input_synapses_offset[i * B + b]);
+
+
+
+    printf(" > > Synapses data:\n");
+
+    printf(" > >> W: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->w[i * B + b]);
+
+        printf("%f]", snn->w[i * B + b]);      
+    }
+    printf("%f]\n", snn->w[i * B + b]);
+
+    printf(" > >> Init W: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->init_w[i * B + b]);
+
+        printf("%f]", snn->init_w[i * B + b]);      
+    }
+    printf("%f]\n", snn->init_w[i * B + b]);
+
+    printf(" > >> dW: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->dw[i * B + b]);
+
+        printf("%f]", snn->dw[i * B + b]);      
+    }
+    printf("%f]\n", snn->dw[i * B + b]);
+
+    printf(" > >> Delay: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%d, ", snn->delay[i * B + b]);
+
+        printf("%d]", snn->delay[i * B + b]);      
+    }
+    printf("%d]\n", snn->delay[i * B + b]);
+
+    printf(" > >> Lr: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%d, ", snn->lr[i * B + b]);
+
+        printf("%d]", snn->lr[i * B + b]);      
+    }
+    printf("%d]\n", snn->lr[i * B + b]);
+
+    printf(" > >> Pre neuron: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%zu, ", snn->pre_neuron_index[i * B + b]);
+
+        printf("%zu]", snn->pre_neuron_index[i * B + b]);      
+    }
+    printf("[");
+    for(b = 0; b<B-1; b++)
+        printf("%zu, ", snn->pre_neuron_index[i * B + b]);
+    printf("%zu]\n", snn->pre_neuron_index[i * B + b]);
+
+    printf(" > >> Post neuron: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%zu, ", snn->post_neuron_index[i * B + b]);
+
+        printf("%zu]", snn->post_neuron_index[i * B + b]);      
+    }
+    printf("%zu]\n", snn->post_neuron_index[i * B + b]);
+
+    printf(" > >> Pre fired: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%d, ", snn->pre_fired[i * B + b]);
+
+        printf("%d]", snn->pre_fired[i * B + b]);      
+    }
+    printf("%d]\n", snn->pre_fired[i * B + b]);
+
+    printf(" > >> Pre trace: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->pre_trace[i * B + b]);
+
+        printf("%f]", snn->pre_trace[i * B + b]);      
+    }
+    printf("%f]\n", snn->pre_trace[i * B + b]);
+
+    printf(" > >> Post trace: [");
+    for(i = 0; i<snn->n_synapses-1; i++){
+
+        printf("[");
+        for(b = 0; b<B-1; b++)
+            printf("%f, ", snn->post_trace[i * B + b]);
+
+        printf("%f]", snn->post_trace[i * B + b]);      
+    }
+    printf("%f]\n", snn->post_trace[i * B + b]);
+
+    fflush(stdout);
+}
+
+
+
+void print_dataset(GPU_dataset_t *dataset){
+
+    size_t i, j, l, next = 0;
+
+    printf(" > Printing dataset: \n");
+    for(i = 0; i<dataset->n_samples; i++){
+
+        printf(" > > Sample %zu (offset = %zu)\n", i, dataset->sample_offset[i]);
+
+        // loop over features
+        for(j = 0; j<dataset->n_features; j++){
+
+            printf(" > >> Feature %zu (offset = %zu): [", j, dataset->feature_offset[i * dataset->n_features + j]);
+
+            // print spikes in feature
+            for(l = 0; l<dataset->n_spikes_per_feature[i * dataset->n_features + j]-1; l++){
+
+                printf("%zu, ", dataset->spikes[next]);
+                next++;
+            }
+            printf("%zu]\n", dataset->spikes[next]);
+            next++;
+        }
+    }
+}
+
+GPU_results_t* initialize_results_struct_cpu(simulation_configuration_t *conf){
+
+    GPU_results_t *results = (GPU_results_t*)malloc(sizeof(GPU_results_t));
+
+
+
+    return results;
 }

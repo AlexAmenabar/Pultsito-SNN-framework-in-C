@@ -682,7 +682,9 @@ GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *lab
     GPU_dataset_t *dataset = (GPU_dataset_t*)malloc(sizeof(GPU_dataset_t));
 
     // load general dataset information from configuration struct
-    dataset->type = 0;
+    //dataset->type = 0;
+    dataset->type = 1; // frequencies
+    
     dataset->n_classes = conf->n_classes;
     dataset->n_samples = n_samples;
     dataset->n_features = conf->input_size;
@@ -728,20 +730,29 @@ GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *lab
     }
 
 
-    // copy spikes to the dataset struct
+    // copy spikes to the dataset struct, compute frequencies and store first spike time
     dataset->spikes = (size_t*)malloc(dataset->n_spikes * sizeof(size_t));
+    dataset->freq = (size_t*)malloc(dataset->n_samples * dataset->n_features * sizeof(size_t));
+    dataset->first_spk = (size_t*)malloc(dataset->n_samples * dataset->n_features * sizeof(size_t));
+
     size_t next_spike = 0;
     for(i = 0; i<dataset->n_samples; i++){
 
         // loop over features
         for(j = 0; j<dataset->n_features; j++){
 
+
             n_spikes = dataset->n_spikes_per_feature[i * dataset->n_features + j];
+
             for(l = 0; l < n_spikes; l++){
 
                 dataset->spikes[next_spike] = tmp_spikes[i * dataset->n_features + j][l];
                 next_spike ++;
             }
+
+            // store first spike and frequency
+            dataset->freq[i * dataset->n_features + j] = conf->max_input_spikes / n_spikes; // spikes each freq time steps
+            dataset->first_spk[i * dataset->n_features + j] = dataset->spikes[dataset->feature_offset[i * dataset->n_features + j]];
 
             // deallocate memory
             free(tmp_spikes[i * dataset->n_features + j]);

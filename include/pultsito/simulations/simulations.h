@@ -52,3 +52,6 @@ void process_neuron_firing(GPU_SNN_t *snn, simulation_configuration_t *conf, GPU
 
 ///
 void simulate_sample_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results, size_t sidx);
+void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results, size_t bidx);
+void update_weights_cpu(GPU_SNN_t *snn, size_t batch_size);
+void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results);

@@ -46,6 +46,11 @@
 /ISPASS2026_experiments/
 /performance_experiments/
 /tmp/
+*.err
+*.out
+*.toml
+*.txt
+*.sbatch
 
 # Debug files
 *.dSYM/

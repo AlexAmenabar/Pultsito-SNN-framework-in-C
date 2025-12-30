@@ -5,6 +5,10 @@
 #include <math.h>
 #include <time.h>
 #include <string.h>
+#include <malloc.h>
+
+#include <toml_c/toml-c.h>
+
 
 
 /*
@@ -31,36 +35,28 @@ Configuration file format:
 - randomization: int
 
 [neurons]
-- v: float (constant for all)
 - min_v: float (min v)
 - max_v: float (max v)
 
-- v_thresh: float (constant for all)
 - min_v_thresh: float (min v)
 - max_v_thresh: float (max v)
 
-- v_rest: float (constant for all)
 - min_v_rest: float (min v)
 - max_v_rest: float (max v)
 
-- R: float (constant for all)
 - min_R: float (min v)
 - max_R: float (max v)
 
-- rft_per: float (constant for all)
 - min_rft_per: float (min v)
 - max_rft_per: float (max v)
 
 [synapses]
-- w: float (constant for all)
 - min_w: float (min v)
 - max_w: float (max v)
 
-- lr: int (constant for all)
 - min_lr: int
 - max_lr: int
 
-- delay: int
 - min_delay: int
 - max_delay: int
 
@@ -91,19 +87,23 @@ typedef struct {
     int randomization;
 
     // neurons
-    float v, min_v, max_v; 
-    float v_thresh, min_v_thresh, max_v_thresh;
-    float v_rest, min_v_rest, max_v_rest;
-    int R, min_R, max_R;
-    int rft_per, min_rft_per, max_rft_per;
+    float v_min, v_max; 
+    float v_thresh_min, v_thresh_max;
+    float v_rest_min, v_rest_max;
+    int R_min, R_max;
+    int rft_per_min, rft_per_max;
     
     // synapses
-    float w, min_w, max_w;
-    int delay, min_delay, max_delay;
-    int lr, min_lr, max_lr;
+    float w_min, w_max;
+    int delay_min, delay_max;
+    int lr_min, lr_max;
 
     // IO
     char *output_file;
+    char *output_file_neurons;
+    char *output_file_synapses;
+    int output_is_separated;
+
 } generator_conf_t;
 
 
@@ -115,7 +115,7 @@ typedef struct {
     float *v_thresh;
     float *v_rest;
     int *R;
-    int *
+    int *rft_per;
 
 
 } lif_neurons_t;
@@ -182,7 +182,7 @@ float rand_float_range(float min, float max){
     return random_number;
 }
 
-void selectionSort(size_t* arr) {
+void selectionSort(size_t *arr) {
     
     size_t n = arr[0] * 2;
 
@@ -219,7 +219,6 @@ generator_conf_t* load_general_section(generator_conf_t *conf, toml_table_t *tbl
     n_input = toml_table_int(tbl, "n_input");
     n_neurons = toml_table_int(tbl, "n_neurons");
     n_output_neurons = toml_table_int(tbl, "n_output_neurons");
-    n_neurons_per_layer = toml_table_int(tbl, "layered");
     max_pair_neurons_connections = toml_table_int(tbl, "max_pair_neurons_connections");
 
     // check provided values and set default values
@@ -285,7 +284,7 @@ generator_conf_t* load_layered_section(generator_conf_t *conf, toml_table_t *tbl
     conf->fully_connected = fully_connected.u.i;
 
     // allocate memory for n neurons per each layer
-    conf->n_neuron_per_layer = (int*)malloc(conf->n_layers * sizeof(int));
+    conf->n_neurons_per_layer = (size_t*)malloc(conf->n_layers * sizeof(size_t));
 
     // load number of neurons per layer
     for(size_t i = 0; i<n_layers.u.i; i++){
@@ -368,7 +367,7 @@ generator_conf_t* load_neurons_section(generator_conf_t *conf, toml_table_t *tbl
         printf(" > v min not provided! Exiting.\n");
         exit(1);    
     }
-    if(!v_tresh_max.ok){
+    if(!v_thresh_max.ok){
                 
         printf(" > v_thresh max not provided! Exiting.\n");
         exit(1);    
@@ -557,9 +556,14 @@ generator_conf_t* read_configuration_file(char* conf_file){
 
     // load general section
     conf = load_general_section(conf, tbl_general);
-    conf = load_layered_section(conf, tbl_layered);
-    conf = load_no_fully_connected_section(conf, tbl_no_fully_connected);
-    conf = load_no_layered_section(conf, tbl_no_layered);
+
+    if(conf->layered == 1){
+        conf = load_layered_section(conf, tbl_layered);
+        conf = load_no_fully_connected_section(conf, tbl_no_fully_connected);
+    }
+    else{
+        conf = load_no_layered_section(conf, tbl_no_layered);
+    }
     conf = load_neurons_section(conf, tbl_neurons);
     conf = load_synapses_section(conf, tbl_synapses);
     conf = load_IO_section(conf, tbl_IO);
@@ -582,6 +586,13 @@ topology_t generate_layered_topology(generator_conf_t *conf){
     n_output_neurons = conf->n_output_neurons;
     n_layers = conf->n_layers;
     n_neurons_per_layer = conf->n_neurons_per_layer;
+    n_synapses = 0;
+
+
+    // TODO
+    // n neurons is the sum of all neuron in all layers, and n_unput
+    // should be the neurons in the first layer? The last is incorrect
+    n_input = n_neurons_per_layer[0];
 
     input_neurons_per_neuron = (size_t **)malloc(n_neurons * sizeof(size_t*));
 
@@ -602,17 +613,19 @@ topology_t generate_layered_topology(generator_conf_t *conf){
     
     for(size_t i = 1; i<n_layers; i++){
 
-        input_neurons_per_neuron[next_neuron] = (size_t*)malloc((n_neurons_per_layer[i-1] * 2 + 1) * sizeof(size_t));
-        input_neurons_per_neuron[next_neuron][0] = n_neurons_per_layer[i-1];
+        for(size_t j = 0; j<n_neurons_per_layer[i]; j++){
+
+            input_neurons_per_neuron[next_neuron] = (size_t*)malloc((n_neurons_per_layer[i-1] * 2 + 1) * sizeof(size_t));
+            input_neurons_per_neuron[next_neuron][0] = n_neurons_per_layer[i-1];
         
-        for(size_t j = 0; j<n_neurons_per_layer[i-1]; j++){
+            for(size_t l = 0; l<n_neurons_per_layer[i-1]; l++){
+                input_neurons_per_neuron[next_neuron][l * 2 + 1] = next_neuron - j - n_neurons_per_layer[i-1] + l;
+                input_neurons_per_neuron[next_neuron][l * 2 + 2] = 1;
+            }
 
-            input_neurons_per_neuron[next_neuron][j * 2 + 1] = next_neuron - n_neurons_per_layer[i-1] + j;
-            input_neurons_per_neuron[next_neuron][j * 2 + 2] = 1;
+            n_synapses += n_neurons_per_layer[i-1];
+            next_neuron ++;
         }
-
-        n_synapses += n_neurons_per_layer[i-1];
-        next_neuron ++;
     }
 
     // initialize and return topology
@@ -676,14 +689,17 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
     }
 
     // generate topology
-    size_t generated_n_synapses = 0;
+    size_t generated_n_synapses = 0; 
     for(i = 0; i<n_neurons; i++){
 
         // allocate memory to store input neurons
-        input_neurons_per_neuron[i] = (size_t*)malloc(n_input_connections_per_neuron[i] * sizeof(size_t));
+        input_neurons_per_neuron[i] = (size_t*)malloc((n_input_connections_per_neuron[i] * 2 + 1) * sizeof(size_t));
+        input_neurons_per_neuron[i][0] = 0;
 
         size_t remaining_input_connections = n_input_connections_per_neuron[i]; 
         
+        j = 0;
+
         // TEMPORAL: check if neuron is connected to an input neuron (at least one)
         if(i < n_input){
 
@@ -695,6 +711,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
 
             // update remaining input connections
             remaining_input_connections --;
+            j++;
         }
         
         while(remaining_input_connections > 0){
@@ -714,7 +731,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
 
                     // already in the array, update number of connections
                     valid = 0;
-                    input_neuron_per_neuron[i][l*2+2] += n;
+                    input_neurons_per_neuron[i][l*2+2] += n;
                 }
             }
 
@@ -758,6 +775,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
     topology.n_layers = 1;
     topology.n_neurons_per_layer = 0; // no used 
 
+
     // return topology
     return topology;
 }
@@ -772,6 +790,9 @@ topology_t generate_topology(generator_conf_t *conf){
     else{
         topology = generate_non_layered_topology(conf);
     }
+
+    // update number of synapses in configuration
+    conf->n_synapses = topology.n_synapses;
 
     return topology;
 }
@@ -792,7 +813,7 @@ lif_neurons_t initialize_neurons(generator_conf_t *conf){
     for(size_t i = 0; i<conf->n_neurons; i++){
 
         neurons.v[i] = rand_float_range(conf->v_min, conf->v_max);
-        neurons.v_tresh[i] = rand_float_range(conf->v_thresh_min, conf->v_thresh_max);
+        neurons.v_thresh[i] = rand_float_range(conf->v_thresh_min, conf->v_thresh_max);
         neurons.v_rest[i] = rand_float_range(conf->v_rest_min, conf->v_rest_max);
         neurons.R[i] = rand_int_range(conf->R_min, conf->R_max);
         neurons.rft_per[i] = rand_int_range(conf->rft_per_min, conf->rft_per_max);
@@ -806,6 +827,7 @@ synapses_t initialize_synapses(generator_conf_t *conf){
 
     synapses_t synapses;
 
+    printf(" n_synapses = %zu\n", conf->n_synapses);
     // allocate memory for synapses properties
     synapses.w     = (float*)malloc(conf->n_synapses * sizeof(float));
     synapses.delay = (int*)malloc(conf->n_synapses * sizeof(int));
@@ -814,9 +836,9 @@ synapses_t initialize_synapses(generator_conf_t *conf){
     // initialize values
     for(size_t i = 0; i<conf->n_synapses; i++){
 
-        neurons.w[i] = rand_float_range(conf->w_min, conf->w_max);
-        neurons.delay[i] = rand_int_range(conf->delay_min, conf->delay_max);
-        neurons.lr[i] = rand_int_range(conf->lr_min, conf->lr_max);
+        synapses.w[i] = rand_float_range(conf->w_min, conf->w_max);
+        synapses.delay[i] = rand_int_range(conf->delay_min, conf->delay_max);
+        synapses.lr[i] = rand_int_range(conf->lr_min, conf->lr_max);
     }
 
     // return synapses
@@ -837,7 +859,7 @@ void store_network(topology_t *topology, generator_conf_t *conf){
     FILE *f_neurons;
     FILE *f_synapses;
 
-    if(conf->network_is_separated == 1){
+    if(conf->output_is_separated == 1){
     
         f_neurons = fopen(conf->output_file_neurons, "w"); // write
         if (f_neurons == NULL){
@@ -862,7 +884,7 @@ void store_network(topology_t *topology, generator_conf_t *conf){
     fprintf(f, "    synapsis = %zu\n", topology->n_synapses);
     fprintf(f, "    input_synapsis = %zu\n", 0); // DEPRECATED
     fprintf(f, "    output_synapsis = %zu\n", 0);
-    fprintf(f, "    network_is_separated = %d\n\n", conf->network_is_separated);
+    fprintf(f, "    network_is_separated = %d\n\n", conf->output_is_separated);
 
     printf(" > General information stored!\n");
 
@@ -882,17 +904,17 @@ void store_network(topology_t *topology, generator_conf_t *conf){
     fprintf(f_neurons, "\n");
 
     for(i=0; i<topology->n_neurons; i++){
-        fprintf(f_neurons, "%lf ", topology->v_thresh[i]);
+        fprintf(f_neurons, "%lf ", topology->neurons.v_thresh[i]);
     }
     fprintf(f_neurons, "\n");
 
     for(i=0; i<topology->n_neurons; i++){
-        fprintf(f_neurons, "%lf ", topology->v_rest[i]);
+        fprintf(f_neurons, "%lf ", topology->neurons.v_rest[i]);
     }
     fprintf(f_neurons, "\n");
 
     for(i=0; i<topology->n_neurons; i++){
-        fprintf(f_neurons, "%d ", topology->rft_per[i]);
+        fprintf(f_neurons, "%d ", topology->neurons.rft_per[i]);
     }
     fprintf(f_neurons, "\n");
 
@@ -905,17 +927,17 @@ void store_network(topology_t *topology, generator_conf_t *conf){
     // if is separated == 1, store neurons information in plain text
     //if(output_is_separated == 1){
     for(i=0; i<topology->n_synapses; i++){
-        fprintf(f_synapses, "%d ", topology->delay[i]);
+        fprintf(f_synapses, "%d ", topology->synapses.delay[i]);
     }
     fprintf(f_synapses, "\n");
 
     for(i=0; i<topology->n_synapses; i++){
-        fprintf(f_synapses, "%lf ", topology->w[i]);
+        fprintf(f_synapses, "%lf ", topology->synapses.w[i]);
     }
     fprintf(f_synapses, "\n");
 
     for(i=0; i<topology->n_synapses; i++){
-        fprintf(f_synapses, "%d ", topology->lr[i]);
+        fprintf(f_synapses, "%d ", topology->synapses.lr[i]);
     }
     fprintf(f_synapses, "\n\n");
 

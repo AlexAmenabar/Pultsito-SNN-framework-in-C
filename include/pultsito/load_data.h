@@ -9,7 +9,7 @@
 * Functions to manage de Input/Output: load configuration files, networks, store results...
 */
 
-/* General */
+/* [General] */
 
 /// @brief Function to open a file
 /// @param f FILE pointer to stream file 
@@ -24,7 +24,7 @@ int open_file(FILE **f, const char *file_name);
 int open_file_w(FILE **f, const char *file_name);
 
 
-/* Input*/
+/* [Input management]*/
 
 /// @brief Read configuration parameters from configuration TOML file
 /// @param file_name Name of the file to load configuration information from
@@ -36,6 +36,9 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
 /// @return Struct containing the arrays to initialize the network
 network_construction_lists_t* load_network_information_in_lists(simulation_configuration_t *conf);
 
+/// @brief Load network from file
+GPU_SNN_t* load_network_from_file(simulation_configuration_t *conf);
+
 /// @brief Load dataset
 /// @param file_name file name to load data from
 /// @param labels_file_name file containing the labels
@@ -43,12 +46,12 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
 GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *labels_file_name, size_t n_samples, simulation_configuration_t *conf);
 
 
-/* Output */
+/* [Output management] */
 
 
 
 
-/* Deprecated */
+/* [Deprecated] */
 
 /// [DEPRECATED]
 /// @brief Load network data from file (number of neurons, number of synapses, connections, weights of synapses...)

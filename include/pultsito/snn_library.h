@@ -97,6 +97,7 @@ typedef struct{
 
 /* Struct for simualtion results */
 
+/// [DEPRECATED]
 /// @brief Struct to store the results of each sample
 typedef struct{
     
@@ -118,8 +119,7 @@ typedef struct{
 } simulation_results_per_sample_t;
 
 
-
-
+/// [DEPRECATED]
 /// @brief Struct to store the general results of the simulation
 typedef struct{
     
@@ -143,8 +143,7 @@ typedef struct{
 
 /* Structs for datasets */
 
-// The implementation must be generalized to these structs
-
+/// [DEPRECATED]
 // struct to represent a spike train
 typedef struct{
 
@@ -154,6 +153,7 @@ typedef struct{
 } spike_train_t;
 
 
+/// [DEPRECATED]
 // spike image (set of spike trains)
 typedef struct{
 
@@ -161,6 +161,8 @@ typedef struct{
 
 } sample_t;
 
+
+/// [DEPRECATED]
 /// @brief Struct to handle different data types
 typedef struct{
 
@@ -180,6 +182,7 @@ typedef struct{
 
 /* Network structs */
 
+/// [DEPRECATED]
 /// @brief LIF neuron model structure
 typedef struct {
 
@@ -224,10 +227,13 @@ typedef struct {
 
 } lif_neuron_t;
 
+
+/// [DEPRECATED]
 // define synapse_t struct
 typedef struct synapse_t synapse_t;
 
 
+/// [DEPRECATED]
 /// @brief Synapse structure
 struct synapse_t {
 
@@ -256,8 +262,10 @@ struct synapse_t {
 
 };
 
+/// [DEPRECATED]
 typedef struct spiking_nn_t spiking_nn_t;
 
+/// [DEPRECATED]
 /// @brief SNN structure 
 struct spiking_nn_t{
 
@@ -294,51 +302,11 @@ struct spiking_nn_t{
 
 
 
-// GPU / cuda structs
-
-typedef struct {
-
-    // gpu info
-    int nDevices;
-    double *gpu_mem; // free memory in the GPU
-    double gpu_usable_mem;
-    int multi_gpu_allowed;
-
-    // cuda simulation details
-    double dataset_size;
-    double network_size;
-    double results_size;
-    double network_cpy_size;
-
-    int n_networks;
-    int n_samples;
-    int batch_size;
-    int time_steps;
-
-    // multigpu info
-    int n_batch_per_dev; // sample simulated by each device in the batch
-    int gpuId; // used to index the correct information on each GPU
-    int n_networks_per_dev;
-
-
-    // number of threads and blocks per kernel
-    unsigned int n_threads_per_blk_rsm_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
-    unsigned int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
-    unsigned int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
-    unsigned int n_threads_per_blk_synapses_x, n_threads_per_blk_synapses_y, n_threads_per_blk_synapses_z;
-    unsigned int n_threads_per_blk_uw_x, n_threads_per_blk_uw_y, n_threads_per_blk_uw_z;
-
-    unsigned int n_blk_rsm_x, n_blk_rsm_y, n_blk_rsm_z;
-    unsigned int n_blk_ls_x, n_blk_ls_y, n_blk_ls_z;
-    unsigned int n_blk_nrs_x, n_blk_nrs_y, n_blk_nrs_z;
-    unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z; 
-    unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
-
-} cuda_info_t;
+/* New structs */
 
 
 
-/// @brief LIF neuron model structure for GPU
+/// @brief SNN structure
 typedef struct {
 
     size_t n_neurons;
@@ -394,8 +362,8 @@ typedef struct {
 } GPU_SNN_t;
 
 
-/// @brief LIF neuron model structure: the variables that can be very large are size_t
-// TODO: Chunks?
+/// @brief Structure to store the dataset
+// [TODO]: Chunks?
 typedef struct {
 
     int type; // dataset type
@@ -411,9 +379,13 @@ typedef struct {
     size_t *spikes; // entire dataset (spike times)
     size_t n_spikes; // total number of spikes in the dataset
 
+    size_t *freq; // spike trains described by frequencies
+    size_t *first_spk; // first spike time
+
 } GPU_dataset_t;
 
 
+/// @brief Structure to store results during simulation
 typedef struct {
 
   int *n_spks; // [n_samples * n_neurons]
@@ -422,6 +394,47 @@ typedef struct {
 } GPU_results_t;
 
 
+/// @brief Struct that stores data to guide the cuda simulation
+typedef struct {
+
+    // gpu info
+    int nDevices;
+    double *gpu_mem; // free memory in the GPU
+    double gpu_usable_mem;
+    int multi_gpu_allowed;
+
+    // cuda simulation details
+    double dataset_size;
+    double network_size;
+    double results_size;
+    double network_cpy_size;
+
+    int n_networks;
+    int n_samples;
+    int batch_size;
+    int time_steps;
+
+    // multigpu info
+    int n_batch_per_dev; // sample simulated by each device in the batch
+    int gpuId; // used to index the correct information on each GPU
+    int n_networks_per_dev;
+
+
+    // number of threads and blocks per kernel
+    unsigned int n_threads_per_blk_rsm_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
+    unsigned int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
+    unsigned int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
+    unsigned int n_threads_per_blk_synapses_x, n_threads_per_blk_synapses_y, n_threads_per_blk_synapses_z;
+    unsigned int n_threads_per_blk_uw_x, n_threads_per_blk_uw_y, n_threads_per_blk_uw_z;
+
+    unsigned int n_blk_rsm_x, n_blk_rsm_y, n_blk_rsm_z;
+    unsigned int n_blk_ls_x, n_blk_ls_y, n_blk_ls_z;
+    unsigned int n_blk_nrs_x, n_blk_nrs_y, n_blk_nrs_z;
+    unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z; 
+    unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
+
+} cuda_info_t;
+
 
 
 /* General function to network initialization */
@@ -429,6 +442,9 @@ typedef struct {
 ///
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_construction_lists_t *data);
 void print_network(GPU_SNN_t *snn);
+void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
+void print_dataset(GPU_dataset_t *dataset);
+void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf);
 
 
 

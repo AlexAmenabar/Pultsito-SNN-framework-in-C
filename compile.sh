@@ -3,8 +3,8 @@
 
 
 COMMANDS=(
-"gcc -Wall -O0 -march=skylake-avx512 -ffast-math -fopenmp -Iinclude -Iinclude/pultsito -Ilib -g -o bin/main_simulation_rd src/pultsito/main.c src/pultsito/snn_library.c src/pultsito/load_data.c src/pultsito/helpers.c src/pultsito/neuron_models/lif_neuron.c src/pultsito/training_rules/stdp.c src/pultsito/simulations/simulations.c src/pultsito/metrics.c -lm -DREORDER"
-"gcc -Wall -O0 -march=skylake-avx512 -ffast-math -fopenmp -Iinclude -Iinclude/pultsito -Ilib -g -o bin/main_avx_simulation_rd src/pultsito/main.c src/pultsito/snn_library.c src/pultsito/load_data.c src/pultsito/helpers.c src/pultsito/neuron_models/lif_neuron.c src/pultsito/training_rules/stdp.c src/pultsito/simulations/simulations.c src/pultsito/metrics.c -lm -DAVX512 -DREORDER"
+"gcc -Wall -O3 -march=skylake-avx512 -ffast-math -fopenmp -Iinclude -Iinclude/pultsito -Ilib -g -o bin/main_simulation_rd src/pultsito/main.c src/pultsito/snn_library.c src/pultsito/load_data.c src/pultsito/helpers.c src/pultsito/neuron_models/lif_neuron.c src/pultsito/training_rules/stdp.c src/pultsito/simulations/simulations.c src/pultsito/metrics.c -lm -DREORDER"
+"gcc -Wall -O3 -march=skylake-avx512 -ffast-math -fopenmp -Iinclude -Iinclude/pultsito -Ilib -o bin/main_avx_simulation_rd src/pultsito/main.c src/pultsito/snn_library.c src/pultsito/load_data.c src/pultsito/helpers.c src/pultsito/neuron_models/lif_neuron.c src/pultsito/training_rules/stdp.c src/pultsito/simulations/simulations.c src/pultsito/metrics.c -lm -DAVX512 -DREORDER"
 )
 #
 #COMMANDS=(
