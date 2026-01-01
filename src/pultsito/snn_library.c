@@ -1393,12 +1393,12 @@ void allocate_memory_for_SNN(GPU_SNN_t *snn, simulation_configuration_t *conf){
     
 
     // spk matrix
-    snn->spk_matrix                    = (int*)malloc((snn->n_neurons + snn->n_input_neurons) * snn->max_spikes * conf->batch_size * sizeof(int)); // time steps is temporal
+    snn->spk_matrix                    = (char*)malloc((snn->n_neurons + snn->n_input_neurons) * snn->LT * conf->batch_size * sizeof(char)); // time steps is temporal
 }
 
 void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
 
-    size_t i, j, t, B;
+    size_t i, j, t, B, LT, N, iN, S;
 
     // temporal variables to store values
     float *tmp_v, *tmp_thresh, *tmp_rest, *tmp_arrI, *tmp_w, *tmp_init_w, *tmp_dw, *tmp_pre_trace, *tmp_post_trace;
@@ -1406,6 +1406,10 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
     size_t *tmp_in_off, *tmp_pre_neuron_index, *tmp_post_neuron_index, *tmp_n_insyn;
     
     B = conf->batch_size;
+    LT = snn->LT;
+    N = snn->n_neurons;
+    iN = snn->n_input_neurons;
+    S = snn->n_synapses;
 
     // allocate neural properties
     tmp_v                         = snn->v;
@@ -1435,88 +1439,105 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
 
 
     /* Memory allocation */
-    snn->v                            = (float*)malloc(snn->n_neurons * B * sizeof(float));
-    snn->v_thresh                     = (float*)malloc(snn->n_neurons * B * sizeof(float));
-    snn->v_rest                       = (float*)malloc(snn->n_neurons * B * sizeof(float));
-    snn->arrI                         = (float*)malloc(snn->n_neurons * B * sizeof(float));
-    snn->r_period                     = (int*)malloc(snn->n_neurons * B * sizeof(int));
-    snn->r_period_remain              = (int*)malloc(snn->n_neurons * B * sizeof(int));
-    snn->res                          = (int*)malloc(snn->n_neurons * B * sizeof(int));
-    snn->post_fired                   = (int*)malloc(snn->n_neurons * B * sizeof(int));
-    snn->inR                          = (int*)malloc(snn->n_neurons * B * sizeof(int));
-    snn->n_neuron_input_synapses      = (size_t*)malloc(snn->n_neurons * B * sizeof(size_t));
-    snn->neuron_input_synapses_offset = (size_t*)malloc(snn->n_neurons * B * sizeof(size_t));
+    snn->v                            = (float*)malloc(N * B * sizeof(float));
+    //snn->v_thresh                     = (float*)malloc(N * B * sizeof(float));
+    //snn->v_rest                       = (float*)malloc(N * B * sizeof(float));
+    snn->arrI                         = (float*)malloc(N * B * sizeof(float));
+    //snn->r_period                     = (int*)malloc(N * B * sizeof(int));
+    snn->r_period_remain              = (int*)malloc(N * B * sizeof(int));
+    //snn->res                          = (int*)malloc(N * B * sizeof(int));
+    snn->post_fired                   = (int*)malloc(N * B * sizeof(int));
+    //snn->inR                          = (int*)malloc(N * B * sizeof(int));
+    //snn->n_neuron_input_synapses      = (size_t*)malloc(N * B * sizeof(size_t));
+    //snn->neuron_input_synapses_offset = (size_t*)malloc(N * B * sizeof(size_t));
 
-    snn->w                            = (float*)malloc(snn->n_synapses * B * sizeof(float));
-    snn->init_w                       = (float*)malloc(snn->n_synapses * B * sizeof(float));
-    snn->dw                           = (float*)malloc(snn->n_synapses * B * sizeof(float));
-    snn->pre_trace                    = (float*)malloc(snn->n_synapses * B * sizeof(float));
-    snn->post_trace                   = (float*)malloc(snn->n_synapses * B * sizeof(float));
-    snn->pre_fired                    = (int*)malloc(snn->n_synapses * B * sizeof(int));
-    snn->delay                        = (int*)malloc(snn->n_synapses * B * sizeof(int));
-    snn->lr                           = (int*)malloc(snn->n_synapses * B * sizeof(int));
-    snn->pre_neuron_index             = (size_t*)malloc(snn->n_synapses * B * sizeof(size_t));
-    snn->post_neuron_index            = (size_t*)malloc(snn->n_synapses * B * sizeof(size_t));
+    snn->w                            = (float*)malloc(S * B * sizeof(float));
+    //snn->init_w                       = (float*)malloc(S * B * sizeof(float));
+    snn->dw                           = (float*)malloc(S * B * sizeof(float));
+    snn->pre_trace                    = (float*)malloc(S * B * sizeof(float));
+    snn->post_trace                   = (float*)malloc(S * B * sizeof(float));
+    snn->pre_fired                    = (int*)malloc(S * B * sizeof(int));
+    //snn->delay                        = (int*)malloc(S * B * sizeof(int));
+    //snn->lr                           = (int*)malloc(S * B * sizeof(int));
+    //snn->pre_neuron_index             = (size_t*)malloc(S * B * sizeof(size_t));
+    //snn->post_neuron_index            = (size_t*)malloc(S * B * sizeof(size_t));
 
-    snn->spk_matrix                   = (int*)malloc((snn->n_neurons + snn->n_input_neurons) * snn->max_spikes * B * sizeof(int));
+    // reallocate spk matrix
+    snn->spk_matrix                   = (char*)malloc((iN + N) * B * LT * sizeof(char));
 
 
     /* Initialization */
-    for(i = 0; i<snn->n_neurons; i++){
+    for(i = 0; i<N; i++){
 
         for(j = 0; j<B; j++){
 
             // copy values
             snn->v[i * B + j] = tmp_v[i];
-            snn->v_thresh[i * B + j] = tmp_thresh[i];
-            snn->v_rest[i * B + j] = tmp_rest[i];
-            snn->r_period[i * B + j] = tmp_rperiod[i];
+            //snn->v_thresh[i * B + j] = tmp_thresh[i];
+            //snn->v_rest[i * B + j] = tmp_rest[i];
+            //snn->r_period[i * B + j] = tmp_rperiod[i];
             snn->r_period_remain[i * B + j] = tmp_rperiod_remain[i];
-            snn->res[i * B + j] = tmp_res[i];
+            //snn->res[i * B + j] = tmp_res[i];
             snn->post_fired[i * B + j] = tmp_pstfired[i];
-            snn->inR[i * B + j] = tmp_inR[i];
+            //snn->inR[i * B + j] = tmp_inR[i];
             snn->arrI[i * B + j] = tmp_arrI[i];
-            snn->n_neuron_input_synapses[i * B + j] = tmp_n_insyn[i];
-
-            // scale values to several copies
-            snn->neuron_input_synapses_offset[i * B + j] = tmp_in_off[i];
+            //snn->n_neuron_input_synapses[i * B + j] = tmp_n_insyn[i];
+            //snn->neuron_input_synapses_offset[i * B + j] = tmp_in_off[i];
         }
     }
 
-    for(i = 0; i<snn->n_synapses; i++){
+    for(i = 0; i<S; i++){
 
         for(j = 0; j<B; j++){
 
             // copy values
             snn->w[i * B + j] = tmp_w[i];
-            snn->init_w[i * B + j] = tmp_init_w[i];
+            //snn->init_w[i * B + j] = tmp_init_w[i];
             snn->dw[i * B + j] = tmp_dw[i];
             snn->pre_trace[i * B + j] = tmp_pre_trace[i];
             snn->post_trace[i * B + j] = tmp_post_trace[i];
             snn->pre_fired[i * B + j] = tmp_prefired[i];
-            snn->delay[i * B + j] = tmp_delay[i];
-            snn->lr[i * B + j] = tmp_lr[i];
-
-            // scale indexes
-            snn->pre_neuron_index[i * B + j] = tmp_pre_neuron_index[i];
-            snn->post_neuron_index[i * B + j] = tmp_post_neuron_index[i];
+            //snn->delay[i * B + j] = tmp_delay[i];
+            //snn->lr[i * B + j] = tmp_lr[i];
+            //snn->pre_neuron_index[i * B + j] = tmp_pre_neuron_index[i];
+            //snn->post_neuron_index[i * B + j] = tmp_post_neuron_index[i];
         }
     }
 
-    for(t = 0; t<snn->max_spikes; t++){
+    // initialize spk matrix to 0
+    for(t = 0; t<LT; t++){
         
-        for(i = 0; i<snn->n_neurons + snn->n_input_neurons; i++){
+        for(i = 0; i<iN + N; i++){
             
             for(j = 0; j<B; j++){
 
-                snn->spk_matrix[(snn->n_neurons + snn->n_input_neurons) * B * t + B * i + j] 
-                                            = tmp_spk_mtrx[t * snn->n_neurons + snn->n_input_neurons + j];
+                snn->spk_matrix[(iN + N) * B * t + B * i + j] = 0;
+                //snn->spk_matrix[(iN + N) * B * t + B * i + j] 
+                //                            = tmp_spk_mtrx[t * N + iN + j];
             }
         }
     }
 
     // TODO
     // free original arrays memory
+}
+
+size_t get_max_delay(GPU_SNN_t *snn){
+
+    size_t i = 0;
+
+    size_t max_delay = 0;
+    for(i=0; i<snn->n_synapses; i++){
+
+        if(snn->delay[i] > max_delay){
+            max_delay = snn->delay[i];
+        }
+    }
+
+    // set max delay
+    snn->max_delay = max_delay;
+
+    return max_delay;
 }
 
 
@@ -1624,6 +1645,11 @@ void connect_network_input_criteria(GPU_SNN_t *snn, network_construction_lists_t
     connect_synapses_to_network(snn, data);
 }
 
+void reallocate_spk_matrix(GPU_SNN_t *snn, size_t N, size_t B, size_t T){
+
+    free(snn->spk_matrix);
+    snn->spk_matrix = (int*)calloc(N * B * T, sizeof(int));
+}
 
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_construction_lists_t *data){
 
@@ -1641,7 +1667,9 @@ GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_cons
     snn->n_input_synapses = data->n_input_synapses;
     snn->n_output_synapses = data->n_output_synapses;
 
-    snn->max_spikes = conf->max_spikes;
+    snn->max_spikes = conf->max_spikes; // DEPRECATED
+    snn->max_delay = data->max_delay; // max_delay == LT
+    snn->LT = data->max_delay;
 
     // allocate memory for the SNN structure arrays
     allocate_memory_for_SNN(snn, conf); // TODO: generalize?
@@ -1654,7 +1682,7 @@ GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_cons
 
     // connect network
     connect_network_input_criteria(snn, data, conf);
-    
+
     // return SNN structure
     return snn;
 }

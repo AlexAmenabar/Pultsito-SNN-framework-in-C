@@ -141,7 +141,7 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
 
     // load information in configuration struct
     conf->time_steps = (size_t)time_steps.u.i;
-    conf->max_spikes = (size_t)max_spikes.u.i;
+    conf->max_spikes = (size_t)max_spikes.u.i; // REVISE THIS AND THE NEXT
     conf->max_input_spikes = (size_t)max_input_spikes.u.i;
 
 
@@ -549,8 +549,7 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
 
     /* Synapses section */
 
-    struct timespec start, end; // to measure simulation complete time
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    lists->max_delay = 0;
 
     // if network information is not separated into more than one files
     if(!network_is_separated.ok || (network_is_separated.ok && network_is_separated.u.i != 1)){
@@ -595,7 +594,12 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
 
         for(i=0; i<S; i++){
             fscanf(f_synapses, "%d", &(lists->delay_list[i]));
+
+            // store maximum delay value
+            if(lists->delay_list[i] > lists->max_delay)
+                lists->max_delay = lists->delay_list[i];
         }
+        lists->max_delay += 1;
         for(i=0; i<S; i++){
             fscanf(f_synapses, "%lf", &(lists->weight_list[i]));
         }
@@ -603,10 +607,6 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
             fscanf(f_synapses, "%d", &(lists->training_zones[i]));
         }
     }
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-    double elpt = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-    printf(" Elapsed time reading synapses data: %lf\n", elpt);
     
     printf(" >> Synapses loaded from file!\n");
     fflush(stdout);
@@ -751,8 +751,14 @@ GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *lab
             }
 
             // store first spike and frequency
-            dataset->freq[i * dataset->n_features + j] = conf->max_input_spikes / n_spikes; // spikes each freq time steps
-            dataset->first_spk[i * dataset->n_features + j] = dataset->spikes[dataset->feature_offset[i * dataset->n_features + j]];
+            if(n_spikes > 0){
+                dataset->freq[i * dataset->n_features + j] = conf->max_spikes / n_spikes; // spikes each freq time steps
+                dataset->first_spk[i * dataset->n_features + j] = dataset->spikes[dataset->feature_offset[i * dataset->n_features + j]];
+            }
+            else{
+                dataset->freq[i * dataset->n_features + j] = 0; // spikes each freq time steps
+                dataset->first_spk[i * dataset->n_features + j] = 0;
+            }
 
             // deallocate memory
             free(tmp_spikes[i * dataset->n_features + j]);

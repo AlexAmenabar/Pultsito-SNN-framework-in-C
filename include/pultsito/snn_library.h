@@ -79,7 +79,7 @@ typedef struct{
 typedef struct{
     
     // general network information
-    size_t n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses;
+    size_t n_neurons, n_input_neurons, n_output_neurons, n_synapses, n_input_synapses, n_output_synapses, max_delay;
 
     // connectivity
     int *neuron_excitatory, *training_zones; // change to uint in the future
@@ -300,7 +300,12 @@ struct spiking_nn_t{
 
 };
 
+// struct to store the samples in a batch
+typedef struct {
 
+    char *spikes;
+
+} tmp_batch_cpu_t;
 
 /* New structs */
 
@@ -317,6 +322,7 @@ typedef struct {
     size_t n_output_synapses;
     size_t max_spikes;
     size_t n_networks;
+    size_t max_delay;
 
     // neccessary parameters for all neurons
     float *v; // [n_neurons]: membrane potential of the neuron
@@ -349,7 +355,8 @@ typedef struct {
     float *pre_trace; // [n_synapses]: presynaptic trace
     float *post_trace; // [n_synapses]: postsynaptic trace
 
-    int *spk_matrix; // [(n_input_synapses + n_neurons) * T]
+    char *spk_matrix; // [(n_input_synapses + n_neurons) * t_len * batch_size]
+    size_t LT; // matrix L dimension
 
     // FLOAT(3N + 2M) + INT(7N + 5M) + NT = 32(10N + 7M) + 32NT bit
 
@@ -445,6 +452,7 @@ void print_network(GPU_SNN_t *snn);
 void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
 void print_dataset(GPU_dataset_t *dataset);
 void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf);
+void reallocate_spk_matrix(GPU_SNN_t *snn, size_t N, size_t B, size_t T);
 
 
 
