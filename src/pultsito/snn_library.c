@@ -588,6 +588,7 @@ void reorder_synapse_list(spiking_nn_t *snn){
 
 
 
+// DEPRECATED
 /* Mapping functions */ // TODO: Change the L to a configuration parameter
 GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *conf){
 
@@ -679,7 +680,7 @@ GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *co
     }
 
     // spike matrix
-    gpu_snn->spk_matrix = (int*)malloc((snn->n_neurons + snn->n_input) * conf->max_input_spikes * sizeof(int));
+    gpu_snn->spk_matrix = (char*)malloc((snn->n_neurons + snn->n_input) * conf->max_input_spikes * sizeof(char));
     for(i = 0; i<snn->n_neurons + snn->n_input; i++)
         for(j = 0; j<conf->max_input_spikes; j++)
             gpu_snn->spk_matrix[i * conf->max_input_spikes + j] = -1; // no spikes yet
@@ -688,6 +689,8 @@ GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *co
     return gpu_snn;
 }
 
+
+// DEPRECATED
 GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configuration_t *conf){
 
     size_t i, j, l;
@@ -757,244 +760,6 @@ GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configu
 
     return gpu_dataset;
 }
-
-
-// function to estimate structure size
-double get_gpu_snn_size(GPU_SNN_t *gpu_snn){
-    
-    // n_input neurons or synapses?
-    return (
-        (sizeof(GPU_SNN_t) +
-        sizeof(int) * gpu_snn->n_neurons * 6 + sizeof(float) * gpu_snn->n_neurons * 3 + 
-        sizeof(int) * (gpu_snn->n_synapses - gpu_snn->n_output_synapses) +
-        sizeof(float) * gpu_snn->n_synapses * 2 + sizeof(int) * gpu_snn->n_synapses * 4 + 
-        sizeof(int) * (gpu_snn->n_neurons + gpu_snn->n_input_neurons) * gpu_snn->max_spikes) / 8.0
-    );
-}
-
-double get_gpu_snn_cpy_size(GPU_SNN_t *gpu_snn){
-
-    // n_input neurons or synapses?
-    // v, r_period_remain, t_last_spike, w, dw, spk_matrix
-    return (
-        (sizeof(int) * gpu_snn->n_neurons * 2 + sizeof(float) * gpu_snn->n_neurons + 
-        sizeof(float) * gpu_snn->n_synapses * 2 + 
-        sizeof(int) * (gpu_snn->n_neurons + gpu_snn->n_input_neurons) * gpu_snn->max_spikes) / 8.0
-    );
-}
-
-double get_gpu_dataset_size(GPU_dataset_t *gpu_dataset){
-    
-    return (
-        (sizeof(GPU_dataset_t) +
-        sizeof(int) * gpu_dataset->n_spikes +
-        sizeof(int) * gpu_dataset->n_samples + 
-        sizeof(int) * gpu_dataset->n_samples * gpu_dataset->n_features) / 8.0
-    );
-}
-
-double get_gpu_results_size(int n_neurons, int n_samples, int L){
-
-    return (
-        (sizeof(GPU_results_t) + 
-        sizeof(int) * n_neurons * n_samples)
-    );
-        //sizeof(char) * n_neurons * n_samples * L) / 8.0
-    //);
-}
-
-
-void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu, GPU_dataset_t *gpu_dataset_in_cpu, simulation_configuration_t *conf){
-
-    // store information in cuda info struct
-    cuda_info->n_samples = gpu_dataset_in_cpu->n_samples;
-    cuda_info->time_steps = conf->time_steps;
-    cuda_info->batch_size = conf->batch_size;
-    cuda_info->multi_gpu_allowed = conf->multi_gpu;
-
-    // get memory occupation data for GPU by data structures
-    cuda_info->network_size = get_gpu_snn_size(gpu_snn_in_cpu);
-    cuda_info->network_cpy_size = get_gpu_snn_cpy_size(gpu_snn_in_cpu);
-    cuda_info->dataset_size = get_gpu_dataset_size(gpu_dataset_in_cpu); 
-    cuda_info->results_size = get_gpu_results_size(gpu_snn_in_cpu->n_neurons, gpu_dataset_in_cpu->n_samples, conf->max_input_spikes);
-
-    printf(" > Free memory in GPU = %.2f\n", cuda_info->gpu_usable_mem / 1024.0 / 1024.0);
-
-    printf(" >> SNN size = %.2f MB (cpy size = %.2f MB)\n >> Dataset size = %.2f MB\n >> Results struct size = %.2f MB\n",
-            cuda_info->network_size / 1024.0 / 1024.0, cuda_info->network_cpy_size / 1024.0 / 1024.0,
-            cuda_info->dataset_size / 1024.0 / 1024.0, cuda_info->results_size / 1024.0 / 1024.0);
-    fflush(stdout);
-
-
-    // get free memory
-    cuda_info->gpu_usable_mem -= cuda_info->dataset_size;
-    cuda_info->gpu_usable_mem -= cuda_info->results_size;
-    cuda_info->gpu_usable_mem -= cuda_info->network_size;
-
-    // store memory for cuda (500 MB)
-    cuda_info->gpu_usable_mem -= (500 * 1024 * 1024); // B
-
-    // usable memory
-    printf(" > Free memory in GPU = %.2f\n", cuda_info->gpu_usable_mem / 1024.0 / 1024.0);
-
-
-    // find the maximum number of possible copies
-
-    // memory of each kernel for thread (bits)
-    
-    int max_copies = (int)(cuda_info->gpu_usable_mem / cuda_info->network_cpy_size);
-    int n_cps = max_copies;
-    int valid = 0;
-
-    // cost of each kernel (in Bytes)
-    double reinit_kernel = 64 / 8;
-    double load_sample_kernel = 672 / 8;
-    double reinit_neurons_kernel = 256 / 8;
-    double lif_in = 832 / 8;
-    double lif_out = 480 / 8;
-
-    int n_rk_threads, n_lsk_threads, n_neur_threads;
-
-    // compute the number of copies that can be stored for the network
-    while(valid == 0){
-
-        n_rk_threads = ((((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * gpu_snn_in_cpu->max_spikes * n_cps) / 1024) + 1) * 1024;
-        n_lsk_threads = ((gpu_snn_in_cpu->n_input_neurons * gpu_snn_in_cpu->max_spikes * n_cps / 1024) + 1) * 1024;
-        n_neur_threads = (((gpu_snn_in_cpu->n_neurons * n_cps) / 516) + 1) * 516;
-        
-        if((n_rk_threads * reinit_kernel) < cuda_info->gpu_usable_mem && (n_lsk_threads * load_sample_kernel) < cuda_info->gpu_usable_mem &&
-            (n_neur_threads * lif_in) < cuda_info->gpu_usable_mem){
-                valid = 1;
-        }
-        else{
-            n_cps --;
-        }
-    }
-    
-
-    /* compute the number of networks and samples per batch per device */
-
-    // multi gpu not allowed
-    if(cuda_info->multi_gpu_allowed == 0){
-
-        if(conf->batch_size < n_cps){
-            
-            // the maximum number of copies we need is the size of the batch
-            cuda_info->n_networks = conf->batch_size;
-
-            // revise this, only works for unigpu
-            cuda_info->nDevices = 1;
-            cuda_info->n_batch_per_dev = cuda_info->batch_size;
-            cuda_info->n_networks_per_dev = cuda_info->n_networks;
-        }
-
-        else{
-
-            // number of networks should be multiple of batch_size, so compute
-            cuda_info->n_networks = conf->batch_size / 2;
-            
-            // loop until the number of copies is bigger than the maximum
-            while(cuda_info->n_networks > n_cps){
-                cuda_info->n_networks /= 2;
-            }
-
-            // store
-            cuda_info->nDevices = 1;
-            cuda_info->n_batch_per_dev = cuda_info->batch_size; // only one device
-            cuda_info->n_networks_per_dev = cuda_info->n_networks;
-        }
-    }
-    // number of devices to use specified
-    else if(cuda_info->multi_gpu_allowed != 0){
-
-        // check if there are enough devices available
-        if(cuda_info->multi_gpu_allowed > 0){
-
-            if(cuda_info->multi_gpu_allowed < cuda_info->nDevices){
-                cuda_info->nDevices = cuda_info->multi_gpu_allowed;
-            }
-            else if(cuda_info->nDevices < cuda_info->multi_gpu_allowed){
-                printf(" > WARNING: Only %d devices available!\n", cuda_info->nDevices);
-            }
-        }
-
-
-        // compute number of batches and networks per dev
-        cuda_info->n_batch_per_dev = cuda_info->batch_size / cuda_info->nDevices; // number of samples per batch computed in each device
-
-        // if the number of samples per batch is bigger than the maximum number of network copies per dev, compute number of cpies
-        cuda_info->n_networks = cuda_info->n_batch_per_dev;
-        
-        if(cuda_info->n_batch_per_dev > n_cps){
-
-            cuda_info->n_networks = cuda_info->n_batch_per_dev / 2;
-
-            while(cuda_info->n_networks > n_cps){
-                cuda_info->n_networks /= 2;
-            }
-        }
-
-        cuda_info->n_networks_per_dev = cuda_info->n_networks;
-    }
-
-    // set n networks for the snn
-    gpu_snn_in_cpu->n_networks = cuda_info->n_networks_per_dev;
-
-
-    printf("\n\n > Printing cuda simulation info:\n");
-    printf(" >> Batch size = %d\n", cuda_info->batch_size);
-    printf(" >> Number of networks = %d\n", cuda_info->n_networks);
-    printf(" >> Number of devices = %d\n", cuda_info->nDevices);
-    printf(" >> Number of samples in batch simulated by each device = %d\n", cuda_info->n_batch_per_dev);
-    printf(" >> Number of networks in each device = %d\n\n", cuda_info->n_networks_per_dev);
-
-    // compute kernel configuration for each execution part
-    // The execution is done by a 3D grid, where each dimension of the grid
-    // contains the blocks and thredas to simulate a cpy
-
-
-    // REVISE THIS FOR MULTIGPU
-    cuda_info->n_threads_per_blk_rsm_x = 516;
-    cuda_info->n_threads_per_blk_rsm_y = 1;
-    cuda_info->n_threads_per_blk_rsm_z = 1;
-    cuda_info->n_blk_rsm_x =
-            ((unsigned int)(gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) *
-            (unsigned int)gpu_snn_in_cpu->max_spikes *
-            (unsigned int)gpu_snn_in_cpu->n_networks) /
-            (unsigned int)cuda_info->n_threads_per_blk_rsm_x + 1;
-    cuda_info->n_blk_rsm_y = 1;
-    cuda_info->n_blk_rsm_z = 1;
-
-    cuda_info->n_threads_per_blk_ls_x = 516;
-    cuda_info->n_threads_per_blk_ls_y = 1;
-    cuda_info->n_threads_per_blk_ls_z = 1;
-    cuda_info->n_blk_ls_x = ((unsigned int)gpu_snn_in_cpu->n_input_neurons * (unsigned int)gpu_snn_in_cpu->n_networks) / (unsigned int)cuda_info->n_threads_per_blk_ls_x + 1;
-    cuda_info->n_blk_ls_y = 1;
-    cuda_info->n_blk_ls_z = 1;
-
-    cuda_info->n_threads_per_blk_nrs_x = 516;
-    cuda_info->n_threads_per_blk_nrs_y = 1;
-    cuda_info->n_threads_per_blk_nrs_z = 1;
-    cuda_info->n_blk_nrs_x = ((unsigned int)gpu_snn_in_cpu->n_neurons * (unsigned int)gpu_snn_in_cpu->n_networks) / (unsigned int)cuda_info->n_threads_per_blk_nrs_x + 1;
-    cuda_info->n_blk_nrs_y = 1;
-    cuda_info->n_blk_nrs_z = 1;
-
-    cuda_info->n_threads_per_blk_synapses_x = 516;
-    cuda_info->n_threads_per_blk_synapses_y = 1;
-    cuda_info->n_threads_per_blk_synapses_z = 1;
-    cuda_info->n_blk_synapses_x = ((unsigned int)gpu_snn_in_cpu->n_synapses * (unsigned int)gpu_snn_in_cpu->n_networks) / (unsigned int)cuda_info->n_threads_per_blk_synapses_x + 1;
-    cuda_info->n_blk_synapses_y = 1;
-    cuda_info->n_blk_synapses_z = 1;
-
-    cuda_info->n_threads_per_blk_uw_x = 516;
-    cuda_info->n_threads_per_blk_uw_y = 1;
-    cuda_info->n_threads_per_blk_uw_z = 1;
-    cuda_info->n_blk_uw_x = ((unsigned int)gpu_snn_in_cpu->n_synapses) / (unsigned int)cuda_info->n_threads_per_blk_synapses_x + 1;
-    cuda_info->n_blk_uw_y = 1;
-    cuda_info->n_blk_uw_z = 1;
-}
-
-
 
 void free_gpu_snn_in_CPU(GPU_SNN_t *gpu_snn){
 
@@ -1371,7 +1136,8 @@ void allocate_memory_for_SNN(GPU_SNN_t *snn, simulation_configuration_t *conf){
     snn->r_period                      = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
     snn->r_period_remain               = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
     snn->res                           = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
-    snn->post_fired                    = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
+    snn->post_fired                    = (char*)malloc(snn->n_neurons * conf->batch_size * sizeof(char));
+    snn->post_trace                    = (float*)malloc(snn->n_neurons * conf->batch_size * sizeof(float));
     snn->inR                           = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
     snn->n_neuron_input_synapses       = (size_t*)malloc(snn->n_neurons * conf->batch_size * sizeof(size_t));
     snn->neuron_input_synapses_offset  = (size_t*)malloc(snn->n_neurons * conf->batch_size * sizeof(size_t));
@@ -1383,11 +1149,10 @@ void allocate_memory_for_SNN(GPU_SNN_t *snn, simulation_configuration_t *conf){
     snn->w                             = (float*)malloc(snn->n_synapses * conf->batch_size * sizeof(float));
     snn->init_w                        = (float*)malloc(snn->n_synapses * conf->batch_size * sizeof(float));
     snn->dw                            = (float*)malloc(snn->n_synapses * conf->batch_size * sizeof(float));
-    snn->pre_trace                     = (float*)malloc(snn->n_synapses * conf->batch_size * sizeof(float));
-    snn->post_trace                    = (float*)malloc(snn->n_synapses * conf->batch_size * sizeof(float));
     snn->delay                         = (int*)malloc(snn->n_synapses * conf->batch_size * sizeof(int));
     snn->lr                            = (int*)malloc(snn->n_synapses * conf->batch_size * sizeof(int));
-    snn->pre_fired                     = (int*)malloc(snn->n_synapses * conf->batch_size * sizeof(int));
+    snn->pre_fired                     = (char*)malloc(snn->n_synapses * conf->batch_size * sizeof(char));
+    snn->pre_trace                     = (float*)malloc(snn->n_synapses * conf->batch_size * sizeof(float));
     snn->pre_neuron_index              = (size_t*)malloc(snn->n_synapses * conf->batch_size * sizeof(size_t));
     snn->post_neuron_index             = (size_t*)malloc(snn->n_synapses * conf->batch_size * sizeof(size_t));
     
@@ -1401,10 +1166,16 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
     size_t i, j, t, B, LT, N, iN, S;
 
     // temporal variables to store values
-    float *tmp_v, *tmp_thresh, *tmp_rest, *tmp_arrI, *tmp_w, *tmp_init_w, *tmp_dw, *tmp_pre_trace, *tmp_post_trace;
-    int *tmp_rperiod, *tmp_rperiod_remain, *tmp_res, *tmp_pstfired, *tmp_inR, *tmp_prefired, *tmp_delay, *tmp_lr, *tmp_spk_mtrx;
-    size_t *tmp_in_off, *tmp_pre_neuron_index, *tmp_post_neuron_index, *tmp_n_insyn;
-    
+    float *tmp_v, *tmp_arrI, *tmp_w, *tmp_dw, *tmp_pre_trace, *tmp_post_trace;
+    int *tmp_rperiod_remain;
+    char *tmp_pstfired, *tmp_prefired;
+
+    //char *tmp_spk_mtrx;
+
+    //float *tmp_thresh, *tmp_rest, *tmp_init_w;
+    //int *tmp_rperiod, *tmp_res, *tmp_inR, *tmp_delay, *tmp_lr;
+    //size_t *tmp_in_off, *tmp_pre_neuron_index, *tmp_post_neuron_index, *tmp_n_insyn;
+
     B = conf->batch_size;
     LT = snn->LT;
     N = snn->n_neurons;
@@ -1413,29 +1184,29 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
 
     // allocate neural properties
     tmp_v                         = snn->v;
-    tmp_thresh                    = snn->v_thresh;
-    tmp_rest                      = snn->v_rest;
-    tmp_rperiod                   = snn->r_period;
+    //tmp_thresh                    = snn->v_thresh;
+    //tmp_rest                      = snn->v_rest;
+    //tmp_rperiod                   = snn->r_period;
     tmp_rperiod_remain            = snn->r_period_remain;
-    tmp_res                       = snn->res;
+    //tmp_res                       = snn->res;
     tmp_pstfired                  = snn->post_fired;
+    tmp_post_trace                = snn->post_trace;
     tmp_arrI                      = snn->arrI;
-    tmp_inR                       = snn->inR;
-    tmp_n_insyn                   = snn->n_neuron_input_synapses;
-    tmp_in_off                    = snn->neuron_input_synapses_offset;
+    //tmp_inR                       = snn->inR;
+    //tmp_n_insyn                   = snn->n_neuron_input_synapses;
+    //tmp_in_off                    = snn->neuron_input_synapses_offset;
 
     tmp_w                         = snn->w;
-    tmp_init_w                    = snn->init_w;
+    //tmp_init_w                    = snn->init_w;
     tmp_dw                        = snn->dw;
     tmp_pre_trace                 = snn->pre_trace;
-    tmp_post_trace                = snn->post_trace;
     tmp_prefired                  = snn->pre_fired;
-    tmp_delay                     = snn->delay;
-    tmp_lr                        = snn->lr;
-    tmp_pre_neuron_index          = snn->pre_neuron_index;
-    tmp_post_neuron_index         = snn->post_neuron_index;
+    //tmp_delay                     = snn->delay;
+    //tmp_lr                        = snn->lr;
+    //tmp_pre_neuron_index          = snn->pre_neuron_index;
+    //tmp_post_neuron_index         = snn->post_neuron_index;
 
-    tmp_spk_mtrx                  = snn->spk_matrix;
+    //tmp_spk_mtrx                  = snn->spk_matrix;
 
 
     /* Memory allocation */
@@ -1446,7 +1217,8 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
     //snn->r_period                     = (int*)malloc(N * B * sizeof(int));
     snn->r_period_remain              = (int*)malloc(N * B * sizeof(int));
     //snn->res                          = (int*)malloc(N * B * sizeof(int));
-    snn->post_fired                   = (int*)malloc(N * B * sizeof(int));
+    snn->post_fired                   = (char*)malloc(N * B * sizeof(char));
+    snn->post_trace                   = (float*)malloc(N * B * sizeof(float));
     //snn->inR                          = (int*)malloc(N * B * sizeof(int));
     //snn->n_neuron_input_synapses      = (size_t*)malloc(N * B * sizeof(size_t));
     //snn->neuron_input_synapses_offset = (size_t*)malloc(N * B * sizeof(size_t));
@@ -1455,8 +1227,7 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
     //snn->init_w                       = (float*)malloc(S * B * sizeof(float));
     snn->dw                           = (float*)malloc(S * B * sizeof(float));
     snn->pre_trace                    = (float*)malloc(S * B * sizeof(float));
-    snn->post_trace                   = (float*)malloc(S * B * sizeof(float));
-    snn->pre_fired                    = (int*)malloc(S * B * sizeof(int));
+    snn->pre_fired                    = (char*)malloc(S * B * sizeof(char));
     //snn->delay                        = (int*)malloc(S * B * sizeof(int));
     //snn->lr                           = (int*)malloc(S * B * sizeof(int));
     //snn->pre_neuron_index             = (size_t*)malloc(S * B * sizeof(size_t));
@@ -1479,6 +1250,7 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
             snn->r_period_remain[i * B + j] = tmp_rperiod_remain[i];
             //snn->res[i * B + j] = tmp_res[i];
             snn->post_fired[i * B + j] = tmp_pstfired[i];
+            snn->post_trace[i * B + j] = tmp_post_trace[i];
             //snn->inR[i * B + j] = tmp_inR[i];
             snn->arrI[i * B + j] = tmp_arrI[i];
             //snn->n_neuron_input_synapses[i * B + j] = tmp_n_insyn[i];
@@ -1495,7 +1267,6 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
             //snn->init_w[i * B + j] = tmp_init_w[i];
             snn->dw[i * B + j] = tmp_dw[i];
             snn->pre_trace[i * B + j] = tmp_pre_trace[i];
-            snn->post_trace[i * B + j] = tmp_post_trace[i];
             snn->pre_fired[i * B + j] = tmp_prefired[i];
             //snn->delay[i * B + j] = tmp_delay[i];
             //snn->lr[i * B + j] = tmp_lr[i];
@@ -1512,8 +1283,6 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
             for(j = 0; j<B; j++){
 
                 snn->spk_matrix[(iN + N) * B * t + B * i + j] = 0;
-                //snn->spk_matrix[(iN + N) * B * t + B * i + j] 
-                //                            = tmp_spk_mtrx[t * N + iN + j];
             }
         }
     }
@@ -1541,6 +1310,90 @@ size_t get_max_delay(GPU_SNN_t *snn){
 }
 
 
+// function to estimate structure size
+double get_snn_size(GPU_SNN_t *snn){
+    
+    size_t N = snn->n_neurons;
+    size_t iN = snn->n_input_neurons;
+    size_t S = snn->n_synapses;
+    size_t LT = snn->LT;
+
+    // n_input neurons or synapses?
+    return (
+        (sizeof(GPU_SNN_t) +
+        sizeof(size_t) * 10 + // scalars
+        // neurons 
+        sizeof(float) * 4 * N + // neurons floats
+        sizeof(int) * 5 * N + // neurons integers
+        sizeof(size_t) * 4 * N + // neurons size_t
+        // synapses
+        sizeof(float) * 5 * S + // synapses floats
+        sizeof(int) * 3 * S + // synapses integers
+        sizeof(size_t) * 2 * S + // synapses size_t
+        // spk matrix
+        sizeof(char) * (iN + N) * LT) / 8.0
+    );
+}
+
+/*double get_neuron_size(){
+    
+}*/
+
+// TODO
+double get_neuron_size(){
+    
+    double size = 0.0;
+    // get memory related to one neuron
+    
+
+    return size;
+}
+
+double get_snn_cpy_size(GPU_SNN_t *snn){
+
+    size_t N = snn->n_neurons;
+    size_t iN = snn->n_input_neurons;
+    size_t S = snn->n_synapses;
+    size_t LT = snn->LT;
+
+    return (
+        // neurons
+        (sizeof(float) * 2 * N + // copied float arrays
+        sizeof(int) * 2 * N + // copied int arrays
+        // synapses
+        sizeof(float) * 5 * S + // copied float arrays 
+        sizeof(int) * S + // copied int arrays
+        // spk matrix
+        sizeof(char) * LT * (iN + N)) / 8.0
+    );
+}
+
+double get_dataset_size(GPU_dataset_t *dataset){
+    
+    size_t nS = dataset->n_samples;
+    size_t nF = dataset->n_features;
+    size_t nSpks = dataset->n_spikes;
+
+    return (
+        // general and scalars
+        (sizeof(GPU_dataset_t) +
+        sizeof(int) + 
+        sizeof(size_t) * 4 + 
+        // arrays
+        sizeof(size_t) * (nS + nS * nF * 4 + nSpks)) / 8.0
+    );
+}
+
+double get_results_size(size_t N, size_t nS, size_t T){
+
+    return (
+        (sizeof(GPU_results_t) + 
+        sizeof(int) * N * nS) / 8.0
+    );
+        //sizeof(char) * n_neurons * n_samples * L) / 8.0
+    //);
+}
+
 // this should allocate the arrays of LIF, instead of previously : generalization for new neuron models
 void initialize_lif_neuron_CPU(GPU_SNN_t *snn, network_construction_lists_t *data, simulation_configuration_t *conf){
 
@@ -1560,6 +1413,7 @@ void initialize_lif_neuron_CPU(GPU_SNN_t *snn, network_construction_lists_t *dat
 
         // control variables
         snn->post_fired[i] = 0;
+        snn->post_trace[i] = 0.0;
         snn->arrI[i] = 0.0;
         snn->inR[i] = 0;
     }
@@ -1586,7 +1440,6 @@ void initialize_synapses_CPU(GPU_SNN_t *snn, network_construction_lists_t *data,
         // control variables
         snn->pre_fired[i] = 0;
         snn->pre_trace[i] = 0.0;
-        snn->post_trace[i] = 0.0;
     }
 }
 
@@ -1635,9 +1488,6 @@ void connect_synapses_to_network(GPU_SNN_t *snn, network_construction_lists_t *d
 
 void connect_network_input_criteria(GPU_SNN_t *snn, network_construction_lists_t *data, simulation_configuration_t *conf){
 
-    size_t i;
-    size_t n_syn = 0;
-
     // count input synapses for each neuron
     count_neurons_input_synapses_and_conpute_offsets(snn, data);
 
@@ -1648,12 +1498,10 @@ void connect_network_input_criteria(GPU_SNN_t *snn, network_construction_lists_t
 void reallocate_spk_matrix(GPU_SNN_t *snn, size_t N, size_t B, size_t T){
 
     free(snn->spk_matrix);
-    snn->spk_matrix = (int*)calloc(N * B * T, sizeof(int));
+    snn->spk_matrix = (char*)calloc(N * B * T, sizeof(char));
 }
 
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_construction_lists_t *data){
-
-    size_t i,j;
 
     // allocate memory for SNN structure
     GPU_SNN_t *snn = (GPU_SNN_t*)malloc(sizeof(GPU_SNN_t));
@@ -1905,9 +1753,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->v[i * B + b]);
 
-        printf("%f]", snn->v[i * B + b]);
+        printf("%f]", snn->v[i * B + B - 1]);
     }
-    printf("%f]\n", snn->v[i * B + b]);
+    printf("%f]\n", snn->v[i * B + B-1]);
 
     printf(" > >> Thresholds: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1916,9 +1764,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->v_thresh[i * B + b]);
 
-        printf("%f]", snn->v_thresh[i * B + b]);    
+        printf("%f]", snn->v_thresh[i * B + B - 1]);    
     }
-    printf("%f]\n", snn->v_thresh[i * B + b]);
+    printf("%f]\n", snn->v_thresh[i * B + B - 1]);
 
     printf(" > >> Rests: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1927,9 +1775,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->v_rest[i * B + b]);
 
-        printf("%f]", snn->v_rest[i * B + b]);      
+        printf("%f]", snn->v_rest[i * B + B - 1]);      
     }
-    printf("%f]\n", snn->v_rest[i * B + b]);
+    printf("%f]\n", snn->v_rest[i * B + B - 1]);
 
     printf(" > >> Refract: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1938,9 +1786,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%d (%d), ", snn->r_period[i * B + b], snn->r_period_remain[i * B + b]);
 
-        printf("%d (%d)]", snn->r_period[i * B + b], snn->r_period_remain[i * B + b]);      
+        printf("%d (%d)]", snn->r_period[i * B + B-1], snn->r_period_remain[i * B + B-1]);      
     }
-    printf("%d (%d)]\n", snn->r_period[i * B + b], snn->r_period_remain[i * B + b]);
+    printf("%d (%d)]\n", snn->r_period[i * B + B-1], snn->r_period_remain[i * B + B-1]);
 
     printf(" > >> R: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1949,9 +1797,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%d, ", snn->res[i * B + b]);
 
-        printf("%d]", snn->res[i * B + b]);      
+        printf("%d]", snn->res[i * B + B-1]);      
     }
-    printf("%d]\n", snn->res[i * B + b]);
+    printf("%d]\n", snn->res[i * B + B-1]);
 
     printf(" > >> Post fired: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1960,9 +1808,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%d, ", snn->post_fired[i * B + b]);
 
-        printf("%d]", snn->post_fired[i * B + b]);      
+        printf("%d]", snn->post_fired[i * B + B-1]);      
     }
-    printf("%d]\n", snn->post_fired[i * B + b]);
+    printf("%d]\n", snn->post_fired[i * B + B-1]);
 
     printf(" > >> I: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1971,9 +1819,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->arrI[i * B + b]);
 
-        printf("%f]", snn->arrI[i * B + b]);      
+        printf("%f]", snn->arrI[i * B + B-1]);      
     }
-    printf("%f]\n", snn->arrI[i * B + b]);
+    printf("%f]\n", snn->arrI[i * B + B-1]);
 
     printf(" > >> N input synapses: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1982,9 +1830,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%zu, ", snn->n_neuron_input_synapses[i * B + b]);
 
-        printf("%zu]", snn->n_neuron_input_synapses[i * B + b]);      
+        printf("%zu]", snn->n_neuron_input_synapses[i * B + B-1]);      
     }
-    printf("%zu]\n", snn->n_neuron_input_synapses[i * B + b]);
+    printf("%zu]\n", snn->n_neuron_input_synapses[i * B + B-1]);
 
     printf(" > >> Input synapses off: [");
     for(i = 0; i<snn->n_neurons-1; i++){
@@ -1993,9 +1841,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%zu, ", snn->neuron_input_synapses_offset[i * B + b]);
 
-        printf("%zu]", snn->neuron_input_synapses_offset[i * B + b]);      
+        printf("%zu]", snn->neuron_input_synapses_offset[i * B + B-1]);      
     }
-    printf("%zu]\n", snn->neuron_input_synapses_offset[i * B + b]);
+    printf("%zu]\n", snn->neuron_input_synapses_offset[i * B + B-1]);
 
 
 
@@ -2008,9 +1856,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->w[i * B + b]);
 
-        printf("%f]", snn->w[i * B + b]);      
+        printf("%f]", snn->w[i * B + B-1]);      
     }
-    printf("%f]\n", snn->w[i * B + b]);
+    printf("%f]\n", snn->w[i * B + B-1]);
 
     printf(" > >> Init W: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2019,9 +1867,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->init_w[i * B + b]);
 
-        printf("%f]", snn->init_w[i * B + b]);      
+        printf("%f]", snn->init_w[i * B + B-1]);      
     }
-    printf("%f]\n", snn->init_w[i * B + b]);
+    printf("%f]\n", snn->init_w[i * B + B-1]);
 
     printf(" > >> dW: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2030,9 +1878,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->dw[i * B + b]);
 
-        printf("%f]", snn->dw[i * B + b]);      
+        printf("%f]", snn->dw[i * B + B-1]);      
     }
-    printf("%f]\n", snn->dw[i * B + b]);
+    printf("%f]\n", snn->dw[i * B + B-1]);
 
     printf(" > >> Delay: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2041,9 +1889,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%d, ", snn->delay[i * B + b]);
 
-        printf("%d]", snn->delay[i * B + b]);      
+        printf("%d]", snn->delay[i * B + B-1]);      
     }
-    printf("%d]\n", snn->delay[i * B + b]);
+    printf("%d]\n", snn->delay[i * B + B-1]);
 
     printf(" > >> Lr: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2052,9 +1900,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%d, ", snn->lr[i * B + b]);
 
-        printf("%d]", snn->lr[i * B + b]);      
+        printf("%d]", snn->lr[i * B + B-1]);      
     }
-    printf("%d]\n", snn->lr[i * B + b]);
+    printf("%d]\n", snn->lr[i * B + B-1]);
 
     printf(" > >> Pre neuron: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2063,12 +1911,12 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%zu, ", snn->pre_neuron_index[i * B + b]);
 
-        printf("%zu]", snn->pre_neuron_index[i * B + b]);      
+        printf("%zu]", snn->pre_neuron_index[i * B + B-1]);      
     }
     printf("[");
     for(b = 0; b<B-1; b++)
         printf("%zu, ", snn->pre_neuron_index[i * B + b]);
-    printf("%zu]\n", snn->pre_neuron_index[i * B + b]);
+    printf("%zu]\n", snn->pre_neuron_index[i * B + B-1]);
 
     printf(" > >> Post neuron: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2077,9 +1925,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%zu, ", snn->post_neuron_index[i * B + b]);
 
-        printf("%zu]", snn->post_neuron_index[i * B + b]);      
+        printf("%zu]", snn->post_neuron_index[i * B + B-1]);      
     }
-    printf("%zu]\n", snn->post_neuron_index[i * B + b]);
+    printf("%zu]\n", snn->post_neuron_index[i * B + B-1]);
 
     printf(" > >> Pre fired: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2088,9 +1936,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%d, ", snn->pre_fired[i * B + b]);
 
-        printf("%d]", snn->pre_fired[i * B + b]);      
+        printf("%d]", snn->pre_fired[i * B + B-1]);      
     }
-    printf("%d]\n", snn->pre_fired[i * B + b]);
+    printf("%d]\n", snn->pre_fired[i * B + B-1]);
 
     printf(" > >> Pre trace: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2099,9 +1947,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->pre_trace[i * B + b]);
 
-        printf("%f]", snn->pre_trace[i * B + b]);      
+        printf("%f]", snn->pre_trace[i * B + B-1]);      
     }
-    printf("%f]\n", snn->pre_trace[i * B + b]);
+    printf("%f]\n", snn->pre_trace[i * B + B-1]);
 
     printf(" > >> Post trace: [");
     for(i = 0; i<snn->n_synapses-1; i++){
@@ -2110,9 +1958,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf){
         for(b = 0; b<B-1; b++)
             printf("%f, ", snn->post_trace[i * B + b]);
 
-        printf("%f]", snn->post_trace[i * B + b]);      
+        printf("%f]", snn->post_trace[i * B + B-1]);      
     }
-    printf("%f]\n", snn->post_trace[i * B + b]);
+    printf("%f]\n", snn->post_trace[i * B + B-1]);
 
     fflush(stdout);
 }
@@ -2152,4 +2000,232 @@ GPU_results_t* initialize_results_struct_cpu(simulation_configuration_t *conf){
 
 
     return results;
+}
+
+
+// CUDA
+
+void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf){
+
+    double available_memory, total_mem_snn;
+
+    // store information in cuda info struct
+    cuda_info->n_samples = dataset->n_samples;
+    cuda_info->time_steps = conf->time_steps;
+    cuda_info->multi_gpu_allowed = conf->multi_gpu;
+    cuda_info->batch_size = conf->batch_size;
+
+    // get memory occupation data for GPU by data structures
+    cuda_info->network_size = get_snn_size(snn);
+    cuda_info->network_cpy_size = get_snn_cpy_size(snn);
+    cuda_info->dataset_size = get_dataset_size(dataset); 
+    cuda_info->results_size = get_results_size(snn->n_neurons, dataset->n_samples, conf->time_steps);
+
+
+    // compute available memory for copies after copying network, datasets, results, and reserving some memory for cuda 
+    available_memory = cuda_info->gpu_free_mem[0];
+    available_memory -= cuda_info->dataset_size;
+    available_memory -= cuda_info->results_size;
+    available_memory -= cuda_info->network_size;
+    available_memory -= 500 * 1024 * 1024; // reserve 500MB for cuda // too much?
+
+    // usable memory
+    printf(" > Available memory for SNN copies in GPU = %.2fMB\n", available_memory / 1024.0 / 1024.0);
+
+
+    // check if all batch copies can be stored in the device
+    total_mem_snn = cuda_info->network_size + cuda_info->network_cpy_size * (float)conf->batch_size;
+
+    if(total_mem_snn < available_memory){
+
+        cuda_info->n_networks_per_dev = conf->batch_size;
+        cuda_info->dev_batch_size = conf->batch_size;
+    }
+    else{
+
+        // TODO
+    }
+
+    // TODO: multi-gpu / single-GPU differenciation
+
+
+    // simple configuration: one thread per each neuron / synapse in batch
+    cuda_info->n_thr_per_blk_neurons_x = 512;
+    cuda_info->n_thr_per_blk_neurons_y = 1;
+    cuda_info->n_thr_per_blk_neurons_z = 1;
+    cuda_info->n_blk_neurons_x = ((snn->n_neurons * conf->batch_size) / cuda_info->n_thr_per_blk_neurons_x) + 1;
+    cuda_info->n_blk_neurons_y = 1;
+    cuda_info->n_blk_neurons_z = 1;
+
+    cuda_info->n_threads_per_blk_synapses_x = 512;
+    cuda_info->n_threads_per_blk_synapses_y = 1;
+    cuda_info->n_threads_per_blk_synapses_z = 1;
+    cuda_info->n_blk_synapses_x = snn->n_synapses * conf->batch_size / cuda_info->n_threads_per_blk_synapses_x + 1;
+    cuda_info->n_blk_synapses_y = 1;
+    cuda_info->n_blk_synapses_z = 1;
+
+    cuda_info->n_thr_per_blk_in_neurons_x = 512;
+    cuda_info->n_thr_per_blk_in_neurons_y = 1;
+    cuda_info->n_thr_per_blk_in_neurons_z = 1;
+    cuda_info->n_blk_in_neurons_x = snn->n_input_neurons * conf->batch_size / cuda_info->n_thr_per_blk_in_neurons_x + 1;
+    cuda_info->n_blk_in_neurons_y = 1;
+    cuda_info->n_blk_in_neurons_z = 1;
+
+
+    // find the maximum number of possible copies
+
+    // memory of each kernel for thread (bits)
+    
+    /*
+    int max_copies = (int)(cuda_info->gpu_usable_mem / cuda_info->network_cpy_size);
+    int n_cps = max_copies;
+    int valid = 0;
+
+    // cost of each kernel (in Bytes)
+    double reinit_kernel = 64 / 8;
+    double load_sample_kernel = 672 / 8;
+    double reinit_neurons_kernel = 256 / 8;
+    double lif_in = 832 / 8;
+    double lif_out = 480 / 8;
+
+    int n_rk_threads, n_lsk_threads, n_neur_threads;
+
+    // compute the number of copies that can be stored for the network
+    while(valid == 0){
+
+        n_rk_threads = ((((gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) * gpu_snn_in_cpu->max_spikes * n_cps) / 1024) + 1) * 1024;
+        n_lsk_threads = ((gpu_snn_in_cpu->n_input_neurons * gpu_snn_in_cpu->max_spikes * n_cps / 1024) + 1) * 1024;
+        n_neur_threads = (((gpu_snn_in_cpu->n_neurons * n_cps) / 516) + 1) * 516;
+        
+        if((n_rk_threads * reinit_kernel) < cuda_info->gpu_usable_mem && (n_lsk_threads * load_sample_kernel) < cuda_info->gpu_usable_mem &&
+            (n_neur_threads * lif_in) < cuda_info->gpu_usable_mem){
+                valid = 1;
+        }
+        else{
+            n_cps --;
+        }
+    }
+    
+*/
+    /* compute the number of networks and samples per batch per device */
+/*
+    // multi gpu not allowed
+    if(cuda_info->multi_gpu_allowed == 0){
+
+        if(conf->batch_size < n_cps){
+            
+            // the maximum number of copies we need is the size of the batch
+            cuda_info->n_networks = conf->batch_size;
+
+            // revise this, only works for unigpu
+            cuda_info->nDevices = 1;
+            cuda_info->n_batch_per_dev = cuda_info->batch_size;
+            cuda_info->n_networks_per_dev = cuda_info->n_networks;
+        }
+
+        else{
+
+            // number of networks should be multiple of batch_size, so compute
+            cuda_info->n_networks = conf->batch_size / 2;
+            
+            // loop until the number of copies is bigger than the maximum
+            while(cuda_info->n_networks > n_cps){
+                cuda_info->n_networks /= 2;
+            }
+
+            // store
+            cuda_info->nDevices = 1;
+            cuda_info->n_batch_per_dev = cuda_info->batch_size; // only one device
+            cuda_info->n_networks_per_dev = cuda_info->n_networks;
+        }
+    }
+    // number of devices to use specified
+    else if(cuda_info->multi_gpu_allowed != 0){
+
+        // check if there are enough devices available
+        if(cuda_info->multi_gpu_allowed > 0){
+
+            if(cuda_info->multi_gpu_allowed < cuda_info->nDevices){
+                cuda_info->nDevices = cuda_info->multi_gpu_allowed;
+            }
+            else if(cuda_info->nDevices < cuda_info->multi_gpu_allowed){
+                printf(" > WARNING: Only %d devices available!\n", cuda_info->nDevices);
+            }
+        }
+
+
+        // compute number of batches and networks per dev
+        cuda_info->n_batch_per_dev = cuda_info->batch_size / cuda_info->nDevices; // number of samples per batch computed in each device
+
+        // if the number of samples per batch is bigger than the maximum number of network copies per dev, compute number of cpies
+        cuda_info->n_networks = cuda_info->n_batch_per_dev;
+        
+        if(cuda_info->n_batch_per_dev > n_cps){
+
+            cuda_info->n_networks = cuda_info->n_batch_per_dev / 2;
+
+            while(cuda_info->n_networks > n_cps){
+                cuda_info->n_networks /= 2;
+            }
+        }
+
+        cuda_info->n_networks_per_dev = cuda_info->n_networks;
+    }
+
+    // set n networks for the snn
+    gpu_snn_in_cpu->n_networks = cuda_info->n_networks_per_dev;
+
+
+    printf("\n\n > Printing cuda simulation info:\n");
+    printf(" >> Batch size = %d\n", cuda_info->batch_size);
+    printf(" >> Number of networks = %d\n", cuda_info->n_networks);
+    printf(" >> Number of devices = %d\n", cuda_info->nDevices);
+    printf(" >> Number of samples in batch simulated by each device = %d\n", cuda_info->n_batch_per_dev);
+    printf(" >> Number of networks in each device = %d\n\n", cuda_info->n_networks_per_dev);
+
+    // compute kernel configuration for each execution part
+    // The execution is done by a 3D grid, where each dimension of the grid
+    // contains the blocks and thredas to simulate a cpy
+
+
+    // REVISE THIS FOR MULTIGPU
+    cuda_info->n_threads_per_blk_rsm_x = 516;
+    cuda_info->n_threads_per_blk_rsm_y = 1;
+    cuda_info->n_threads_per_blk_rsm_z = 1;
+    cuda_info->n_blk_rsm_x =
+            ((unsigned int)(gpu_snn_in_cpu->n_neurons + gpu_snn_in_cpu->n_input_neurons) *
+            (unsigned int)gpu_snn_in_cpu->max_spikes *
+            (unsigned int)gpu_snn_in_cpu->n_networks) /
+            (unsigned int)cuda_info->n_threads_per_blk_rsm_x + 1;
+    cuda_info->n_blk_rsm_y = 1;
+    cuda_info->n_blk_rsm_z = 1;
+
+    cuda_info->n_threads_per_blk_ls_x = 516;
+    cuda_info->n_threads_per_blk_ls_y = 1;
+    cuda_info->n_threads_per_blk_ls_z = 1;
+    cuda_info->n_blk_ls_x = ((unsigned int)gpu_snn_in_cpu->n_input_neurons * (unsigned int)gpu_snn_in_cpu->n_networks) / (unsigned int)cuda_info->n_threads_per_blk_ls_x + 1;
+    cuda_info->n_blk_ls_y = 1;
+    cuda_info->n_blk_ls_z = 1;
+
+    cuda_info->n_threads_per_blk_nrs_x = 516;
+    cuda_info->n_threads_per_blk_nrs_y = 1;
+    cuda_info->n_threads_per_blk_nrs_z = 1;
+    cuda_info->n_blk_nrs_x = ((unsigned int)gpu_snn_in_cpu->n_neurons * (unsigned int)gpu_snn_in_cpu->n_networks) / (unsigned int)cuda_info->n_threads_per_blk_nrs_x + 1;
+    cuda_info->n_blk_nrs_y = 1;
+    cuda_info->n_blk_nrs_z = 1;
+
+    cuda_info->n_threads_per_blk_synapses_x = 516;
+    cuda_info->n_threads_per_blk_synapses_y = 1;
+    cuda_info->n_threads_per_blk_synapses_z = 1;
+    cuda_info->n_blk_synapses_x = ((unsigned int)gpu_snn_in_cpu->n_synapses * (unsigned int)gpu_snn_in_cpu->n_networks) / (unsigned int)cuda_info->n_threads_per_blk_synapses_x + 1;
+    cuda_info->n_blk_synapses_y = 1;
+    cuda_info->n_blk_synapses_z = 1;
+
+    cuda_info->n_threads_per_blk_uw_x = 516;
+    cuda_info->n_threads_per_blk_uw_y = 1;
+    cuda_info->n_threads_per_blk_uw_z = 1;
+    cuda_info->n_blk_uw_x = ((unsigned int)gpu_snn_in_cpu->n_synapses) / (unsigned int)cuda_info->n_threads_per_blk_synapses_x + 1;
+    cuda_info->n_blk_uw_y = 1;
+    cuda_info->n_blk_uw_z = 1;
+    */
 }

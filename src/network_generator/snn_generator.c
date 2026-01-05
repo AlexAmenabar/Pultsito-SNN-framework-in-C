@@ -717,7 +717,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
         while(remaining_input_connections > 0){
 
             // select a neuron
-            size_t in_neuron = rand_lim(n_neurons + n_input); // [0, n_neurons + n_input]
+            size_t in_neuron = rand_lim(n_neurons + n_input - 1); // [0, n_neurons + n_input]
             
             size_t n = rand_lim(conf->max_pair_neurons_connections); // number of connections to that neuron
             if(n == 0) 

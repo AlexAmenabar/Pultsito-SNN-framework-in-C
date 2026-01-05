@@ -314,6 +314,8 @@ typedef struct {
 /// @brief SNN structure
 typedef struct {
 
+    // char is used to reduce memory usage
+
     size_t n_neurons;
     size_t n_input_neurons;
     size_t n_output_neurons;
@@ -331,9 +333,10 @@ typedef struct {
     int *r_period; // [n_neurons]: refractary period of the neuron
     int *r_period_remain; // [n_neurons]: remaining refractory period of the neuron
     int *res; // [n_neurons]: resistance of the neuron
-    int *post_fired; // [n_neurons]: describes if neuron fired on time t
+    char *post_fired; // [n_neurons]: describes if neuron fired on time t
+    float *post_trace; // [n_neurons]: postsynaptic trace
     float *arrI; // [n_neurons]: input current in the time step
-    int *inR; // [n_neurons]: neuron in refractary period
+    int *inR; // [n_neurons]: neuron in refractary period // [DEPRECATED]
     
     size_t *n_neuron_input_synapses; // [n_neurons]: number of input synapses for the neuron
     size_t *neuron_input_synapses_offset; // [n_neurons]: index of the first input synapse for each neuron
@@ -348,12 +351,9 @@ typedef struct {
     int *delay; // [n_synapses]: delay or latency of the synapse
     int *lr; // [n_synapses]: learning rule of the synapse
     size_t *pre_neuron_index; // [n_synapses]: index of the presynaptic neuron
-    //int *next_pre_spike; // [n_synapses]: DEPRECATED?
     size_t *post_neuron_index; // [n_synapses]: index of the postsynaptic neuron
-    //int *next_post_spike; // [n_synapses]: DEPRECATED?
-    int *pre_fired; // [n_synapses]: describes if the presynaptic neuron fired
+    char *pre_fired; // [n_synapses]: describes if the presynaptic neuron fired
     float *pre_trace; // [n_synapses]: presynaptic trace
-    float *post_trace; // [n_synapses]: postsynaptic trace
 
     char *spk_matrix; // [(n_input_synapses + n_neurons) * t_len * batch_size]
     size_t LT; // matrix L dimension
@@ -404,31 +404,49 @@ typedef struct {
 /// @brief Struct that stores data to guide the cuda simulation
 typedef struct {
 
-    // gpu info
-    int nDevices;
-    double *gpu_mem; // free memory in the GPU
-    double gpu_usable_mem;
-    int multi_gpu_allowed;
+    // devices data
+    int multi_gpu_allowed; // wether multilple devices should be used
+    size_t nDevices; // number of available devices
+    double *gpu_total_mem; // free memory in the GPU
+    double *gpu_free_mem; // memory available in the GPU
+    double *shared_memory_mem; // Bytes in shared memory
+    // TOOD: max threads....
 
-    // cuda simulation details
-    double dataset_size;
-    double network_size;
-    double results_size;
-    double network_cpy_size;
+    // cuda simulation details (network size, dataset size...)
+    double dataset_size; // dataset size
+    double network_size; // network size
+    double network_cpy_size; // size of each network copy
+    double results_size; // results size
 
-    int n_networks;
-    int n_samples;
-    int batch_size;
-    int time_steps;
+    double *neuron_size; // size related to each neuron
+    double *batch_neuron_size; // size related to the entire neuron batch 
+    double *synapse_size; // size related to each synapse
+    double *batch_synapse_size; // size related to the entire synapse batch
 
-    // multigpu info
-    int n_batch_per_dev; // sample simulated by each device in the batch
-    int gpuId; // used to index the correct information on each GPU
-    int n_networks_per_dev;
+    size_t n_networks; // DEPRECATED // n copies of the network in the GPU
+    size_t n_samples; // n samples in the dataset
+    size_t batch_size; // batch_size of the simulation
+    size_t time_steps; // time steps of the simulation
+
+
+    // multigpu control variables
+    size_t dev_batch_size; // sample simulated by each device in the batch
+    size_t gpuId; // used to index the correct information on each GPU
+    size_t n_networks_per_dev;
 
 
     // number of threads and blocks per kernel
-    unsigned int n_threads_per_blk_rsm_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
+    unsigned int n_thr_per_blk_neurons_x, n_thr_per_blk_neurons_y, n_thr_per_blk_neurons_z;
+    unsigned int n_thr_per_blk_synapses_x, n_thr_per_blk_synapses_y, n_thr_per_blk_synapses_z;
+    unsigned int n_thr_per_blk_in_neurons_x, n_thr_per_blk_in_neurons_y, n_thr_per_blk_in_neurons_z;
+
+    unsigned int n_blk_neurons_x, n_blk_neurons_y, n_blk_neurons_z;
+    unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z;
+    unsigned int n_blk_in_neurons_x, n_blk_in_neurons_y, n_blk_in_neurons_z;
+    
+
+
+    unsigned int n_threads_per_blk_reinspk_m_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
     unsigned int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
     unsigned int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
     unsigned int n_threads_per_blk_synapses_x, n_threads_per_blk_synapses_y, n_threads_per_blk_synapses_z;
@@ -437,7 +455,7 @@ typedef struct {
     unsigned int n_blk_rsm_x, n_blk_rsm_y, n_blk_rsm_z;
     unsigned int n_blk_ls_x, n_blk_ls_y, n_blk_ls_z;
     unsigned int n_blk_nrs_x, n_blk_nrs_y, n_blk_nrs_z;
-    unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z; 
+    //unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z; 
     unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
 
 } cuda_info_t;
@@ -453,6 +471,12 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
 void print_dataset(GPU_dataset_t *dataset);
 void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf);
 void reallocate_spk_matrix(GPU_SNN_t *snn, size_t N, size_t B, size_t T);
+// Functions to compute the memory occupated by structures
+double get_snn_size(GPU_SNN_t *snn);
+double get_snn_cpy_size(GPU_SNN_t *snn);
+double get_dataset_size(GPU_dataset_t *dataset);
+double get_results_size(size_t N, size_t nS, size_t T);
+void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf);
 
 
 
@@ -571,19 +595,12 @@ void reorder_synapse_list(spiking_nn_t *snn);
 GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *conf);
 GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configuration_t *conf);
 
-// Functions to compute the memory occupated by GPU structures
-double get_gpu_snn_size(GPU_SNN_t *gpu_snn);
-double get_gpu_snn_cpy_size(GPU_SNN_t *gpu_snn);
-double get_gpu_dataset_size(GPU_dataset_t *gpu_dataset);
-double get_gpu_results_size(int n_neurons, int n_samples, int L);
 
 
 //
 void free_gpu_snn_in_CPU(GPU_SNN_t *gpu_snn);
 void free_gpu_dataset_in_CPU(GPU_dataset_t *gpu_dataset);
 void free_gpu_results_in_CPU(GPU_results_t *gpu_results);
-
-void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *gpu_snn_in_cpu, GPU_dataset_t *gpu_dataset_in_cpu, simulation_configuration_t *conf);
 
 
 /* Functions for results structs */

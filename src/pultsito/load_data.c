@@ -599,7 +599,8 @@ network_construction_lists_t* load_network_information_in_lists(simulation_confi
             if(lists->delay_list[i] > lists->max_delay)
                 lists->max_delay = lists->delay_list[i];
         }
-        lists->max_delay += 1;
+        lists->max_delay += 1; // store max_delay
+
         for(i=0; i<S; i++){
             fscanf(f_synapses, "%lf", &(lists->weight_list[i]));
         }

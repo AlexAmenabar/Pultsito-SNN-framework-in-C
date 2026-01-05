@@ -5,7 +5,7 @@
 #include "cuda/cuda_helpers.cuh"
 
 
-
+// function to get the memory available in the GPU
 extern "C" int get_memory_info(cuda_info_t *cuda_info, int dev) {
     
     size_t free_mem, total_mem;
@@ -17,67 +17,66 @@ extern "C" int get_memory_info(cuda_info_t *cuda_info, int dev) {
         return 1;
     }
 
-    printf("GPU memory usage:\n");
-    printf("  Total memory: %.2f MB (%.2f GB)\n", total_mem / 1024.0 / 1024.0, total_mem / 1024.0 / 1024.0 / 1024.0);
-    printf("  Free memory : %.2f MB\n", free_mem / 1024.0 / 1024.0);
-    printf("  Used memory : %.2f MB\n", (total_mem - free_mem) / 1024.0 / 1024.0);
+    printf("  > GPU memory usage:\n");
+    printf("    > Total memory: %.2f MB (%.2f GB)\n", total_mem / 1024.0 / 1024.0, total_mem / 1024.0 / 1024.0 / 1024.0);
+    printf("    > Free memory : %.2f MB\n", free_mem / 1024.0 / 1024.0);
+    printf("    > Used memory : %.2f MB\n", (total_mem - free_mem) / 1024.0 / 1024.0);
 
 
     // store free memory in device
-    cuda_info->gpu_mem[dev] = (double)free_mem;
-    cuda_info->gpu_usable_mem = (double)free_mem;  
+    cuda_info->gpu_total_mem[dev] = (double)total_mem;
+    cuda_info->gpu_free_mem[dev] = (double)free_mem;  
 
     return 0;
 }
 
 
-extern "C" cuda_info_t* getProperties(){
+extern "C" cuda_info_t* getGPUProperties(){
 
+    // define varibales
     cuda_info_t *cuda_info;
     int nDevices;
 
-
-    // allocate memory to store cuda info
+    // allocate memory to store cuda data
     cuda_info = (cuda_info_t*)malloc(sizeof(cuda_info_t));
-    cudaGetDeviceCount(&nDevices);
+    cudaGetDeviceCount(&nDevices); // get number of available devices
   
     // store the number of devices
-    cuda_info->nDevices = nDevices;
-    cuda_info->gpu_mem = (double*)malloc(nDevices * sizeof(double));
+    cuda_info->nDevices = (size_t)nDevices;
+    cuda_info->gpu_total_mem = (double*)malloc(nDevices * sizeof(double));
+    cuda_info->gpu_free_mem = (double*)malloc(nDevices * sizeof(double));
+    cuda_info->shared_memory_mem = (double*)malloc(nDevices * sizeof(double));
 
 
     printf("Number of devices: %d\n", nDevices);
     
-    for (int i = 0; i < nDevices; i++) {
+    // loop over devices and print information
+    for (size_t i = 0; i < (size_t)nDevices; i++) {
         cudaDeviceProp prop;
         cudaGetDeviceProperties(&prop, i);
-        printf("Device Number: %d\n", i);
-        printf("  Device name: %s\n", prop.name);
-        //printf("  Memory Clock Rate (MHz): %d\n",
-        //    prop.memoryClockRate/1024);
-        //printf("  Memory Bus Width (bits): %d\n",
-        //    prop.memoryBusWidth);
-        //printf("  Peak Memory Bandwidth (GB/s): %.1f\n",
-        //    2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
-        printf("  Total global memory (Gbytes) %.1f\n",(float)(prop.totalGlobalMem)/1024.0/1024.0/1024.0);
-        printf("  Shared memory per block (Kbytes) %.1f\n",(float)(prop.sharedMemPerBlock)/1024.0);
-        printf("  minor-major: %d-%d\n", prop.minor, prop.major);
-        printf("  Warp-size: %d\n", prop.warpSize);
-        printf("  Concurrent kernels: %s\n", prop.concurrentKernels ? "yes" : "no");
-        //printf("  Concurrent computation/communication: %s\n",prop.deviceOverlap ? "yes" : "no");
-        printf("  Max Threads per Multiprocessor: %d\n", prop.maxThreadsPerMultiProcessor);
-        printf("  Multiprocessor count: %d\n", prop.multiProcessorCount);
-        printf("  Max blocks dim x: %d\n", prop.maxGridSize[0]);
-        printf("  Max blocks dim y: %d\n", prop.maxGridSize[1]);
-        printf("  Max blocks dim z: %d\n", prop.maxGridSize[2]);
-        printf("  Max thredas dim x: %d\n", prop.maxThreadsDim[0]);
-        printf("  Max thredas dim y: %d\n", prop.maxThreadsDim[1]);
-        printf("  Max thredas dim z: %d\n", prop.maxThreadsDim[2]);
-        printf("  Max threads per block: %d\n", prop.maxThreadsPerBlock);
+        printf(" > Device Number: %zu\n", i);
+        printf("  > Device name: %s\n", prop.name);
+        printf("  > Total global memory (Gbytes) %.1f\n",(float)(prop.totalGlobalMem)/1024.0/1024.0/1024.0);
+        printf("  > Shared memory per block (Kbytes) %.1f\n",(float)(prop.sharedMemPerBlock)/1024.0);
+        printf("  > minor-major: %d-%d\n", prop.minor, prop.major);
+        printf("  > Warp-size: %d\n", prop.warpSize);
+        printf("  > Concurrent kernels: %s\n", prop.concurrentKernels ? "yes" : "no");
+        printf("  > Max Threads per Multiprocessor: %d\n", prop.maxThreadsPerMultiProcessor);
+        printf("  > Multiprocessor count: %d\n", prop.multiProcessorCount);
+        printf("  > Max blocks dim x: %d\n", prop.maxGridSize[0]);
+        printf("  > Max blocks dim y: %d\n", prop.maxGridSize[1]);
+        printf("  > Max blocks dim z: %d\n", prop.maxGridSize[2]);
+        printf("  > Max thredas dim x: %d\n", prop.maxThreadsDim[0]);
+        printf("  > Max thredas dim y: %d\n", prop.maxThreadsDim[1]);
+        printf("  > Max thredas dim z: %d\n", prop.maxThreadsDim[2]);
+        printf("  > Max threads per block: %d\n", prop.maxThreadsPerBlock);
 
         // set i device as active and get memory info
         cudaSetDevice(i);
         get_memory_info(cuda_info, i);
+
+        // store some data // TODO: in the future more data should be stored
+        cuda_info->shared_memory_mem[i] = prop.sharedMemPerBlock; // Bytes
     }
 
     cudaSetDevice(0);

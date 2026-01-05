@@ -27,7 +27,7 @@ extern "C" {
 #endif
 
 int get_memory_info(cuda_info_t *cuda_info, int dev);
-cuda_info_t* getProperties();
+cuda_info_t* getGPUProperties();
 
 #ifdef __cplusplus
 }

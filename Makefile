@@ -19,7 +19,7 @@ NVCC_LIBS=
 # CUDA library directory:
 CUDA_LIB_DIR= -L$(CUDA_ROOT_DIR)/lib64
 # CUDA include directory:
-CUDA_INC_DIR= -I$(CUDA_ROOT_DIR)/include
+CUDA_INC_DIR= -I$(CUDA_ROOT_DIR)/include 
 # CUDA linking libraries:
 CUDA_LINK_LIBS= -lcudart
 

@@ -115,7 +115,7 @@ typedef struct {
     float *v_thresh;
     float *v_rest;
     int *R;
-    int *
+    int *rft_per;
 
 
 } lif_neurons_t;

@@ -8,51 +8,64 @@
 
 // functions below should be moved to a more general file
 
-
-extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info){
+// copy SNN to GPU (usable for both single-GPU and multi-GPU)
+extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, simulation_configuration_t *conf){
     
-    int i, dev;
+    size_t N, iN, B, LT, S;
+    size_t i, dev, batch_per_dev;
+
+    N = cpu_snn->n_neurons;
+    iN = cpu_snn->n_input_neurons;
+    B = conf->batch_size; // temporal
+    LT = cpu_snn->LT;
+    S = cpu_snn->n_synapses;
+    batch_per_dev = B / cuda_info->nDevices;
+
+    // allocate memory for GPU SNN strcutre for each device
+    GPU_SNN_t **d_GPU_SNN = (GPU_SNN_t **)malloc(cuda_info->nDevices * sizeof(GPU_SNN_t*));
 
     // tmp structure to 
     GPU_SNN_t *tmp_gpu_snn = (GPU_SNN_t*)malloc(sizeof(GPU_SNN_t)); // input neurons???
 
-    // allocate memory for GPU SNN strcutre for each device
-    GPU_SNN_t **d_GPU_SNN = (GPU_SNN_t **)malloc(cuda_info->nDevices * sizeof(GPU_SNN_t*));
-    
-
-    // allocate memory and copy data to all devices
+    // loop over devices and allocate memory for all of them
     for(dev = 0; dev < cuda_info->nDevices; dev++){
 
         // set dev as active one
         cudaSetDevice(dev);
 
-        // allocate memory in GPU
-        cudaMalloc(&(tmp_gpu_snn->v), (size_t)((size_t)(cpu_snn->n_neurons) * (size_t)(cuda_info->n_networks_per_dev) * (size_t)(sizeof(float)))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->v_thresh), (size_t)(cpu_snn->n_neurons * sizeof(float))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->v_rest), (size_t)(cpu_snn->n_neurons * sizeof(float))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->r_period), (size_t)(cpu_snn->n_neurons * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->r_period_remain), (size_t)(cpu_snn->n_neurons * cuda_info->n_networks_per_dev * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->res), (size_t)(cpu_snn->n_neurons * sizeof(int))); // allocate memory for neurons
-        //cudaMalloc(&(tmp_gpu_snn->t_last_spikes), (size_t)(cpu_snn->n_neurons * cpu_snn->n_last_spikes * cuda_info->n_networks_per_dev * sizeof(int))); // allocate memory for neurons
-        //cudaMalloc(&(tmp_gpu_snn->next_last_spike), (size_t)(cpu_snn->n_neurons * cuda_info->n_networks_per_dev * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->n_neuron_input_synapses), (size_t)(cpu_snn->n_neurons * sizeof(int)));
-        cudaMalloc(&(tmp_gpu_snn->neuron_input_synapses_offset), (size_t)(cpu_snn->n_neurons * sizeof(int)));
+        /* Allocate memory */
+
+        // allocate memory for neurons
+        cudaMalloc(&(tmp_gpu_snn->v), N * batch_per_dev * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->arrI), N * batch_per_dev * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->v_thresh), N * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->v_rest), N * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->r_period), N * sizeof(int)); 
+        cudaMalloc(&(tmp_gpu_snn->r_period_remain), N * batch_per_dev * sizeof(int)); 
+        cudaMalloc(&(tmp_gpu_snn->post_fired), N * batch_per_dev * sizeof(int)); 
+        cudaMalloc(&(tmp_gpu_snn->res), N * sizeof(int)); 
+        cudaMalloc(&(tmp_gpu_snn->n_neuron_input_synapses), N * sizeof(size_t));
+        cudaMalloc(&(tmp_gpu_snn->neuron_input_synapses_offset), N * sizeof(size_t));
         
-        cudaMalloc(&(tmp_gpu_snn->w), (size_t)(cpu_snn->n_synapses * cuda_info->n_networks_per_dev * sizeof(float))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->init_w), (size_t)(cpu_snn->n_synapses * cuda_info->n_networks_per_dev * sizeof(float))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->dw), (size_t)(cpu_snn->n_synapses * cuda_info->n_networks_per_dev * sizeof(float))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->delay), (size_t)(cpu_snn->n_synapses * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->lr), (size_t)(cpu_snn->n_synapses * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->pre_neuron_index), (size_t)(cpu_snn->n_synapses * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->post_neuron_index), (size_t)(cpu_snn->n_synapses * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->next_pre_spike), (size_t)(cpu_snn->n_synapses * cuda_info->n_networks_per_dev * sizeof(int))); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->next_post_spike), (size_t)(cpu_snn->n_synapses * cuda_info->n_networks_per_dev * sizeof(int))); // allocate memory for neurons
+        // allocate memory for synapses
+        cudaMalloc(&(tmp_gpu_snn->w), S * batch_per_dev * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->init_w), S * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->dw), S * batch_per_dev * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->delay), S * sizeof(int)); 
+        cudaMalloc(&(tmp_gpu_snn->lr), S * sizeof(int)); 
+        cudaMalloc(&(tmp_gpu_snn->pre_neuron_index), S * sizeof(size_t)); 
+        cudaMalloc(&(tmp_gpu_snn->post_neuron_index), S * sizeof(size_t)); 
+        cudaMalloc(&(tmp_gpu_snn->pre_fired), S * batch_per_dev * sizeof(int)); 
+        cudaMalloc(&(tmp_gpu_snn->pre_trace), S * batch_per_dev * sizeof(float)); 
+        cudaMalloc(&(tmp_gpu_snn->post_trace), S * batch_per_dev * sizeof(float)); 
+
+        // allocate memory for spk matrix
+        cudaMalloc(&(tmp_gpu_snn->spk_matrix), (iN + N) * LT * batch_per_dev * sizeof(char)); // allocate memory for neurons
 
 
-        // TODO: n_input_synapses???
-        cudaMalloc(&(tmp_gpu_snn->spk_matrix), (size_t)((size_t)(cpu_snn->n_neurons + cpu_snn->n_input_neurons) * (size_t)(cpu_snn->max_spikes) * (size_t)(cuda_info->n_networks_per_dev) * sizeof(int))); // allocate memory for neurons
+        /* Copy data from CPU to GPU */
 
-        // cpy arrays and data to GPU
+        // cpy scalars
         tmp_gpu_snn->n_neurons = cpu_snn->n_neurons;
         tmp_gpu_snn->n_input_neurons = cpu_snn->n_input_neurons;
         tmp_gpu_snn->n_output_neurons = cpu_snn->n_output_neurons;
@@ -61,39 +74,35 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info){
         tmp_gpu_snn->n_output_synapses = cpu_snn->n_output_synapses;
         tmp_gpu_snn->max_spikes = cpu_snn->max_spikes;
         tmp_gpu_snn->n_networks = cpu_snn->n_networks;
-        //tmp_gpu_snn->n_last_spikes = cpu_snn->n_last_spikes;
-
+        tmp_gpu_snn->max_delay = cpu_snn->max_delay;
+        tmp_gpu_snn->LT = cpu_snn->LT;
         
-        cudaMemcpy(tmp_gpu_snn->v_thresh, cpu_snn->v_thresh, (size_t)(cpu_snn->n_neurons * sizeof(float)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->v_rest, cpu_snn->v_rest, (size_t)(cpu_snn->n_neurons * sizeof(float)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->r_period, cpu_snn->r_period, (size_t)(cpu_snn->n_neurons * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->res, cpu_snn->res, (size_t)(cpu_snn->n_neurons * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->n_neuron_input_synapses, cpu_snn->n_neuron_input_synapses, (size_t)(cpu_snn->n_neurons * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->neuron_input_synapses_offset, cpu_snn->neuron_input_synapses_offset, (size_t)(cpu_snn->n_neurons * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
+        // cpy not batched arrays, and then use them to initialize batched data
+        cudaMemcpy(tmp_gpu_snn->v_thresh, cpu_snn->v_thresh, N * sizeof(float), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->v_rest, cpu_snn->v_rest, N * sizeof(float), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->r_period, cpu_snn->r_period, N * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->res, cpu_snn->res, N * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->n_neuron_input_synapses, cpu_snn->n_neuron_input_synapses, N * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->neuron_input_synapses_offset, cpu_snn->neuron_input_synapses_offset, N * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
 
-        cudaMemcpy(tmp_gpu_snn->delay, cpu_snn->delay, (size_t)(cpu_snn->n_synapses * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->lr, cpu_snn->lr, (size_t)(cpu_snn->n_synapses * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->pre_neuron_index, cpu_snn->pre_neuron_index, (size_t)(cpu_snn->n_synapses * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->post_neuron_index, cpu_snn->post_neuron_index, (size_t)(cpu_snn->n_synapses * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->init_w, cpu_snn->w, S * sizeof(float), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->delay, cpu_snn->delay, S * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->lr, cpu_snn->lr, S * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->pre_neuron_index, cpu_snn->pre_neuron_index, S * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->post_neuron_index, cpu_snn->post_neuron_index, S * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
 
 
         // copy n times writible arrays
-        for(i = 0; i<cuda_info->n_networks_per_dev; i++){
+        /*for(i = 0; i<batch_per_dev; i++){
             
-            cudaMemcpy(tmp_gpu_snn->v + i * cpu_snn->n_neurons, cpu_snn->v, (size_t)(cpu_snn->n_neurons * sizeof(float)), cudaMemcpyHostToDevice); // copy neurons information
-            cudaMemcpy(tmp_gpu_snn->r_period_remain +i * cpu_snn->n_neurons, cpu_snn->r_period_remain, (size_t)(cpu_snn->n_neurons * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-            //cudaMemcpy(tmp_gpu_snn->t_last_spikes + i * cpu_snn->n_neurons * cpu_snn->n_last_spikes, cpu_snn->t_last_spikes, (size_t)(cpu_snn->n_neurons * cpu_snn->n_last_spikes * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-            //cudaMemcpy(tmp_gpu_snn->next_last_spike + i * cpu_snn->n_neurons, cpu_snn->next_last_spike, (size_t)(cpu_snn->n_neurons * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
+            cudaMemcpy(tmp_gpu_snn->v + i * batch_per_dev, cpu_snn->v, N * sizeof(float), cudaMemcpyHostToDevice); // copy neurons information
+            cudaMemcpy(tmp_gpu_snn->r_period_remain +i * batch_per_dev, cpu_snn->r_period_remain, (size_t)(cpu_snn->n_neurons * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
 
             cudaMemcpy(tmp_gpu_snn->w + i * cpu_snn->n_synapses, cpu_snn->w, (size_t)(cpu_snn->n_synapses * sizeof(float)), cudaMemcpyHostToDevice); // copy neurons information
-            cudaMemcpy(tmp_gpu_snn->init_w + i * cpu_snn->n_synapses, cpu_snn->w, (size_t)(cpu_snn->n_synapses * sizeof(float)), cudaMemcpyHostToDevice); // copy neurons information
             cudaMemcpy(tmp_gpu_snn->dw + i * cpu_snn->n_synapses, cpu_snn->dw, (size_t)(cpu_snn->n_synapses * sizeof(float)), cudaMemcpyHostToDevice); // copy neurons information    
-            cudaMemcpy(tmp_gpu_snn->next_pre_spike + i * cpu_snn->n_synapses, cpu_snn->next_pre_spike, (size_t)(cpu_snn->n_synapses * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-            cudaMemcpy(tmp_gpu_snn->next_post_spike + i * cpu_snn->n_synapses, cpu_snn->next_post_spike, (size_t)(cpu_snn->n_synapses * sizeof(int)), cudaMemcpyHostToDevice); // copy neurons information
-        }
+        }*/
         
         // final structure allocation and data copy
-        //GPU_SNN_t *d_GPU_SNN;
         cudaMalloc(&(d_GPU_SNN[dev]), sizeof(GPU_SNN_t));
         cudaMemcpy(d_GPU_SNN[dev], tmp_gpu_snn, sizeof(GPU_SNN_t), cudaMemcpyHostToDevice); // copy neurons information
     }
@@ -106,38 +115,46 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info){
 }
 
 extern "C" GPU_dataset_t** cpy_dataset2GPU(GPU_dataset_t *cpu_dataset, cuda_info_t *cuda_info){
-    
-    int dev;
+
+    size_t nS, nF, nSpks;
+    size_t dev;
+
+    nS = cpu_dataset->n_samples;
+    nF = cpu_dataset->n_features;
+    nSpks = cpu_dataset->n_spikes;
 
     // allocate to temporal
     GPU_dataset_t *tmp_gpu_dataset = (GPU_dataset_t *)malloc(sizeof(GPU_dataset_t));
     GPU_dataset_t **d_gpu_dataset = (GPU_dataset_t**)malloc(cuda_info->nDevices * sizeof(GPU_dataset_t*));
 
-
+    // loop over devices
     for(dev = 0; dev < cuda_info->nDevices; dev++){
         
         // set dev as active one
         cudaSetDevice(dev);
         
-        cudaMalloc(&(tmp_gpu_dataset->spikes), cpu_dataset->n_spikes * sizeof(int)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->n_spikes_per_feature), cpu_dataset->n_samples * cpu_dataset->n_features * sizeof(int)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->sample_offset), cpu_dataset->n_samples * sizeof(size_t)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->feature_offset), cpu_dataset->n_samples * cpu_dataset->n_features * sizeof(size_t)); // allocate memory for neurons
+        // allocate memory in GPU
+        cudaMalloc(&(tmp_gpu_dataset->spikes), nSpks * sizeof(size_t)); // allocate memory for neurons
+        cudaMalloc(&(tmp_gpu_dataset->n_spikes_per_feature), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        cudaMalloc(&(tmp_gpu_dataset->sample_offset), nS * sizeof(size_t)); // allocate memory for neurons
+        cudaMalloc(&(tmp_gpu_dataset->feature_offset), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        cudaMalloc(&(tmp_gpu_dataset->freq), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        cudaMalloc(&(tmp_gpu_dataset->first_spk), nS * nF * sizeof(size_t)); // allocate memory for neurons
 
-        // memcpy
+        // copy data to GPU
         tmp_gpu_dataset->n_samples = cpu_dataset->n_samples;
         tmp_gpu_dataset->type = cpu_dataset->type;
         tmp_gpu_dataset->n_classes = cpu_dataset->n_classes;
         tmp_gpu_dataset->n_features = cpu_dataset->n_features;
         tmp_gpu_dataset->n_spikes = cpu_dataset->n_spikes;
-        cudaMemcpy(tmp_gpu_dataset->spikes, cpu_dataset->spikes, cpu_dataset->n_spikes * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_dataset->n_spikes_per_feature, cpu_dataset->n_spikes_per_feature, cpu_dataset->n_samples * cpu_dataset->n_features * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_dataset->sample_offset, cpu_dataset->sample_offset, cpu_dataset->n_samples * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_dataset->feature_offset, cpu_dataset->feature_offset, cpu_dataset->n_samples * cpu_dataset->n_features * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_dataset->spikes, cpu_dataset->spikes, nSpks * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_dataset->n_spikes_per_feature, cpu_dataset->n_spikes_per_feature, nS * nF * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_dataset->sample_offset, cpu_dataset->sample_offset, nS * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_dataset->feature_offset, cpu_dataset->feature_offset, nS * nF * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_dataset->freq, cpu_dataset->freq, nS * nF * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_dataset->first_spk, cpu_dataset->first_spk, nS * nF * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
 
-        
         // copy to GPU
-        //GPU_dataset_t *d_gpu_dataset;
         cudaMalloc(&(d_gpu_dataset[dev]), sizeof(GPU_dataset_t)); // allocate memory for neurons
         cudaMemcpy(d_gpu_dataset[dev], tmp_gpu_dataset, sizeof(GPU_dataset_t), cudaMemcpyHostToDevice); // copy neurons information
     }
@@ -150,22 +167,24 @@ extern "C" GPU_dataset_t** cpy_dataset2GPU(GPU_dataset_t *cpu_dataset, cuda_info
 }
 
 
-extern "C" GPU_results_t** initialize_results_str_in_GPU(simulation_configuration_t *conf, cuda_info_t *cuda_info, int n, int s){
+// Initialize results struct in the GPU
+extern "C" GPU_results_t** initialize_results_str_in_GPU(size_t nDevices, size_t n, size_t s, size_t batch_size){
 
-    int dev;
+    size_t dev;
     GPU_results_t *tmp_r, **d_results;
+    
+    // allocate memory
     tmp_r = (GPU_results_t*)malloc(sizeof(GPU_results_t));
-    d_results = (GPU_results_t**)malloc(cuda_info->nDevices * sizeof(GPU_results_t*));
+    d_results = (GPU_results_t**)malloc(nDevices * sizeof(GPU_results_t*));
 
-
-    for(dev = 0; dev < cuda_info->nDevices; dev ++){
+    // loop over devices
+    for(dev = 0; dev < nDevices; dev ++){
     
         // set dev as active one
         cudaSetDevice(dev);
 
-        // allocate memory in GPU
-        cudaMalloc(&(tmp_r->nspk), n * s * sizeof(int)); // allocate memory for number of spikes per each sample [n_neurons * n_samples]
-        //cudaMalloc(&(tmp_r->gs), n * s * conf->max_input_spikes * sizeof(int)); // allocate memory for neurons
+        // allocate memory to store the number of spikes
+        cudaMalloc(&(tmp_r->n_spks), n * s * batch_size * sizeof(int));
 
         // final structure
         cudaMalloc(&(d_results[dev]), sizeof(GPU_results_t)); // allocate memory for neurons
@@ -178,7 +197,84 @@ extern "C" GPU_results_t** initialize_results_str_in_GPU(simulation_configuratio
     return d_results;
 }
 
-extern "C" GPU_results_t* simulate_in_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, simulation_configuration_t *conf, cuda_info_t *cuda_info, spiking_nn_t *cpu_snn, input_data_t *cpu_dataset){
+extern "C" void cpy_results_GPU2CPU(GPU_results_t *cpu_results, GPU_results_t **gpu_results, size_t nDevices, size_t n, size_t s, cuda_info_t *cuda_info){
+
+    size_t dev;
+    size_t batch_size = cuda_info->batch_size;
+    size_t dev_batch_size = cuda_info->dev_batch_size;
+
+    // each device processes a set of consecutive batches, therefore, received data must be located in the
+    // correct cpu position
+
+    // TODO: call defined function
+    GPU_results_t *tmp_results = (GPU_results_t*)malloc(sizeof(GPU_results_t)); 
+    tmp_results->n_spks = (int*)calloc(n * s * batch_size, sizeof(int));
+
+    // loop over devices
+    /*for(dev = 0; dev < cuda_info->nDevices; dev ++){
+    
+        // set dev as active one
+        cudaSetDevice(dev);
+
+        cudaMemcpy(cpu_results, gpu_results[0], sizeof(GPU_results_t), cudaMemcpyDeviceToHost);
+        cudaMemcpy(n_spk, cpu_results->n_spks, cpu_snn->n_neurons * cpu_dataset->n_samples * sizeof(int), cudaMemcpyDeviceToHost);
+    }*/
+}
+
+
+extern "C" GPU_results_t* simulate_in_GPU(cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t *cpu_results, simulation_configuration_t *conf){
+
+    struct timespec start_gpu, end_gpu, start_helper, end_helper;
+    double elpt_total = 0.0, elpt_simulation = 0.0, elpt_cpy = 0.0;
+
+    clock_gettime(CLOCK_MONOTONIC, &start_gpu);
+
+    // copy data to GPU
+    clock_gettime(CLOCK_MONOTONIC, &start_helper);
+    GPU_SNN_t **gpu_snn = cpy_SNN2GPU(cpu_snn, cuda_info, conf);
+    GPU_dataset_t **gpu_dataset = cpy_dataset2GPU(cpu_dataset, cuda_info);
+    GPU_results_t **gpu_results = initialize_results_str_in_GPU(cuda_info->nDevices, cpu_snn->n_neurons, cpu_dataset->n_samples, cuda_info->dev_batch_size);
+    clock_gettime(CLOCK_MONOTONIC, &end_helper);
+    elpt_cpy += (end_helper.tv_sec - start_helper.tv_sec) + (end_helper.tv_nsec - start_helper.tv_nsec) / 1e9;
+
+    // simulate
+    clock_gettime(CLOCK_MONOTONIC, &start_helper);
+
+    /*switch (conf->neuron_type){
+        // LIF neurons
+        case 0:
+            simulate_LIF_in_GPU(gpu_snn, gpu_dataset, gpu_results, conf, cuda_info, cpu_snn, cpu_dataset);
+            break;
+        default:
+            simulate_LIF_in_GPU(gpu_snn, gpu_dataset, gpu_results, conf, cuda_info, cpu_snn, cpu_dataset);
+            break;
+    }*/
+    
+    clock_gettime(CLOCK_MONOTONIC, &end_helper);
+    elpt_simulation += (end_helper.tv_sec - start_helper.tv_sec) + (end_helper.tv_nsec - start_helper.tv_nsec) / 1e9;
+ 
+
+    // copy results to CPU again
+    clock_gettime(CLOCK_MONOTONIC, &start_helper);
+
+
+    clock_gettime(CLOCK_MONOTONIC, &end_helper);
+    elpt_cpy += (end_helper.tv_sec - start_helper.tv_sec) + (end_helper.tv_nsec - start_helper.tv_nsec) / 1e9;
+
+    clock_gettime(CLOCK_MONOTONIC, &end_gpu);
+    elpt_total += (end_gpu.tv_sec - start_gpu.tv_sec) + (end_gpu.tv_nsec - start_gpu.tv_nsec) / 1e9;
+
+    printf(" > Elapsed time copying data to GPU: %0.3lf\n", elpt_cpy);
+    printf(" > Elapsed time simulating: %0.3lf\n", elpt_simulation);
+    printf(" > Elapsed total time: %0.3lf\n", elpt_total);
+
+    return (cpu_results);
+}
+
+
+
+// DEPRECATED
+/*extern "C" GPU_results_t* simulate_in_GPU_old(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, simulation_configuration_t *conf, cuda_info_t *cuda_info, spiking_nn_t *cpu_snn, input_data_t *cpu_dataset){
 
     double elpt;
     struct timespec start_gpu, end_gpu;
@@ -217,7 +313,7 @@ extern "C" GPU_results_t* simulate_in_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **g
         //cudaSetDevice(0);
     //clock_gettime(CLOCK_MONOTONIC, &start_cpy);        
     cudaMemcpy(cpu_results, gpu_results[0], sizeof(GPU_results_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(nspk, cpu_results->nspk, cpu_snn->n_neurons * cpu_dataset->n_samples * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(nspk, cpu_results->n_spks, cpu_snn->n_neurons * cpu_dataset->n_samples * sizeof(int), cudaMemcpyDeviceToHost);
     /*clock_gettime(CLOCK_MONOTONIC, &end_cpy);
     elpt = (end_cpy.tv_sec - start_cpy.tv_sec) + (end_cpy.tv_nsec - start_cpy.tv_nsec) / 1e9;
     printf(" Elapsed time copying results data: %lf\n", elpt);    
@@ -234,5 +330,5 @@ extern "C" GPU_results_t* simulate_in_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **g
         printf("\n");
     }*/
 
-    return (cpu_results);
-}
+//    return (cpu_results);
+//}*/
