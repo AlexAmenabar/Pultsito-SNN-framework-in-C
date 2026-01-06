@@ -60,16 +60,17 @@ int main(int argc, char *argv[]) {
     printf(" > Dataset loaded!\n");
     fflush(stdout);
 
-    // TODO
-    GPU_results_t *cpu_results = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
-    cpu_results->n_spks = (int*)calloc(cpu_snn->n_neurons * conf->batch_size, sizeof(int));
+    // initialize results struct
+    printf(" > Initializing results struct...\n");
+    GPU_results_t *cpu_results = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, conf->batch_size, 1);
+    printf(" > Results struct initialized!\n");
+    fflush(stdout);
 
-
-    printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
 
     // simulate in CPU
     if(conf->cuda == 0){
 
+        printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
         simulate_batches(cpu_snn, cpu_dataset, conf, cpu_results);
     }
     // simulate in GPU if device is founded and CUDA is defined
@@ -90,9 +91,7 @@ int main(int argc, char *argv[]) {
             configure_cuda_simulation(cuda_info, cpu_snn, cpu_dataset, conf);
 
             // simulate
-            cpu_results = simulate_in_GPU(cuda_info, cpu_snn, cpu_dataset, cpu_results, conf);
-
-
+            GPU_results_t *cpu_results = simulate_batches_GPU(cuda_info, cpu_snn, cpu_dataset, conf);
         }
         #else
         {

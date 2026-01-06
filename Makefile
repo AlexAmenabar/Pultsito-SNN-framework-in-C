@@ -7,12 +7,12 @@ LCC=g++
 
 # CC compiler options:
 CC=gcc
-CC_FLAGS= -O2 -DCUDA -DREORDER -fopenmp #-fPIE
+CC_FLAGS= -O3 -DCUDA -DREORDER -fopenmp #-fPIE
 CC_LIBS=
 
 # NVCC compiler options:
 NVCC=nvcc
-NVCC_FLAGS=  -O2 -Xcompiler "-DCUDA -DREORDER -fopenmp" # -fPIC
+NVCC_FLAGS=  -O3 -Xcompiler "-DCUDA -DREORDER -fopenmp" # -fPIC
 NVCC_LIBS=
 
 

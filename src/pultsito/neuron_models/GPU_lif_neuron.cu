@@ -19,12 +19,12 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
     }
 }
 
-__constant__ size_t N;
-__constant__ size_t iN;
-__constant__ size_t S;
-__constant__ size_t T;
-__constant__ size_t LT;
-__constant__ size_t n_features; 
+//__constant__ size_t N;
+//__constant__ size_t iN;
+//__constant__ size_t S;
+//__constant__ size_t T;
+//__constant__ size_t LT;
+//__constant__ size_t n_features; 
 __constant__ int n_samples;
 
 
@@ -42,6 +42,7 @@ __global__ void initialize_neurons_batch(GPU_SNN_t *snn, size_t batch_size){
         snn->v[threadId] = snn->v_rest[threadId / batch_size];
         snn->r_period_remain[threadId] = 0;
         snn->post_fired[threadId] = 0;
+        snn->post_trace[threadId] = 0.0;
         snn->arrI[threadId] = 0.0;
     }    
 }
@@ -59,12 +60,790 @@ __global__ void initialize_synapses_batch(GPU_SNN_t *snn, size_t batch_size){
 
         size_t synapse_index = threadId / batch_size;
         snn->w[threadId] = snn->init_w[synapse_index];
+
+        //printf("   > ThreadId = %llu (s = %llu, b = %llu), w = %f, init_w = %f\n", 
+        //    threadId, threadId / batch_size, threadId % batch_size, snn->w[threadId], snn->init_w[synapse_index]);
+
         snn->dw[threadId] = 0.0;
         snn->pre_fired[threadId] = 0;
         snn->pre_trace[threadId] = 0.0;
-        snn->post_trace[threadId] = 0.0;
     }    
 }
+
+
+__global__ void initialize_batch_matrix_GPU(tmp_batch_cpu_t *tmp_batch, GPU_dataset_t *dataset, size_t bidx, size_t n_networks, size_t iN, size_t batch_size, size_t T){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+    if(threadId < iN * batch_size){
+
+        size_t fsidx = bidx * batch_size; // first sample to be processed
+        size_t b = threadId % batch_size; // batch element
+        size_t sidx = fsidx + b; // sample id = first sample in the batch + batch element
+
+        size_t n_features = dataset->n_features;
+
+        if(sidx < dataset->n_samples){
+            
+            size_t fidx = threadId / batch_size; // neuron index is the feature index
+            
+            // reinitialize batch_matrix
+            for(size_t j = 0; j<T; j++){
+                
+                tmp_batch->spikes[(iN * batch_size * j) + (batch_size * fidx) + b] = 0; 
+            }
+
+            // get the feature offset in the array of spikes
+            size_t feature_offset = dataset->feature_offset[sidx * n_features + fidx];
+
+            // get the number of spikes of the feature
+            size_t n_spikes_feature = dataset->n_spikes_per_feature[sidx * n_features + fidx];
+    
+            //printf(" > Thread = %llu (i = %llu, b = %llu), loading sample %llu, number of spikes: %llu\n", threadId, fidx, b, sidx, n_spikes_feature);
+
+            // loop over spikes and store in the matrix
+            for(size_t j = 0; j<n_spikes_feature; j++){
+
+                // get time step of the spike
+                size_t t = dataset->spikes[feature_offset + j];
+
+                // store the spike in the matrix of [iN * B * T]
+                tmp_batch->spikes[(iN * batch_size * t) + (batch_size * fidx) + b] = 1; 
+            }
+        }
+        
+    }
+}
+
+__global__ void load_batch_time_step_in_SNN_GPU(GPU_SNN_t *gpu_snn, tmp_batch_cpu_t *tmp_batch, size_t iN, size_t N, size_t batch_size, size_t lt, size_t t, size_t bidx){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < (iN + N) * batch_size){
+
+        size_t i = threadId / batch_size; // neuron index
+        size_t b = threadId % batch_size; // batch position
+
+        size_t input = i < iN ? 1 : 0; //  
+
+        // compute matrix indexes
+        size_t spk_mtr_idx = (iN + N) * batch_size * lt + (batch_size * i) + b;
+
+        if(input){
+
+            size_t batch_mtr_idx = (iN * batch_size * t) + (batch_size * i) + b;
+            gpu_snn->spk_matrix[spk_mtr_idx] = tmp_batch->spikes[batch_mtr_idx]; 
+
+            //if(tmp_batch->spikes[batch_mtr_idx]){
+
+            //    printf("   > Thread = %llu (i = %llu, b = %llu), loading spike from %llu to %llu\n", threadId, i, b, batch_mtr_idx, spk_mtr_idx);
+            //}
+        }
+        else{
+
+            gpu_snn->spk_matrix[spk_mtr_idx] = 0;
+        }
+    }
+}
+
+
+__global__ void process_input_currect_batch(GPU_SNN_t *gpu_snn, size_t iN, size_t N, size_t batch_size, size_t t, size_t gt, size_t learn){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * batch_size){
+
+        size_t i = threadId / batch_size; // neuron index
+        size_t b = threadId % batch_size; // batch position
+
+        // variables declaration
+        size_t synapse_index, g_synapse_index, in_neuron_index;
+        int delay, spk_time; 
+        float spk;  
+
+        size_t neuron_index = i; // for not copied variables
+        size_t g_neuron_index = i * batch_size; // for copied variables
+
+        // get neuron information
+        size_t iS = gpu_snn->n_neuron_input_synapses[neuron_index]; 
+        size_t base_synapse = gpu_snn->neuron_input_synapses_offset[neuron_index]; // there are several copies of each synapse, so the offset depends
+    
+        
+        float I = 0.0;
+
+        // check wether the neuron is in refractory period: pre_fired flag not activated although it should be
+        if(gpu_snn->r_period_remain[g_neuron_index + b] <= 0 || learn){
+        
+            // loop over input synapses
+            for(size_t j=0; j<iS; j++){
+
+                // get synapse index. In not copied variables use synapse_index, in copied g_synapse_index 
+                synapse_index = base_synapse + j;
+                g_synapse_index = synapse_index * batch_size; // scale base synapse, since now there are B copies of each one
+                
+                // get input neuron index (not copied)
+                in_neuron_index = gpu_snn->pre_neuron_index[synapse_index]; 
+
+                // get synapse delay (not copied)
+                delay = gpu_snn->delay[synapse_index];
+
+                // get spike time
+                spk_time = (int)t - delay;
+            
+                // correct spk_time
+                if(spk_time < 0 && gt >= gpu_snn->LT){ // CHECK
+                    spk_time = (int)(gpu_snn->LT) + spk_time;
+                }
+
+                // process spike 
+                if(spk_time >= 0){
+                    
+                    // index to load the spike from
+                    size_t index = ((iN + N) * batch_size * (size_t)spk_time) + ((in_neuron_index * batch_size));
+
+                    // get spike
+                    spk = (float)(gpu_snn->spk_matrix[index + b]); 
+                    //spk = 0.0;
+                    //printf("   > Thread = %llu (i = %llu, b = %llu), accessing to %llu, where %f\n", threadId, i, b, index, spk);
+
+                    // update I if r period remain <= 0 and spike received
+                    if(gpu_snn->r_period_remain[g_neuron_index + b] <= 0){
+                        
+                        //if(gpu_snn->w[g_synapse_index + b] > 0.0)
+                            //printf("      > W = %f\n", gpu_snn->w[g_synapse_index + b]);
+                        I += gpu_snn->w[g_synapse_index + b] * spk; // spk = 0 / 1
+                    }
+
+                    // store if the presynaptic neuron fired for TR-STDP
+                    if(learn && (int)spk == 1){
+
+                        gpu_snn->pre_fired[g_synapse_index + b] = (char)spk;
+                    }
+                }
+            }
+        }
+
+        gpu_snn->arrI[g_neuron_index + b] = I;
+
+        //if(I > 0.0)
+        //    printf(" > Neuron %llu (batch %llu) I = %f\n", neuron_index, b, I);
+    }
+}
+
+
+__global__ void process_V_batch(GPU_SNN_t *gpu_snn, size_t N, size_t batch_size){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * batch_size){
+
+        size_t i = threadId / batch_size; // neuron index
+        size_t b = threadId % batch_size; // batch position
+
+        size_t neuron_index = i;
+        size_t g_neuron_index = i * batch_size;
+
+        const float alpha = 0.95f;
+        const float beta = 0.05f;
+
+        // loop over batches
+        if (gpu_snn->r_period_remain[g_neuron_index + b] <= 0){
+            
+            gpu_snn->v[g_neuron_index + b] = alpha * gpu_snn->v[g_neuron_index + b] + beta * gpu_snn->v_rest[neuron_index] + gpu_snn->arrI[g_neuron_index + b];
+        }
+    }
+}
+
+
+__global__ void process_firing_batch(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t batch_size, size_t t, size_t learn){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * batch_size){
+
+        size_t i = threadId / batch_size; // neuron index
+        size_t b = threadId % batch_size; // batch position
+
+        size_t neuron_index = i;
+        size_t g_neuron_index = i * batch_size;
+        
+        // compute index to write in the spk matrix
+        // [T * B * (iN + N)]
+        size_t idx = (iN + N) * batch_size * t + batch_size * (iN + neuron_index); // index of the first neuron in the spike matrix in time step t
+        
+        // reduce refractary period
+        gpu_snn->r_period_remain[g_neuron_index + b] --;
+
+        // check whether fired
+        if(gpu_snn->v[g_neuron_index + b] >= gpu_snn->v_thresh[neuron_index]){
+    
+            gpu_snn->spk_matrix[idx + b] = 1;
+
+            // reinit neuron values
+            gpu_snn->r_period_remain[g_neuron_index + b] = gpu_snn->r_period[neuron_index];
+            gpu_snn->v[g_neuron_index + b] = gpu_snn->v_rest[neuron_index]; // reinit v_rest
+
+            gpu_results->n_spks[g_neuron_index + b] += 1;
+
+            //printf(" > Neuron %zu (batch %zu): %d\n", neuron_index, b, gpu_results->n_spks[g_neuron_index + b]);
+
+            // store that the neuron fired for TB-STDP and update the trace
+            if(learn){
+
+                gpu_snn->post_fired[g_neuron_index + b] = 1;
+            }
+        }
+    }
+}
+
+__global__ void total_LIF_batch(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t batch_size, size_t t, size_t gt, size_t learn){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * batch_size){
+
+        size_t i = threadId / batch_size; // neuron index
+        size_t b = threadId % batch_size; // batch position
+
+        size_t neuron_index = i; // for not copied variables
+        size_t g_neuron_index = i * batch_size; // for copied variables
+
+        // variables declaration
+        size_t synapse_index, g_synapse_index, in_neuron_index;
+        int delay, spk_time; 
+        float spk;  
+
+        // get neuron information
+        size_t iS = gpu_snn->n_neuron_input_synapses[neuron_index]; 
+        size_t base_synapse = gpu_snn->neuron_input_synapses_offset[neuron_index]; // there are several copies of each synapse, so the offset depends
+    
+        
+        float I = 0.0;
+
+        // check wether the neuron is in refractory period: pre_fired flag not activated although it should be
+        if(gpu_snn->r_period_remain[g_neuron_index + b] <= 0 || learn){
+        
+            // loop over input synapses
+            for(size_t j=0; j<iS; j++){
+
+                // get synapse index. In not copied variables use synapse_index, in copied g_synapse_index 
+                synapse_index = base_synapse + j;
+                g_synapse_index = synapse_index * batch_size; // scale base synapse, since now there are B copies of each one
+                
+                // get input neuron index (not copied)
+                in_neuron_index = gpu_snn->pre_neuron_index[synapse_index]; 
+
+                // get synapse delay (not copied)
+                delay = gpu_snn->delay[synapse_index];
+
+                // get spike time
+                spk_time = (int)t - delay;
+            
+                // correct spk_time
+                if(spk_time < 0 && gt >= gpu_snn->LT){ // CHECK
+                    spk_time = (int)(gpu_snn->LT) + spk_time;
+                }
+
+                // process spike 
+                if(spk_time >= 0){
+                    
+                    // index to load the spike from
+                    size_t index = ((iN + N) * batch_size * (size_t)spk_time) + ((in_neuron_index * batch_size));
+
+                    // get spike
+                    spk = (float)(gpu_snn->spk_matrix[index + b]); 
+                    //spk = 0.0;
+                    //printf("   > Thread = %llu (i = %llu, b = %llu), accessing to %llu, where %f\n", threadId, i, b, index, spk);
+
+                    // update I if r period remain <= 0 and spike received
+                    if(gpu_snn->r_period_remain[g_neuron_index + b] <= 0){
+                        
+                        //if(gpu_snn->w[g_synapse_index + b] > 0.0)
+                            //printf("      > W = %f\n", gpu_snn->w[g_synapse_index + b]);
+                        I += gpu_snn->w[g_synapse_index + b] * spk; // spk = 0 / 1
+                    }
+
+                    // store if the presynaptic neuron fired for TR-STDP
+                    if(learn && (int)spk == 1){
+
+                        gpu_snn->pre_fired[g_synapse_index + b] = (char)spk;
+                    }
+                }
+            }
+        }
+
+        gpu_snn->arrI[g_neuron_index + b] = I;
+
+
+        const float alpha = 0.95f;
+        const float beta = 0.05f;
+
+        // loop over batches
+        if (gpu_snn->r_period_remain[g_neuron_index + b] <= 0){
+            
+            gpu_snn->v[g_neuron_index + b] = alpha * gpu_snn->v[g_neuron_index + b] + beta * gpu_snn->v_rest[neuron_index] + gpu_snn->arrI[g_neuron_index + b];
+        }
+
+
+        // compute index to write in the spk matrix
+        // [T * B * (iN + N)]
+        size_t idx = (iN + N) * batch_size * t + batch_size * (iN + neuron_index); // index of the first neuron in the spike matrix in time step t
+        
+        // reduce refractary period
+        gpu_snn->r_period_remain[g_neuron_index + b] --;
+
+        // check whether fired
+        if(gpu_snn->v[g_neuron_index + b] >= gpu_snn->v_thresh[neuron_index]){
+    
+            gpu_snn->spk_matrix[idx + b] = 1;
+
+            // reinit neuron values
+            gpu_snn->r_period_remain[g_neuron_index + b] = gpu_snn->r_period[neuron_index];
+            gpu_snn->v[g_neuron_index + b] = gpu_snn->v_rest[neuron_index]; // reinit v_rest
+
+            gpu_results->n_spks[g_neuron_index + b] += 1;
+
+            //printf(" > Neuron %zu (batch %zu): %d\n", neuron_index, b, gpu_results->n_spks[g_neuron_index + b]);
+
+            // store that the neuron fired for TB-STDP and update the trace
+            if(learn){
+
+                gpu_snn->post_fired[g_neuron_index + b] = 1;
+            }
+        }
+    }
+}
+
+
+__global__ void trace_based_STDP_batch(GPU_SNN_t *gpu_snn, size_t N, size_t batch_size){
+
+    
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * batch_size){
+
+        size_t i = threadId / batch_size; // neuron index
+        size_t b = threadId % batch_size; // batch position
+
+        size_t neuron_index = i; // for not copied variables
+        size_t g_neuron_index = i * batch_size; // for copied variables
+
+
+        // loop over neuron input synapses
+        size_t base_synapse = gpu_snn->neuron_input_synapses_offset[i];
+        size_t n_iS = gpu_snn->n_neuron_input_synapses[i];
+        size_t post_idx, pre_idx;
+        size_t synapse_index;
+        size_t g_synapse_index;
+
+        float pA = 0.1f, mA = 0.1f, mu = 1.0f, decay = 0.6f;
+
+        // update post trace (depends only on the neuron)
+        gpu_snn->post_trace[g_neuron_index + b] = gpu_snn->post_fired[g_neuron_index + b] ? 1.0f : gpu_snn->post_trace[g_neuron_index + b] * decay;
+
+        // loop over input synapses, update presynaptic traces (depends on synapses) and update weights
+        for(size_t j = 0; j<n_iS; j++){
+
+            synapse_index = base_synapse + j;
+            g_synapse_index = synapse_index * batch_size;
+
+            // update pre_trace
+            gpu_snn->pre_trace[g_synapse_index + b] = gpu_snn->pre_fired[g_synapse_index + b] ? 1.0f : gpu_snn->pre_trace[g_synapse_index + b] * decay;
+
+
+            // update w: avoid computation if no neuron fired
+            float dPot = 0.0, dDep = 0.0;
+            if(gpu_snn->post_fired[g_neuron_index + b]){
+
+                dPot = pA * (1.0f - gpu_snn->w[g_synapse_index + b]) * gpu_snn->pre_trace[g_synapse_index + b];
+            }
+            if(gpu_snn->pre_fired[g_synapse_index + b]){
+
+                dDep = mA * (gpu_snn->w[g_synapse_index + b]) * gpu_snn->post_trace[g_neuron_index + b];
+                
+                // reinit pre_fired
+                gpu_snn->pre_fired[g_synapse_index + b] = 0;
+            }
+            
+            if(dPot != 0 || dDep != 0){
+
+                float dw = dPot - dDep;
+                    
+                gpu_snn->w[g_synapse_index + b] += dw;
+                gpu_snn->dw[g_synapse_index + b] += dw;
+            }
+        }
+            
+        gpu_snn->post_fired[g_neuron_index + b] = 0;
+    }
+}
+
+
+__global__ void update_weights_batch(GPU_SNN_t *gpu_snn, size_t S, size_t batch_size){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < S){
+
+        size_t synapse_index = threadId; // synapse index
+        size_t g_synapse_index = synapse_index * batch_size; // synapse index
+    
+        float dw = 0.0;
+
+        // sum dw of the batch for each synapse
+        for(size_t b = 0; b<batch_size; b++){
+
+            dw += gpu_snn->dw[g_synapse_index + b];
+        }
+
+        // compute mean dw
+        dw = dw / (float)batch_size;
+
+        // update initial w and w for all copies
+        for(size_t b = 0; b<batch_size; b++){
+
+            gpu_snn->dw[g_synapse_index + b] = 0.0; // reinitialize dw
+            gpu_snn->init_w[synapse_index] += dw; // update initial w for incoming batches
+            gpu_snn->w[g_synapse_index + b] = gpu_snn->init_w[synapse_index]; // update w
+        }    
+    }
+}
+
+
+__global__ void print_n_spikes(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t N, size_t batch_size){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * batch_size){
+
+        
+        size_t i = threadId / batch_size; // neuron index
+        size_t b = threadId % batch_size; // batch position
+
+        printf(" ThreadId %llu (i = %llu, b = %llu): %d\n", threadId, i, b, gpu_results->n_spks[threadId]);
+    }
+}
+
+
+extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, tmp_batch_cpu_t *gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset){
+
+    
+    size_t N, iN, S, n_samples, n_features, n_networks, batch_size, dev_batch_size, T, LT;
+    size_t t, s, snn;
+    double t_in_ts, t_out_ts, t_in = 0.0, t_out = 0.0;
+    cudaError_t err;
+    struct timespec start_in, end_in, start_out, end_out;
+
+
+    // get general variables values
+    N = cpu_snn->n_neurons;
+    iN = cpu_snn->n_input_neurons;
+    S = cpu_snn->n_synapses;
+    T = conf->time_steps;
+    LT = cpu_snn->LT;
+
+    n_samples = cpu_dataset->n_samples;
+    n_features = cpu_dataset->n_features;
+
+    batch_size = cuda_info->batch_size;
+    dev_batch_size = cuda_info->dev_batch_size;
+    n_networks = cuda_info->n_networks;
+    
+    // set dim3 struct to launch kernels
+
+    dim3 grid_neurons(cuda_info->n_blk_neurons_x, cuda_info->n_blk_neurons_y, cuda_info->n_blk_neurons_z);
+    dim3 block_neurons(cuda_info->n_thr_per_blk_neurons_x, cuda_info->n_thr_per_blk_neurons_y, cuda_info->n_thr_per_blk_neurons_z);
+
+    dim3 grid_synapses(cuda_info->n_blk_synapses_x, cuda_info->n_blk_synapses_y, cuda_info->n_blk_synapses_z);
+    dim3 block_synapses(cuda_info->n_threads_per_blk_synapses_x, cuda_info->n_threads_per_blk_synapses_y, cuda_info->n_threads_per_blk_synapses_z);
+
+    dim3 grid_in_neurons(cuda_info->n_blk_in_neurons_x, cuda_info->n_blk_in_neurons_y, cuda_info->n_blk_in_neurons_z);
+    dim3 block_in_neurons(cuda_info->n_thr_per_blk_in_neurons_x, cuda_info->n_thr_per_blk_in_neurons_y, cuda_info->n_thr_per_blk_in_neurons_z);
+
+    dim3 grid_all_neurons(cuda_info->n_blk_all_neurons_x, cuda_info->n_blk_all_neurons_y, cuda_info->n_blk_all_neurons_z);
+    dim3 block_all_neurons(cuda_info->n_thr_per_blk_all_neurons_x, cuda_info->n_thr_per_blk_all_neurons_y, cuda_info->n_thr_per_blk_all_neurons_z);
+
+    dim3 grid_uw(cuda_info->n_blk_uw_x, cuda_info->n_blk_uw_y, cuda_info->n_blk_uw_z);
+    dim3 block_uw(cuda_info->n_thr_per_blk_uw_x, cuda_info->n_thr_per_blk_uw_y, cuda_info->n_thr_per_blk_uw_z);
+
+
+    // loop over network copies: if we can not store batch_size neuron copies, each neuron is used several times to compute the entire batch
+    //for(snn = 0; snn < batch_size; snn += n_networks){
+
+        // (re)initialize neurons
+        initialize_neurons_batch<<<grid_neurons, block_neurons>>>(gpu_snn, batch_size);
+        err = cudaGetLastError();
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+        // (re)initialize synapses
+        initialize_synapses_batch<<<grid_synapses, block_synapses>>>(gpu_snn, batch_size);
+        err = cudaGetLastError();
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+        // load batch in tmp_batch
+        initialize_batch_matrix_GPU<<<grid_in_neurons, block_in_neurons>>>(gpu_tmp_batch, gpu_dataset, bidx, batch_size, iN, batch_size, conf->max_input_spikes);
+        err = cudaGetLastError();
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+        // loop over time steps
+        for(t = 0; t<T; t++){
+
+            size_t lt = t % cpu_snn->LT;
+
+            // load sample in network
+            load_batch_time_step_in_SNN_GPU<<<grid_all_neurons, block_all_neurons>>>(gpu_snn, gpu_tmp_batch, iN, N, batch_size, lt, t, bidx);
+            err = cudaGetLastError();
+            /*if (err != cudaSuccess) { 
+                printf("Kernel launch failed: %s ", cudaGetErrorString(err)); 
+            } */
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+            // compute input step
+            
+            total_LIF_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, batch_size, lt, t, (size_t)conf->learn);
+
+            /*process_input_currect_batch<<<grid_neurons, block_neurons>>>(gpu_snn, iN, N, batch_size, lt, t, (size_t)conf->learn);
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+            // compute neuron dynamics
+            process_V_batch<<<grid_neurons, block_neurons>>>(gpu_snn, N, batch_size);
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+            // compute output step
+            process_firing_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, batch_size, lt, (size_t)conf->learn);
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors*/
+
+            // compute learning step if training
+            if(conf->learn){
+
+                trace_based_STDP_batch<<<grid_neurons, block_neurons>>>(gpu_snn, N, batch_size);
+                cudaCheckError(cudaPeekAtLastError());  // check launch errors
+                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+            }
+        }
+
+        // updaate weights if training
+        if(conf->learn){
+                
+            update_weights_batch<<<grid_uw, block_uw>>>(gpu_snn, S, batch_size);
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        }
+    //}
+
+        //print_n_spikes<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, N, batch_size);
+        //cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+}
+
+extern "C" void simulate_batches_LIF_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, tmp_batch_cpu_t **gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset){
+    
+    // TODO: refactorize number of batches computation
+    // compute number of batches
+    size_t n_batches = cpu_dataset->n_samples / conf->batch_size;
+    size_t r_samples = cpu_dataset->n_samples % conf->batch_size;
+    // there are remaining sampels
+    if(r_samples > 0){
+
+        n_batches += 1; // last batch contains less samples
+    }
+
+
+    // copy constant(s) to all gpu devices
+    for(size_t i = 0; i<cuda_info->nDevices; i++){
+        
+        cudaSetDevice(i);
+        cudaError_t err = cudaMemcpyToSymbol(n_samples, &cpu_dataset->n_samples, sizeof(size_t));
+    }
+
+    // if it is executed in only one device
+    if(cuda_info->nDevices == 1){
+        
+        cudaSetDevice(0);
+
+        // initialize struct to store results of each batch
+        GPU_results_t *cpu_results = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, conf->batch_size, 1);
+
+        // loop over batches
+        for(size_t b = 0; b<n_batches; b++){
+        
+            //if((b+1) % 100 == 0){
+            printf(" In Batch %zu\n", b+1);
+            fflush(stdout);
+            //}
+
+            // reinitialize results struct
+            //reinitialize_batch_results_cpu(batch_results, conf, snn->n_neurons, conf->batch_size, 1);
+
+            // simulate batch
+            //simulate_batch_CPU(snn, dataset, conf, batch_results, b);
+            simulate_LIF_batch_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], gpu_tmp_batch[0], conf, cuda_info, b, cpu_snn, cpu_dataset);
+
+
+            // copy results to CPU for printing
+            cpy_batch_results_GPU2CPU(cpu_results, gpu_results, cuda_info, cpu_snn->n_neurons, 1);            
+            // print results
+            if(b==0){
+                for(size_t batch = 0; batch<conf->batch_size; batch++){
+
+                    for(size_t i = 0; i<cpu_snn->n_neurons; i++){
+
+                        printf("%d ", cpu_results->n_spks[i * conf->batch_size + batch]);
+                    }
+                    printf("\n");
+                }
+            }
+
+            // accumulate batch execution times in general results struct
+            //acc_batch_execution_times(results, batch_results);
+        }
+
+        //simulate_LIF_in_single_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], conf, cuda_info, cpu_snn, cpu_dataset);
+    }
+
+    // TODO: multi GPU must be corrected
+    // if it is multi GPU
+    else{
+
+        int e, b, dev, batch_number = 0;
+        int n_batches = 0;
+
+        // allocate memory for managing dw updates
+        GPU_SNN_t **tmp_snn = (GPU_SNN_t**)malloc(cuda_info->nDevices * sizeof(GPU_SNN_t*));
+        float **dw = (float**)malloc(cuda_info->nDevices * sizeof(float*));
+        for(int i = 0; i<cuda_info->nDevices; i++){
+            tmp_snn[i] = (GPU_SNN_t*)malloc(sizeof(GPU_SNN_t));
+            dw[i] = (float*)malloc(cpu_snn->n_synapses * sizeof(float));
+        }
+
+
+        // loop over epochs
+        for(e=0; e<conf->epochs; e++){
+
+            // compute the number of batches
+            n_batches = cuda_info->n_samples / cuda_info->batch_size;
+            if(cuda_info->n_samples % cuda_info->batch_size != 0)
+                n_batches += 1;
+
+
+            // loop over batches
+            for(b=0; b<n_batches; b++){
+     
+                // start the simulation using several devices. Each device is managed by a openMP thread
+                #pragma omp parallel num_threads(cuda_info->nDevices)
+                {
+                    //for(dev = 0; dev<cuda_info->nDevices; dev++){
+                    
+                    int dev = omp_get_thread_num();
+
+                    //printf(" Dev = %d\n", dev);
+                    fflush(stdout);
+
+                    // set the device dev as the current one for the thread
+                    cudaSetDevice(dev);
+
+                    // simulate a part of the batch in the device
+                    simulate_LIF_in_multi_GPU(gpu_snn[dev], gpu_dataset[dev], gpu_results[dev], conf, cuda_info, cpu_snn, cpu_dataset, dev, b);
+
+                    // wait until all GPU tasks finished
+                    cudaDeviceSynchronize();
+
+                    // if training
+                    if(conf->learn == 1){
+                        // sum dw values of different devices
+                        // cpy weights to CPU
+                        cudaMemcpy(tmp_snn[dev], gpu_snn[dev], sizeof(GPU_SNN_t), cudaMemcpyDeviceToHost); // cpy SNN structure GPU2CPU
+                        cudaMemcpy(dw[dev], tmp_snn[dev]->dw, cpu_snn->n_synapses * sizeof(float), cudaMemcpyDeviceToHost); // cpy dw GPU2CPU
+
+                        // wait until all threads obtained their weights
+                        #pragma omp barrier
+                        
+                        // sum all dws
+                        if(dev == 0){
+                            for(int i = 0; i<cpu_snn->n_synapses; i++){
+
+                                for(int j = 0; j<cuda_info->nDevices; j++){
+                                        
+                                    //printf(" > dev 0 (fixed) final dW[%d] = %f\n", i, dw[dev][i]);
+                                    if(dev != j){
+            
+                                        //printf(" > dev %d final dW[%d] = %f\n", j, i, dw[j][i]);    
+                                        dw[dev][i] += dw[j][i];
+                                    }
+                                }
+                                
+                                // divide by batch_size
+                                dw[dev][i] = dw[dev][i] / (float)(conf->batch_size);
+                                //printf(" dev %d: dW[%d] = %f\n", dev, i, dw[dev][i]);
+                            }
+                        }
+
+                        #pragma omp barrier
+                            
+                        // cpy again to gpu
+                        cudaMemcpy(tmp_snn[dev]->dw, dw[0], cpu_snn->n_synapses * sizeof(float), cudaMemcpyHostToDevice); // cpy dw CPU2GPU
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+//////////////////////
+//////// OLD
 
 __global__ void inititialize_spk_matrix(GPU_SNN_t *snn, size_t batch_size, size_t iN){
 

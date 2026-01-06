@@ -315,7 +315,7 @@ typedef struct {
 typedef struct {
 
     // char is used to reduce memory usage
-
+    size_t neuron_type;
     size_t n_neurons;
     size_t n_input_neurons;
     size_t n_output_neurons;
@@ -325,6 +325,7 @@ typedef struct {
     size_t max_spikes;
     size_t n_networks;
     size_t max_delay;
+    size_t LT; // matrix L dimension
 
     // neccessary parameters for all neurons
     float *v; // [n_neurons]: membrane potential of the neuron
@@ -356,7 +357,6 @@ typedef struct {
     float *pre_trace; // [n_synapses]: presynaptic trace
 
     char *spk_matrix; // [(n_input_synapses + n_neurons) * t_len * batch_size]
-    size_t LT; // matrix L dimension
 
     // FLOAT(3N + 2M) + INT(7N + 5M) + NT = 32(10N + 7M) + 32NT bit
 
@@ -395,10 +395,21 @@ typedef struct {
 /// @brief Structure to store results during simulation
 typedef struct {
 
-  int *n_spks; // [n_samples * n_neurons]
-  char *gnt_spks; // [n_samples * n_neurons * timesteps] // TODO: remove in the future
+    // generated spikes output
+    int *n_spks; // [n_samples * n_neurons]
+    char *gnt_spks; // [n_samples * n_neurons * timesteps] // TODO: remove in the future
+
+    // time variables
+    double t; // total execution time
+    double t_in; // time processing input spikes
+    double t_v; // time processing neurons dynamics
+    double t_out; // time processing output spikes
+    double t_learn; // time learning
+    double t_reinit; // network reinitialization
+    double t_load; // loading sample or batch in network
 
 } GPU_results_t;
+
 
 
 /// @brief Struct that stores data to guide the cuda simulation
@@ -439,13 +450,19 @@ typedef struct {
     unsigned int n_thr_per_blk_neurons_x, n_thr_per_blk_neurons_y, n_thr_per_blk_neurons_z;
     unsigned int n_thr_per_blk_synapses_x, n_thr_per_blk_synapses_y, n_thr_per_blk_synapses_z;
     unsigned int n_thr_per_blk_in_neurons_x, n_thr_per_blk_in_neurons_y, n_thr_per_blk_in_neurons_z;
+    unsigned int n_thr_per_blk_all_neurons_x, n_thr_per_blk_all_neurons_y, n_thr_per_blk_all_neurons_z;
+    unsigned int n_thr_per_blk_uw_x, n_thr_per_blk_uw_y, n_thr_per_blk_uw_z;
 
     unsigned int n_blk_neurons_x, n_blk_neurons_y, n_blk_neurons_z;
     unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z;
     unsigned int n_blk_in_neurons_x, n_blk_in_neurons_y, n_blk_in_neurons_z;
+    unsigned int n_blk_all_neurons_x, n_blk_all_neurons_y, n_blk_all_neurons_z;
+    unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
+
+
+
+
     
-
-
     unsigned int n_threads_per_blk_reinspk_m_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
     unsigned int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
     unsigned int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
@@ -456,7 +473,7 @@ typedef struct {
     unsigned int n_blk_ls_x, n_blk_ls_y, n_blk_ls_z;
     unsigned int n_blk_nrs_x, n_blk_nrs_y, n_blk_nrs_z;
     //unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z; 
-    unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
+    //unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
 
 } cuda_info_t;
 
@@ -465,6 +482,11 @@ typedef struct {
 /* General function to network initialization */
 
 ///
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_construction_lists_t *data);
 void print_network(GPU_SNN_t *snn);
 void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
@@ -476,7 +498,18 @@ double get_snn_size(GPU_SNN_t *snn);
 double get_snn_cpy_size(GPU_SNN_t *snn);
 double get_dataset_size(GPU_dataset_t *dataset);
 double get_results_size(size_t N, size_t nS, size_t T);
+double get_tmp_batch_size(size_t iN, size_t nS, size_t T);
+
 void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf);
+GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
+void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
+void deallocate_results_struct(GPU_results_t *results, simulation_configuration_t *conf);
+void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_results);
+
+#ifdef __cplusplus
+}
+#endif
+
 
 
 

@@ -1456,6 +1456,7 @@ void large_simulation(GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, simulation
 
 
 /* NEW */
+
 void print_spk_matrix_2D(GPU_SNN_t *snn){
   
     size_t iN, N, LT;
@@ -1573,11 +1574,123 @@ void print_dw_3D(GPU_SNN_t *snn, size_t B){
 }
 
 
-static inline __mmask16 get_batch_mask(int batch_size)
-{
-    // batch_size is 8 or 16
-    return (batch_size == 8) ? 0x00FF : 0xFFFF;
+void update_weights_cpu(GPU_SNN_t *snn, simulation_configuration_t *conf){
+
+    size_t S, P, B;
+    size_t i, b;
+
+    S = snn->n_synapses;
+    B = conf->batch_size;
+    P = conf->n_process;
+
+    #if defined AVX512
+    {
+        if(B == 8){
+            
+            __mmask16 m = 0xFF; // only 256 bits used
+
+            #pragma omp parallel for num_threads(P) private(i)
+            for(i = 0; i<S; i++){
+
+                float dw = 0.0;
+                
+                // sum Dw of each batch element
+                __m512 vDw = _mm512_maskz_loadu_ps(m, &(snn->dw[i * B + 0]));
+                for(b = 8; b+7 < B; b+=8){
+
+                    vDw = _mm512_mask_add_ps(vDw, m, vDw, _mm512_maskz_loadu_ps(m, &(snn->dw[i * B + b])));
+                }
+                
+                // reduce to a value
+                dw = _mm512_mask_reduce_add_ps(m, vDw);
+
+                // compute mean dw
+                dw = dw / (float)B;
+
+                // update initial w and w for all copies
+                vDw = _mm512_set1_ps(dw);
+                for(b = 0; b+7<B; b+=8){
+
+                    // reinitialize dw
+                    _mm512_mask_storeu_ps(&(snn->dw[i * B + b]), m, _mm512_set1_ps(0.0));
+
+                    // init_w = init_w + dw
+                    __m512 vInitW = _mm512_maskz_loadu_ps(m, &(snn->init_w[i * B + b]));
+                    vInitW = _mm512_mask_add_ps(vInitW, m, vInitW, vDw);
+                    _mm512_mask_storeu_ps(&(snn->init_w[i * B + b]), m, vInitW);
+
+                    // w = init_w
+                    _mm512_mask_storeu_ps(&(snn->w[i * B + b]), m, vInitW);
+                }    
+            }
+        }
+        else
+        {
+            #pragma omp parallel for num_threads(P) private(i)
+            for(i = 0; i<S; i++){
+
+                float dw = 0.0;
+                
+                // sum Dw of each batch element
+                __m512 vDw = _mm512_loadu_ps(&(snn->dw[i * B + 0]));
+                for(b = 16; b+15 < B; b+=16){
+
+                    vDw = _mm512_add_ps(vDw, _mm512_loadu_ps(&(snn->dw[i * B + b])));
+                }
+                
+                // reduce to a value
+                dw = _mm512_reduce_add_ps(vDw);
+
+                // compute mean dw
+                dw = dw / (float)B;
+
+                // update initial w and w for all copies
+                vDw = _mm512_set1_ps(dw);
+                for(b = 0; b+15<B; b+=16){
+
+                    // dw = 0.0
+                    _mm512_storeu_ps(&(snn->dw[i * B + b]), _mm512_set1_ps(0.0)); // dw = 0.0, reinitialize
+
+                    // init_w = init_w + dw
+                    __m512 vInitW = _mm512_loadu_ps(&(snn->init_w[i * B + b]));
+                    vInitW = _mm512_add_ps(vInitW, vDw);
+                    _mm512_storeu_ps(&(snn->init_w[i * B + b]), vInitW);
+
+                    // w = init_w
+                    _mm512_storeu_ps(&(snn->w[i * B + b]), vInitW);
+                }    
+            }        
+        }
+    }
+    #else
+    {
+        
+        #pragma omp parallel for num_threads(P) private(i)
+        for(i = 0; i<S; i++){
+
+            float dw = 0.0;
+
+            // sum dw of the batch for each synapse
+            for(size_t b = 0; b<B; b++){
+
+                dw += snn->dw[i * B + b];
+            }
+
+            // compute mean dw
+            dw = dw / (float)B;
+
+            // update initial w and w for all copies
+            for(size_t b = 0; b<B; b++){
+
+                snn->dw[i * B + b] = 0.0; // reinitialize dw
+                snn->init_w[i * B + b] += dw; // update initial w for incoming batches
+                snn->w[i * B + b] = snn->init_w[i * B + b]; // update w
+            }    
+        }
+    }
+    #endif
 }
+
 
 /// Function to loop over all input synapses of a neuron and calculate the input current
 float compute_neuron_input_current(GPU_SNN_t *snn, size_t t, size_t i){
@@ -1693,6 +1806,7 @@ void compute_input_current(GPU_SNN_t *snn, simulation_configuration_t *conf, siz
     }
 }
 
+
 void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt){
 
     size_t i, j, b;
@@ -1759,7 +1873,7 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                     mRefPer |= mRefPer_arr[blk];
                 }
 
-                if(mRefPer){ // if at least a bit is 1
+                if(mRefPer || conf->learn){ // if at least a bit is 1
 
                     // loop over input synapses of the neuron
                     for(j = 0; j<iS; j++){
@@ -1792,19 +1906,24 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                             for(size_t blk = 0; blk < n_blks; blk++){
 
                                 // check if this part of the batch is in refractory period
-                                if(mRefPer_arr[blk]){
+                                if(mRefPer_arr[blk] || conf->learn){
                                     
                                     b_index = index + blk * 8;
                                     
                                     // load spikes
-                                    __m128i vCharSpikes = _mm_loadl_epi64((const __m128i*)&snn->spk_matrix[b_index]);                                
+                                    __m128i vCharSpikes = _mm_loadl_epi64((const __m128i*)&snn->spk_matrix[b_index]); // load 8 bytes                                
                                     __mmask16 spk_mask16 = _mm_cmpgt_epi8_mask(vCharSpikes, _mm_setzero_si128());
-                                    __mmask8 spk_mask = (__mmask8)(spk_mask16 & 0xFF); // keep only first lanes
+                                    __mmask8 spk_mask = (__mmask8)(spk_mask16 & 0xFF); // store the neurons that received an spike
                                     
-                                    // load weights
-                                    __m256 vW = _mm256_loadu_ps(&(snn->w[g_synapse_index + blk * 8]));
+                                    // update I for neurons that are not in refractory period
+                                    if(mRefPer_arr[blk] && spk_mask){
+                                        
+                                        // load weights
+                                        __m256 vW = _mm256_loadu_ps(&(snn->w[g_synapse_index + blk * 8]));
 
-                                    vI_arr[blk] = _mm256_mask_add_ps(vI_arr[blk], spk_mask, vI_arr[blk], vW);
+                                        // update I for those neurons where r <= 0 and received a spike
+                                        vI_arr[blk] = _mm256_mask_add_ps(vI_arr[blk], spk_mask & mRefPer_arr[blk], vI_arr[blk], vW);
+                                    }
 
                                     // if TR-STDP is used, store whether the neuron fired
                                     if(conf->learn && spk_mask){
@@ -1822,29 +1941,34 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                     _mm256_storeu_ps(&(snn->arrI[g_neuron_index + 8 * blk]), vI_arr[blk]);
                 }                    
             }
+
+            // [B % 16 == 0]
             else{
 
-                size_t n_blks = B / 16;
+                size_t n_blks = B / 16, blk;
 
                 // initialize vector of I (for all batch elements) and refractary periods
                 __m512 vI_arr[n_blks];
                 __m512i vRefPer_arr[n_blks];
                 __mmask16 mRefPer_arr[n_blks];
                 __mmask16 mRefPer = 0;
+                __mmask64 mLoadSpikes = 0xFFFF; // load only 16 bytes (16 spikes data) 
 
-                for(size_t blk = 0; blk<n_blks; blk++){
+                for(blk = 0; blk<n_blks; blk++){
 
                     vI_arr[blk] = _mm512_set1_ps(0.0); // I = 0.0;
 
                     // refractary periods can be used to avoid some computations
                     vRefPer_arr[blk] = _mm512_loadu_si512(&(snn->r_period_remain[g_neuron_index + blk * 16])); 
+
+                    // create mask (epi32 -- int -- 32 bits)
                     mRefPer_arr[blk] = _mm512_cmp_epi32_mask(vRefPer_arr[blk], _mm512_setzero_si512(), _MM_CMPINT_LE); 
 
                     mRefPer |= mRefPer_arr[blk];
                 }
 
                 // loop over input synapses only if there is a neuron in the block of 16 which is not in refractory period
-                if(mRefPer){
+                if(mRefPer || conf->learn){
 
                     // loop over input synapses of the neuron
                     for(j = 0; j<iS; j++){
@@ -1875,23 +1999,32 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                             size_t b_index; // neuron index
 
                             // loop over blocks: set of 16 neurons (batched)
-                            for(size_t blk = 0; blk < n_blks; blk++){
+                            for(blk = 0; blk < n_blks; blk++){
 
                                 // if all neurons in this mini-batch are in refractary period, avoid computation
-                                if(mRefPer_arr[blk]){
+                                if(mRefPer_arr[blk] || conf->learn){
                                     
                                     // compute first neuron index
                                     b_index = index + blk * 16;
                                     
                                     // load spikes and get mask
-                                    __m128i vCharSpikes = _mm_loadu_si128((const __m128i*)&snn->spk_matrix[b_index]);                                
-                                    __mmask16 spk_mask = _mm_cmpgt_epi8_mask(vCharSpikes, _mm_setzero_si128()) & mRefPer_arr[blk];
+                                    // SSE - AVX512
+                                    //__m128i vCharSpikes = _mm_loadu_si128((const __m128i*)&snn->spk_matrix[b_index]);                                
+                                    //__mmask16 spk_mask = _mm_cmpgt_epi8_mask(vCharSpikes, _mm_setzero_si128()); // mask the received spikes
 
-                                    // load weights
-                                    __m512 vW = _mm512_loadu_ps(&(snn->w[g_synapse_index + blk * 16]));
+                                    // AVX512
+                                    __m128i vCharSpikes = _mm_loadu_epi8((const __m128i*)&snn->spk_matrix[b_index]);                                
+                                    __mmask16 spk_mask = _mm_cmpgt_epi8_mask(vCharSpikes, _mm_setzero_si128()); // mask the received spikes
 
-                                    // compute I
-                                    vI_arr[blk] = _mm512_mask_add_ps(vI_arr[blk], spk_mask, vI_arr[blk], vW);
+                                    // update I only if there are neurons out of refractory period
+                                    if(mRefPer_arr[blk] & spk_mask){
+
+                                        // load weights   
+                                        __m512 vW = _mm512_loadu_ps(&(snn->w[g_synapse_index + blk * 16]));
+
+                                        // compute I: store in spk_mask & mRefPer: received an spike and not in refractory period
+                                        vI_arr[blk] = _mm512_mask_add_ps(vI_arr[blk], spk_mask & mRefPer_arr[blk] , vI_arr[blk], vW);
+                                    }
 
                                     // if TR-STDP is used, store whether the neuron fired
                                     if(conf->learn && spk_mask){
@@ -1899,14 +2032,14 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                                         // 1 if a spike is received and neuron is not in refractary period
                                         _mm512_mask_storeu_epi8(&(snn->pre_fired[g_synapse_index + blk * 16]), spk_mask ,_mm512_set1_epi8(1));
                                     }
-                                }
+                                } 
                             }
                         }
                     }
-                }    
+                }  
 
                 // store I for all neurons
-                for(size_t blk = 0; blk < n_blks; blk++){
+                for(blk = 0; blk < n_blks; blk++){
                     
                     _mm512_storeu_ps(&(snn->arrI[g_neuron_index + 16 * blk]), vI_arr[blk]);
                 }                    
@@ -1919,8 +2052,8 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
 
                 float I = 0.0;
 
-                // check wether the neuron is in refractary period
-                if(snn->r_period_remain[g_neuron_index + b] <= 0){
+                // check wether the neuron is in refractary period: pre_fired flag not activated although it should be
+                if(snn->r_period_remain[g_neuron_index + b] <= 0 || conf->learn){
                 
                     // loop over input synapses
                     for(j=0; j<iS; j++){
@@ -1952,11 +2085,14 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                             // get spike
                             spk = (float)(snn->spk_matrix[index + b]); 
 
-                            // update I
-                            I += snn->w[g_synapse_index + b] * spk; // spk = 0 / 1
+                            // update I if r period remain <= 0 and spike received
+                            if(snn->r_period_remain[g_neuron_index + b] <= 0 && (int)spk == 1){
+                                
+                                I += snn->w[g_synapse_index + b] * spk; // spk = 0 / 1
+                            }
 
                             // store if the presynaptic neuron fired for TR-STDP
-                            if(conf->learn){
+                            if(conf->learn && (int)spk == 1){
 
                                 snn->pre_fired[g_synapse_index + b] = (char)spk;
                             }
@@ -2520,95 +2656,6 @@ void process_trace_based_STDP_batch(GPU_SNN_t *snn, simulation_configuration_t *
         if(B == 8){
 
             // TODO
-            
-            // define constants
-            const __m512 vOne   = _mm512_set1_ps(1.0f);
-            const __m512 vDecay = _mm512_set1_ps(decay);
-            const __m512 vpA = _mm512_set1_ps(pA);
-            const __m512 vmA = _mm512_set1_ps(mA);
-            const __m128i vZero = _mm_set1_epi8(0); // 16 bytes of zeros
-
-            #pragma omp parallel for num_threads(P) private(i, b)
-            for(i = 0; i<N; i++){
-
-                // loop over neuron input synapses
-                size_t base_synapse = snn->neuron_input_synapses_offset[i];
-                size_t n_iS = snn->n_neuron_input_synapses[i];
-
-                // global neuron index
-                size_t g_post_neuron = i * B;
-
-                // loop over batch to update post synaptic trace (N * B)
-                for(b = 0; b+15<B; b+=16){
-
-                    // compute neuron index
-                    size_t post_idx = g_post_neuron + b;
-                    
-                    // load if fired and trace
-                    __m128i vPostFired = _mm_loadu_si128((__m128i*)(&(snn->post_fired[post_idx]))); // char
-                    __mmask16 mPostFired = _mm_cmpgt_epi8_mask(vPostFired, _mm_setzero_si128()); // mask
-                    __m512 vPostTrace = _mm512_loadu_ps(&(snn->post_trace[post_idx])); // load trace
-                    
-                    // update trace and store trace
-                    __m512 vPostDecay = _mm512_mul_ps(vPostTrace, vDecay);
-                    vPostTrace = _mm512_mask_blend_ps(mPostFired, vPostDecay, vOne); // select conditionally
-                    _mm512_storeu_ps(&(snn->post_trace[post_idx]), vPostTrace); // store trace
-                }
-
-                // loop over input synapses
-                for(size_t j = 0; j<n_iS; j++){
-
-                    // get synapse index
-                    size_t synapse_index = base_synapse + j;
-                    size_t g_synapse_index = synapse_index * B;
-
-                    // loop over batch
-                    for(b = 0; b+15<B; b+=16){
-
-                        // compute post and pre indexes
-                        size_t post_idx = g_post_neuron + b;
-                        size_t pre_idx  = g_synapse_index + b;
-
-                        // load wether post fired and trace
-                        __m128i vPostFired = _mm_loadu_si128((__m128i*)(&(snn->post_fired[post_idx]))); // char
-                        __mmask16 mPostFired = _mm_cmpgt_epi8_mask(vPostFired, _mm_setzero_si128()); // mask
-                        __m512 vPostTrace = _mm512_loadu_ps(&(snn->post_trace[post_idx])); // load trace
-
-                        // load wether pre fired and trace
-                        __m128i vPreFired = _mm_loadu_si128((__m128i*)(&(snn->pre_fired[pre_idx]))); // char
-                        __mmask16 mPreFired = _mm_cmpgt_epi8_mask(vPreFired, _mm_setzero_si128()); // mask
-                        __m512 vPreTrace = _mm512_loadu_ps(&(snn->pre_trace[pre_idx])); // load trace
-                        
-                        // store traces and update w and dw
-                        _mm512_storeu_ps(&(snn->pre_trace[pre_idx]), vPreTrace); // store trace
-
-
-                        // update pre trace: trace * decay
-                        __m512 vPreDecay = _mm512_mul_ps(vPreTrace, vDecay);
-                        vPreTrace = _mm512_mask_blend_ps(mPreFired, vPreDecay, vOne);
-
-                        // update dw
-                        __m512 vW = _mm512_loadu_ps(&(snn->w[pre_idx])); // load weight
-                        __m512 vPot = _mm512_maskz_mul_ps(mPostFired, vpA, _mm512_mul_ps(_mm512_sub_ps(vOne, vW), vPreTrace)); // LTP
-                        __m512 vDep = _mm512_maskz_mul_ps(mPreFired, vmA, _mm512_mul_ps(vW, vPostTrace)); // LTD
-                        __m512 vdW = _mm512_sub_ps(vPot, vDep); // dw
-
-
-                        // update and store w and dw
-                        _mm512_storeu_ps(&(snn->w[pre_idx]), _mm512_add_ps(vW, vdW));
-                        _mm512_storeu_ps(&(snn->dw[pre_idx]), _mm512_add_ps(_mm512_loadu_ps(&(snn->dw[pre_idx])), vdW));
-                    
-                        // reinit pre fired to 0
-                        _mm_storeu_si128((__m128i*)&(snn->pre_fired[pre_idx]), vZero); // 8 bits                    
-                    }
-                }
-
-                // reiniti neuron fired
-                for(b = 0; b+15<B; b+=16){
-
-                    _mm_storeu_si128((__m128i*)&(snn->post_fired[g_post_neuron + b]), vZero); // 8 bits  
-                }
-            }
         }
         else{
 
@@ -2619,7 +2666,11 @@ void process_trace_based_STDP_batch(GPU_SNN_t *snn, simulation_configuration_t *
             const __m512 vmA = _mm512_set1_ps(mA);
             const __m128i vZero = _mm_set1_epi8(0); // 16 bytes of zeros
 
-            #pragma omp parallel for num_threads(P) private(i, b)
+            size_t n_blks = B / 16, blk;
+
+
+
+            #pragma omp parallel for num_threads(P) private(i, b, blk)
             for(i = 0; i<N; i++){
 
                 // loop over neuron input synapses
@@ -2629,21 +2680,24 @@ void process_trace_based_STDP_batch(GPU_SNN_t *snn, simulation_configuration_t *
                 // global neuron index
                 size_t g_post_neuron = i * B;
 
+                __mmask16 mPostFired[n_blks];
+                __m512 vPostTrace[n_blks];
+
                 // loop over batch to update post synaptic trace (N * B)
-                for(b = 0; b+15<B; b+=16){
+                for(blk = 0; blk<n_blks; blk++){
 
                     // compute neuron index
-                    size_t post_idx = g_post_neuron + b;
+                    size_t post_idx = g_post_neuron + blk * 16;
                     
                     // load if fired and trace
                     __m128i vPostFired = _mm_loadu_si128((__m128i*)(&(snn->post_fired[post_idx]))); // char
-                    __mmask16 mPostFired = _mm_cmpgt_epi8_mask(vPostFired, _mm_setzero_si128()); // mask
-                    __m512 vPostTrace = _mm512_loadu_ps(&(snn->post_trace[post_idx])); // load trace
+                    mPostFired[blk] = _mm_cmpgt_epi8_mask(vPostFired, _mm_setzero_si128()); // mask
+                    vPostTrace[blk] = _mm512_loadu_ps(&(snn->post_trace[post_idx])); // load trace
                     
                     // update trace and store trace
-                    __m512 vPostDecay = _mm512_mul_ps(vPostTrace, vDecay);
-                    vPostTrace = _mm512_mask_blend_ps(mPostFired, vPostDecay, vOne); // select conditionally
-                    _mm512_storeu_ps(&(snn->post_trace[post_idx]), vPostTrace); // store trace
+                    __m512 vPostDecay = _mm512_mul_ps(vPostTrace[blk], vDecay);
+                    vPostTrace[blk] = _mm512_mask_blend_ps(mPostFired[blk], vPostDecay, vOne); // select conditionally
+                    _mm512_storeu_ps(&(snn->post_trace[post_idx]), vPostTrace[blk]); // store trace
                 }
 
                 // loop over input synapses
@@ -2654,50 +2708,48 @@ void process_trace_based_STDP_batch(GPU_SNN_t *snn, simulation_configuration_t *
                     size_t g_synapse_index = synapse_index * B;
 
                     // loop over batch
-                    for(b = 0; b+15<B; b+=16){
+                    for(blk = 0; blk<n_blks; blk++){
 
                         // compute post and pre indexes
-                        size_t post_idx = g_post_neuron + b;
-                        size_t pre_idx  = g_synapse_index + b;
-
-                        // load wether post fired and trace
-                        __m128i vPostFired = _mm_loadu_si128((__m128i*)(&(snn->post_fired[post_idx]))); // char
-                        __mmask16 mPostFired = _mm_cmpgt_epi8_mask(vPostFired, _mm_setzero_si128()); // mask
-                        __m512 vPostTrace = _mm512_loadu_ps(&(snn->post_trace[post_idx])); // load trace
+                        size_t post_idx = g_post_neuron + blk * 16;
+                        size_t pre_idx  = g_synapse_index + blk * 16;
 
                         // load wether pre fired and trace
                         __m128i vPreFired = _mm_loadu_si128((__m128i*)(&(snn->pre_fired[pre_idx]))); // char
                         __mmask16 mPreFired = _mm_cmpgt_epi8_mask(vPreFired, _mm_setzero_si128()); // mask
+
+                        // update pre trace
                         __m512 vPreTrace = _mm512_loadu_ps(&(snn->pre_trace[pre_idx])); // load trace
-                        
-
-
-
-                        // update pre trace: trace * decay
                         __m512 vPreDecay = _mm512_mul_ps(vPreTrace, vDecay);
                         vPreTrace = _mm512_mask_blend_ps(mPreFired, vPreDecay, vOne);
                         _mm512_storeu_ps(&(snn->pre_trace[pre_idx]), vPreTrace); // store trace
 
-                        // update dw
-                        __m512 vW = _mm512_loadu_ps(&(snn->w[pre_idx])); // load weight
-                        __m512 vPot = _mm512_maskz_mul_ps(mPostFired, vpA, _mm512_mul_ps(_mm512_sub_ps(vOne, vW), vPreTrace)); // LTP
-                        __m512 vDep = _mm512_maskz_mul_ps(mPreFired, vmA, _mm512_mul_ps(vW, vPostTrace)); // LTD
-                        __m512 vdW = _mm512_sub_ps(vPot, vDep); // dw
+                        // avoid updating v and dw if no one neuron fired
+                        if(mPreFired || mPostFired[blk]){ // time reduced to 1/2 (more or less)
+                           
+                            // update dw
+                            __m512 vW = _mm512_loadu_ps(&(snn->w[pre_idx])); // load weight
+                            __m512 vPot = _mm512_maskz_mul_ps(mPostFired[blk], vpA, _mm512_mul_ps(_mm512_sub_ps(vOne, vW), vPreTrace)); // LTP
+                            __m512 vDep = _mm512_maskz_mul_ps(mPreFired, vmA, _mm512_mul_ps(vW, vPostTrace[blk])); // LTD
+                            __m512 vdW = _mm512_sub_ps(vPot, vDep); // dw
 
 
-                        // update and store w and dw
-                        _mm512_storeu_ps(&(snn->w[pre_idx]), _mm512_add_ps(vW, vdW));
-                        _mm512_storeu_ps(&(snn->dw[pre_idx]), _mm512_add_ps(_mm512_loadu_ps(&(snn->dw[pre_idx])), vdW));
-                    
+                            // update and store w and dw
+                            _mm512_storeu_ps(&(snn->w[pre_idx]), _mm512_add_ps(vW, vdW));
+                            _mm512_storeu_ps(&(snn->dw[pre_idx]), _mm512_add_ps(_mm512_loadu_ps(&(snn->dw[pre_idx])), vdW));
+                        }
+
                         // reinit pre fired to 0
-                        _mm_storeu_si128((__m128i*)&(snn->pre_fired[pre_idx]), vZero); // 8 bits                    
+                        if(mPreFired)
+                            _mm_storeu_si128((__m128i*)&(snn->pre_fired[pre_idx]), vZero); // 8 bits                    
                     }
                 }
 
-                // reiniti neuron fired
-                for(b = 0; b+15<B; b+=16){
+                // reinit post fired
+                for(blk = 0; blk<n_blks; blk++){
 
-                    _mm_storeu_si128((__m128i*)&(snn->post_fired[g_post_neuron + b]), vZero); // 8 bits  
+                    if(mPostFired[blk])
+                        _mm_storeu_si128((__m128i*)&(snn->post_fired[g_post_neuron + blk * 16]), vZero); // 8 bits  
                 }
             }
         }
@@ -2711,40 +2763,56 @@ void process_trace_based_STDP_batch(GPU_SNN_t *snn, simulation_configuration_t *
             // loop over neuron input synapses
             size_t base_synapse = snn->neuron_input_synapses_offset[i];
             size_t n_iS = snn->n_neuron_input_synapses[i];
-
+            size_t post_idx, pre_idx;
+            size_t synapse_index;
+            size_t g_synapse_index;
+            
             // compute neuron global index
             size_t g_post_neuron = i * B;
 
             // update post trace (depends only on the neuron)
             for(b = 0; b<B; b++){
                 
-                size_t post_idx = g_post_neuron + b;
+                post_idx = g_post_neuron + b;
                 snn->post_trace[post_idx] = snn->post_fired[post_idx] ? 1.0f : snn->post_trace[post_idx] * decay;
             }
 
             // loop over input synapses, update presynaptic traces (depends on synapses) and update weights
             for(size_t j = 0; j<n_iS; j++){
 
-                size_t synapse_index = base_synapse + j;
-                size_t g_synapse_index = synapse_index * B;
+                synapse_index = base_synapse + j;
+                g_synapse_index = synapse_index * B;
 
                 for(b = 0; b<B; b++){
 
-                    size_t post_idx = g_post_neuron + b;
-                    size_t pre_idx  = g_synapse_index + b;
+                    post_idx = g_post_neuron + b;
+                    pre_idx  = g_synapse_index + b;
 
                     // update pre_trace
                     snn->pre_trace[pre_idx] = snn->pre_fired[pre_idx] ? 1.0f : snn->pre_trace[pre_idx] * decay;
 
-                    float dw = 
-                        pA * (1.0f - snn->w[pre_idx]) * (float)snn->post_fired[post_idx] * snn->pre_trace[pre_idx] -
-                        mA *        (snn->w[pre_idx]) * (float)snn->pre_fired[pre_idx] * snn->post_trace[post_idx];
-                        
-                    snn->w[pre_idx] += dw;
-                    snn->dw[pre_idx] += dw;
 
-                    // reinit pre_fired
-                    snn->pre_fired[pre_idx] = 0;
+                    // update w: avoid computation if no neuron fired
+                    float dPot = 0.0, dDep = 0.0;
+                    if(snn->post_fired[post_idx]){
+
+                        dPot = pA * (1.0f - snn->w[pre_idx]) * snn->pre_trace[pre_idx];
+                    }
+                    if(snn->pre_fired[pre_idx]){
+
+                        dDep = mA * (snn->w[pre_idx]) * snn->post_trace[post_idx];
+                        
+                        // reinit pre_fired
+                        snn->pre_fired[pre_idx] = 0;
+                    }
+                    
+                    if(dPot != 0 || dDep != 0){
+
+                        float dw = dPot - dDep;
+                            
+                        snn->w[pre_idx] += dw;
+                        snn->dw[pre_idx] += dw;
+                    }
                 }
             }
 
@@ -3014,7 +3082,7 @@ tmp_batch_cpu_t* initialize_batch_matrix(GPU_SNN_t *snn, GPU_dataset_t *dataset,
     size_t fsidx = bidx * B; 
     size_t sidx; // var to store the global index of the sample
 
-    // allocate memory for temporal batch samples matrix
+    // allocate memory for temporal batch samples matrix // TODO: refactorize to function
     tmp_batch_cpu_t *tmp_batch = (tmp_batch_cpu_t*)malloc(sizeof(tmp_batch_cpu_t));
     tmp_batch->spikes = (char*)calloc(iN * B * T, sizeof(char));
 
@@ -3550,12 +3618,30 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
         
     }
 
+    // update weights if learning
+    clock_gettime(CLOCK_MONOTONIC, &start_step5);
+    if(conf->learn)
+        update_weights_cpu(snn, conf);
+    clock_gettime(CLOCK_MONOTONIC, &end_step5);
+    et5+=(end_step5.tv_sec - start_step5.tv_sec) + (end_step5.tv_nsec - start_step5.tv_nsec) / 1e9;
+
+
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
-    // print execution time
-    if(bidx % 10 == 0){    
 
+    // store execution times and number of spikes
+    results->t = elapsed_time;
+    results->t_in = et2;
+    results->t_v = et3;
+    results->t_out = et4;
+    results->t_reinit = et1;
+    results->t_load = et_load;
+    results->t_learn = et5;
+
+    // print execution time
+    //if((bidx + 1) % 10 == 0){    
+    if(bidx == 0){
         // print execution times
         printf(" > Finished in %lf! (s_rnt = %lf s_load = %lf s_in = %lf s_v = %lf s_out = %lf, s_tr = %lf)\n", 
             elapsed_time, et1, et_load, et2, et3, et4, et5);
@@ -3575,103 +3661,27 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
     }
 }
 
-
-void update_weights_cpu(GPU_SNN_t *snn, simulation_configuration_t *conf){
-
-    size_t S, P, B;
-    size_t i, b;
-
-    S = snn->n_synapses;
-    B = conf->batch_size;
-    P = conf->n_process;
-
-    #if defined AVX512
-    {
-        if(B == 8){
-
-        }
-        else
-        {
-            #pragma omp parallel for num_threads(P) private(i)
-            for(i = 0; i<S; i++){
-
-                float dw = 0.0;
-                
-                // sum Dw of each batch element
-                __m512 vDw = _mm512_loadu_ps(&(snn->dw[i * B + 0]));
-                for(b = 16; b+15 < B; b+=16){
-
-                    vDw = _mm512_add_ps(vDw, _mm512_loadu_ps(&(snn->dw[i * B + b])));
-                }
-                
-                // reduce to a value
-                dw = _mm512_reduce_add_ps(vDw);
-
-                // compute mean dw
-                dw = dw / (float)B;
-
-                // update initial w and w for all copies
-                vDw = _mm512_set1_ps(dw);
-
-                for(b = 0; b+15<B; b+=16){
-
-                    _mm512_storeu_ps(&(snn->dw[i * B + b]), _mm512_set1_ps(0.0)); // dw = 0.0, reinitialize
-                    _mm512_storeu_ps(&(snn->init_w[i * B + b]), _mm512_add_ps(_mm512_loadu_ps(&(snn->init_w[i * B + b])), vDw)); // init_w = init_w + dw
-                    _mm512_storeu_ps(&(snn->w[i * B + b]), _mm512_loadu_ps(&(snn->init_w[i * B + b]))); // w = init_w
-                }    
-            }        
-        }
-    }
-    #else
-    {
-        
-        #pragma omp parallel for num_threads(P) private(i)
-        for(i = 0; i<S; i++){
-
-            float dw = 0.0;
-
-            // sum dw of the batch for each synapse
-            for(size_t b = 0; b<B; b++){
-
-                dw += snn->dw[i * B + b];
-            }
-
-            // compute mean dw
-            dw = dw / (float)B;
-
-            // update initial w and w for all copies
-            for(size_t b = 0; b<B; b++){
-
-                snn->dw[i * B + b] = 0.0; // reinitialize dw
-                snn->init_w[i * B + b] += dw; // update initial w for incoming batches
-                snn->w[i * B + b] = snn->init_w[i * B + b]; // update w
-            }    
-        }
-    }
-    #endif
-}
-
 void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results){
 
     struct timespec start, end; 
     struct timespec start_uw, end_uw; 
     double elapsed_time;
 
-    // TODO: improve in the future
-
+    // TODO: refactorize number of batches computation
     // compute number of batches
     size_t n_batches = dataset->n_samples / conf->batch_size;
     size_t r_samples = dataset->n_samples % conf->batch_size;
-
     // there are remaining sampels
     if(r_samples > 0){
 
         n_batches += 1; // last batch contains less samples
     }
 
-    // copy some arrays of the network batch_size times
+    // copy necessary data of the network to compute by batches
     cpy_snn(snn, conf);
 
+    // initialize results struct to store batch results
+    GPU_results_t *batch_results = initialize_batch_results_cpu(conf, snn->n_neurons, conf->batch_size, 1);
 
     // start timer
     clock_gettime(CLOCK_MONOTONIC, &start);
@@ -3679,27 +3689,39 @@ void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configu
     // loop over batches
     for(size_t b = 0; b<n_batches; b++){
         
-        // simulate batch
-        simulate_batch_CPU(snn, dataset, conf, results, b);
-
-        if(b % 100 == 0){
-            printf(" In Batch %zu\n", b);
+        if((b+1) % 100 == 0){
+            printf(" In Batch %zu\n", b+1);
             fflush(stdout);
         }
 
-        // update weights
-        clock_gettime(CLOCK_MONOTONIC, &start_uw);
+        // reinitialize results struct
+        reinitialize_batch_results_cpu(batch_results, conf, snn->n_neurons, conf->batch_size, 1);
 
-        if(conf->learn)
-            update_weights_cpu(snn, conf);
-    
-        clock_gettime(CLOCK_MONOTONIC, &end_uw);
-        elapsed_time = (end_uw.tv_sec - start_uw.tv_sec) + (end_uw.tv_nsec - start_uw.tv_nsec) / 1e9;
+        // simulate batch
+        simulate_batch_CPU(snn, dataset, conf, batch_results, b);
 
-        printf(" Elapsed time updating batch weights: %lf\n", elapsed_time);
+        // accumulate batch execution times in general results struct
+        acc_batch_execution_times(results, batch_results);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     printf(" > Finished in %lf!\n", elapsed_time); 
+
+
+    // print information in results struct
+    printf("   > Total execution time: %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                results->t, results->t / (float)n_batches, results->t / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total in time:        %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                results->t_in, results->t_in / (float)n_batches, results->t_in / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total v time:         %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                results->t_v, results->t_v / (float)n_batches, results->t_v / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total out time:       %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                results->t_out, results->t_out / (float)n_batches, results->t_out / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total reinit time:    %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                results->t_reinit, results->t_reinit / (float)n_batches, results->t_reinit / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total load time:      %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                results->t_load, results->t_load / (float)n_batches, results->t_load / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total learn time:     %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                results->t_learn, results->t_learn / (float)n_batches, results->t_learn / (float)n_batches / (float)conf->time_steps);
 }
