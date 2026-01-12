@@ -447,17 +447,17 @@ typedef struct {
 
 
     // number of threads and blocks per kernel
-    unsigned int n_thr_per_blk_neurons_x, n_thr_per_blk_neurons_y, n_thr_per_blk_neurons_z;
-    unsigned int n_thr_per_blk_synapses_x, n_thr_per_blk_synapses_y, n_thr_per_blk_synapses_z;
-    unsigned int n_thr_per_blk_in_neurons_x, n_thr_per_blk_in_neurons_y, n_thr_per_blk_in_neurons_z;
-    unsigned int n_thr_per_blk_all_neurons_x, n_thr_per_blk_all_neurons_y, n_thr_per_blk_all_neurons_z;
-    unsigned int n_thr_per_blk_uw_x, n_thr_per_blk_uw_y, n_thr_per_blk_uw_z;
+    size_t n_thr_per_blk_neurons_x, n_thr_per_blk_neurons_y, n_thr_per_blk_neurons_z;
+    size_t n_thr_per_blk_synapses_x, n_thr_per_blk_synapses_y, n_thr_per_blk_synapses_z;
+    size_t n_thr_per_blk_in_neurons_x, n_thr_per_blk_in_neurons_y, n_thr_per_blk_in_neurons_z;
+    size_t n_thr_per_blk_all_neurons_x, n_thr_per_blk_all_neurons_y, n_thr_per_blk_all_neurons_z;
+    size_t n_thr_per_blk_uw_x, n_thr_per_blk_uw_y, n_thr_per_blk_uw_z;
 
-    unsigned int n_blk_neurons_x, n_blk_neurons_y, n_blk_neurons_z;
-    unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z;
-    unsigned int n_blk_in_neurons_x, n_blk_in_neurons_y, n_blk_in_neurons_z;
-    unsigned int n_blk_all_neurons_x, n_blk_all_neurons_y, n_blk_all_neurons_z;
-    unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
+    size_t n_blk_neurons_x, n_blk_neurons_y, n_blk_neurons_z;
+    size_t n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z;
+    size_t n_blk_in_neurons_x, n_blk_in_neurons_y, n_blk_in_neurons_z;
+    size_t n_blk_all_neurons_x, n_blk_all_neurons_y, n_blk_all_neurons_z;
+    size_t n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
 
 
 

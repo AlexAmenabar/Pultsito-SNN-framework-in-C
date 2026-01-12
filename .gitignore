@@ -45,6 +45,7 @@
 /experiments/
 /ISPASS2026_experiments/
 /performance_experiments/
+/ACMS/
 /tmp/
 *.err
 *.out

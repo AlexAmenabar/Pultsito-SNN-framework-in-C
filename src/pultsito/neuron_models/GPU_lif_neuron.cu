@@ -33,9 +33,9 @@ __global__ void initialize_neurons_batch(GPU_SNN_t *snn, size_t batch_size){
 
     // get thread id
     size_t threadId = 
-        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
-        (blockDim.x * blockDim.y * blockDim.z) +
-        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+        ((size_t)blockIdx.x  + (size_t)gridDim.x  * (size_t)blockIdx.y + (size_t)gridDim.x * (size_t)gridDim.y * (size_t)blockIdx.z) *
+        ((size_t)blockDim.x * (size_t)blockDim.y * (size_t)blockDim.z) +
+        ((size_t)threadIdx.x + (size_t)blockDim.x * (size_t)threadIdx.y + (size_t)blockDim.x * (size_t)blockDim.y * (size_t)threadIdx.z);
 
     if(threadId < snn->n_neurons * batch_size){
 
@@ -52,13 +52,20 @@ __global__ void initialize_synapses_batch(GPU_SNN_t *snn, size_t batch_size){
 
     // get thread id
     size_t threadId = 
-        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
-        (blockDim.x * blockDim.y * blockDim.z) +
-        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+        (size_t)((size_t)blockIdx.x  + (size_t)gridDim.x  * (size_t)blockIdx.y + (size_t)gridDim.x * (size_t)gridDim.y * (size_t)blockIdx.z) *
+        (size_t)((size_t)blockDim.x * (size_t)blockDim.y * (size_t)blockDim.z) +
+        (size_t)((size_t)threadIdx.x + (size_t)blockDim.x * (size_t)threadIdx.y + (size_t)blockDim.x * (size_t)blockDim.y * (size_t)threadIdx.z);
+
+
+    //printf(" thread = %llu / %llu\n", threadId, snn->n_synapses * batch_size);
 
     if(threadId < snn->n_synapses * batch_size){
 
+
         size_t synapse_index = threadId / batch_size;
+
+
+        //printf(" Synapse = %llu, thread = %llu\n", synapse_index, threadId);
         snn->w[threadId] = snn->init_w[synapse_index];
 
         //printf("   > ThreadId = %llu (s = %llu, b = %llu), w = %f, init_w = %f\n", 
@@ -301,6 +308,8 @@ __global__ void process_firing_batch(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_resu
         // check whether fired
         if(gpu_snn->v[g_neuron_index + b] >= gpu_snn->v_thresh[neuron_index]){
     
+            //printf(" ThreadId %llu (i = %llu, b = %llu): %llu\n", threadId, i, b, idx + b);
+
             gpu_snn->spk_matrix[idx + b] = 1;
 
             // reinit neuron values
@@ -569,14 +578,18 @@ __global__ void print_n_spikes(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, s
 }
 
 
-extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, tmp_batch_cpu_t *gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset){
+extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, tmp_batch_cpu_t *gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t *cpu_results){
 
     
     size_t N, iN, S, n_samples, n_features, n_networks, batch_size, dev_batch_size, T, LT;
     size_t t, s, snn;
-    double t_in_ts, t_out_ts, t_in = 0.0, t_out = 0.0;
     cudaError_t err;
-    struct timespec start_in, end_in, start_out, end_out;
+    
+    struct timespec start, end;
+    struct timespec start_in, end_in, start_out, end_out, start_v, end_v;
+    struct timespec start_learn, end_learn;
+    struct timespec start_load, end_load, start_reinit, end_reinit;
+    double et = 0.0, et_in = 0.0, et_out = 0.0, et_v = 0.0, et_learn = 0.0, et_load = 0.0, et_reinit = 0.0;
 
 
     // get general variables values
@@ -611,80 +624,138 @@ extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_da
     dim3 block_uw(cuda_info->n_thr_per_blk_uw_x, cuda_info->n_thr_per_blk_uw_y, cuda_info->n_thr_per_blk_uw_z);
 
 
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+
     // loop over network copies: if we can not store batch_size neuron copies, each neuron is used several times to compute the entire batch
     //for(snn = 0; snn < batch_size; snn += n_networks){
 
-        // (re)initialize neurons
-        initialize_neurons_batch<<<grid_neurons, block_neurons>>>(gpu_snn, batch_size);
+    // (re)initialize neurons
+    clock_gettime(CLOCK_MONOTONIC, &start_reinit);
+
+    initialize_neurons_batch<<<grid_neurons, block_neurons>>>(gpu_snn, batch_size);
+    err = cudaGetLastError();
+    cudaCheckError(cudaPeekAtLastError());  // check launch errors
+    cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+    cudaDeviceSynchronize();
+
+    // (re)initialize synapses
+    initialize_synapses_batch<<<grid_synapses, block_synapses>>>(gpu_snn, batch_size);
+    err = cudaGetLastError();
+    cudaCheckError(cudaPeekAtLastError());  // check launch errors
+    cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+    cudaDeviceSynchronize();
+    
+    // load batch in tmp_batch
+    initialize_batch_matrix_GPU<<<grid_in_neurons, block_in_neurons>>>(gpu_tmp_batch, gpu_dataset, bidx, batch_size, iN, batch_size, conf->max_input_spikes);
+    err = cudaGetLastError();
+    cudaCheckError(cudaPeekAtLastError());  // check launch errors
+    cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+    cudaDeviceSynchronize();
+
+    clock_gettime(CLOCK_MONOTONIC, &end_reinit);
+    et_reinit +=(end_reinit.tv_sec - start_reinit.tv_sec) + (end_reinit.tv_nsec - start_reinit.tv_nsec) / 1e9;
+
+
+    // loop over time steps
+    for(t = 0; t<T; t++){
+
+        size_t lt = t % cpu_snn->LT;
+
+        // load sample in network
+        clock_gettime(CLOCK_MONOTONIC, &start_load);
+
+        load_batch_time_step_in_SNN_GPU<<<grid_all_neurons, block_all_neurons>>>(gpu_snn, gpu_tmp_batch, iN, N, batch_size, lt, t, bidx);
         err = cudaGetLastError();
         cudaCheckError(cudaPeekAtLastError());  // check launch errors
         cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        cudaDeviceSynchronize();
+        
+        clock_gettime(CLOCK_MONOTONIC, &end_load);
+        et_load +=(end_load.tv_sec - start_load.tv_sec) + (end_load.tv_nsec - start_load.tv_nsec) / 1e9;
 
-        // (re)initialize synapses
-        initialize_synapses_batch<<<grid_synapses, block_synapses>>>(gpu_snn, batch_size);
-        err = cudaGetLastError();
+        // compute input step
+        
+        /*total_LIF_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, batch_size, lt, t, (size_t)conf->learn);
         cudaCheckError(cudaPeekAtLastError());  // check launch errors
         cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        cudaDeviceSynchronize();*/
+        clock_gettime(CLOCK_MONOTONIC, &start_in);
 
-        // load batch in tmp_batch
-        initialize_batch_matrix_GPU<<<grid_in_neurons, block_in_neurons>>>(gpu_tmp_batch, gpu_dataset, bidx, batch_size, iN, batch_size, conf->max_input_spikes);
-        err = cudaGetLastError();
+        process_input_currect_batch<<<grid_neurons, block_neurons>>>(gpu_snn, iN, N, batch_size, lt, t, (size_t)conf->learn);
         cudaCheckError(cudaPeekAtLastError());  // check launch errors
         cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        cudaDeviceSynchronize();
+        
+        clock_gettime(CLOCK_MONOTONIC, &end_in);
+        et_in +=(end_in.tv_sec - start_in.tv_sec) + (end_in.tv_nsec - start_in.tv_nsec) / 1e9;
 
-        // loop over time steps
-        for(t = 0; t<T; t++){
+        // compute neuron dynamics
+        clock_gettime(CLOCK_MONOTONIC, &start_v);
 
-            size_t lt = t % cpu_snn->LT;
+        process_V_batch<<<grid_neurons, block_neurons>>>(gpu_snn, N, batch_size);
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        cudaDeviceSynchronize();
 
-            // load sample in network
-            load_batch_time_step_in_SNN_GPU<<<grid_all_neurons, block_all_neurons>>>(gpu_snn, gpu_tmp_batch, iN, N, batch_size, lt, t, bidx);
-            err = cudaGetLastError();
-            /*if (err != cudaSuccess) { 
-                printf("Kernel launch failed: %s ", cudaGetErrorString(err)); 
-            } */
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        clock_gettime(CLOCK_MONOTONIC, &end_v);
+        et_v +=(end_v.tv_sec - start_v.tv_sec) + (end_v.tv_nsec - start_v.tv_nsec) / 1e9;
 
-            // compute input step
-            
-            total_LIF_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, batch_size, lt, t, (size_t)conf->learn);
 
-            /*process_input_currect_batch<<<grid_neurons, block_neurons>>>(gpu_snn, iN, N, batch_size, lt, t, (size_t)conf->learn);
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        // compute output step
+        clock_gettime(CLOCK_MONOTONIC, &start_out);
 
-            // compute neuron dynamics
-            process_V_batch<<<grid_neurons, block_neurons>>>(gpu_snn, N, batch_size);
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        process_firing_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, batch_size, lt, (size_t)conf->learn);
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        cudaDeviceSynchronize();
 
-            // compute output step
-            process_firing_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, batch_size, lt, (size_t)conf->learn);
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors*/
+        clock_gettime(CLOCK_MONOTONIC, &end_out);
+        et_out +=(end_out.tv_sec - start_out.tv_sec) + (end_out.tv_nsec - start_out.tv_nsec) / 1e9;
 
-            // compute learning step if training
-            if(conf->learn){
 
-                trace_based_STDP_batch<<<grid_neurons, block_neurons>>>(gpu_snn, N, batch_size);
-                cudaCheckError(cudaPeekAtLastError());  // check launch errors
-                cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
-            }
-        }
+        // compute learning step if training
+        clock_gettime(CLOCK_MONOTONIC, &start_learn);
 
-        // updaate weights if training
         if(conf->learn){
-                
-            update_weights_batch<<<grid_uw, block_uw>>>(gpu_snn, S, batch_size);
+
+            trace_based_STDP_batch<<<grid_neurons, block_neurons>>>(gpu_snn, N, batch_size);
             cudaCheckError(cudaPeekAtLastError());  // check launch errors
             cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+            cudaDeviceSynchronize();
         }
-    //}
+        clock_gettime(CLOCK_MONOTONIC, &end_learn);
+        et_learn +=(end_learn.tv_sec - start_learn.tv_sec) + (end_learn.tv_nsec - start_learn.tv_nsec) / 1e9;
 
-        //print_n_spikes<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, N, batch_size);
-        //cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+    }
 
+    // updaate weights if training
+    clock_gettime(CLOCK_MONOTONIC, &start_learn);
+    if(conf->learn){
+            
+        update_weights_batch<<<grid_uw, block_uw>>>(gpu_snn, S, batch_size);
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        cudaDeviceSynchronize();
+    }
+    clock_gettime(CLOCK_MONOTONIC, &end_learn);
+    et_learn +=(end_learn.tv_sec - start_learn.tv_sec) + (end_learn.tv_nsec - start_learn.tv_nsec) / 1e9;
+
+    //print_n_spikes<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, N, batch_size);
+    //cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    et +=(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
+
+    // store in CPU results struct
+    cpu_results->t = et;
+    cpu_results->t_in = et_in;
+    cpu_results->t_v = et_v;
+    cpu_results->t_out = et_out;
+    cpu_results->t_reinit = et_reinit;
+    cpu_results->t_load = et_load;
+    cpu_results->t_learn = et_learn;
 }
 
 extern "C" void simulate_batches_LIF_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, tmp_batch_cpu_t **gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset){
@@ -714,42 +785,53 @@ extern "C" void simulate_batches_LIF_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gp
 
         // initialize struct to store results of each batch
         GPU_results_t *cpu_results = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, conf->batch_size, 1);
+        GPU_results_t *cpu_batch_results = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, conf->batch_size, 1);
+
+        
+        // simulate and print first batch
+        //simulate_LIF_batch_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], gpu_tmp_batch[0], conf, cuda_info, 0, cpu_snn, cpu_dataset, cpu_batch_results);
+        //cpy_batch_results_GPU2CPU(cpu_results, gpu_results, cuda_info, cpu_snn->n_neurons, 1);
+        // print results
+        /*for(size_t batch = 0; batch<conf->batch_size; batch++){
+
+            for(size_t i = 0; i<cpu_snn->n_neurons; i++){
+
+                printf("%d ", cpu_results->n_spks[i * conf->batch_size + batch]);
+            }
+            printf("\n");
+        }*/
 
         // loop over batches
         for(size_t b = 0; b<n_batches; b++){
-        
-            //if((b+1) % 100 == 0){
-            printf(" In Batch %zu\n", b+1);
-            fflush(stdout);
-            //}
+
+            printf(" In batch %zu\n", b);
 
             // reinitialize results struct
-            //reinitialize_batch_results_cpu(batch_results, conf, snn->n_neurons, conf->batch_size, 1);
+            reinitialize_batch_results_cpu(cpu_batch_results, conf, cpu_snn->n_neurons, conf->batch_size, 1);
 
             // simulate batch
-            //simulate_batch_CPU(snn, dataset, conf, batch_results, b);
-            simulate_LIF_batch_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], gpu_tmp_batch[0], conf, cuda_info, b, cpu_snn, cpu_dataset);
-
-
-            // copy results to CPU for printing
-            cpy_batch_results_GPU2CPU(cpu_results, gpu_results, cuda_info, cpu_snn->n_neurons, 1);            
-            // print results
-            if(b==0){
-                for(size_t batch = 0; batch<conf->batch_size; batch++){
-
-                    for(size_t i = 0; i<cpu_snn->n_neurons; i++){
-
-                        printf("%d ", cpu_results->n_spks[i * conf->batch_size + batch]);
-                    }
-                    printf("\n");
-                }
-            }
+            simulate_LIF_batch_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], gpu_tmp_batch[0], conf, cuda_info, b, cpu_snn, cpu_dataset, cpu_batch_results);
 
             // accumulate batch execution times in general results struct
-            //acc_batch_execution_times(results, batch_results);
+            acc_batch_execution_times(cpu_results, cpu_batch_results);            
         }
 
-        //simulate_LIF_in_single_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], conf, cuda_info, cpu_snn, cpu_dataset);
+        // print information in results struct
+        printf("   > Total execution time: %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                    cpu_results->t, cpu_results->t / (float)n_batches, cpu_results->t / (float)n_batches / (float)conf->time_steps);
+        printf("   > Total in time:        %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                    cpu_results->t_in, cpu_results->t_in / (float)n_batches, cpu_results->t_in / (float)n_batches / (float)conf->time_steps);
+        printf("   > Total v time:         %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                    cpu_results->t_v, cpu_results->t_v / (float)n_batches, cpu_results->t_v / (float)n_batches / (float)conf->time_steps);
+        printf("   > Total out time:       %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                    cpu_results->t_out, cpu_results->t_out / (float)n_batches, cpu_results->t_out / (float)n_batches / (float)conf->time_steps);
+        printf("   > Total reinit time:    %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                    cpu_results->t_reinit, cpu_results->t_reinit / (float)n_batches, cpu_results->t_reinit / (float)n_batches / (float)conf->time_steps);
+        printf("   > Total load time:      %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                    cpu_results->t_load, cpu_results->t_load / (float)n_batches, cpu_results->t_load / (float)n_batches / (float)conf->time_steps);
+        printf("   > Total learn time:     %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                    cpu_results->t_learn, cpu_results->t_learn / (float)n_batches, cpu_results->t_learn / (float)n_batches / (float)conf->time_steps);
+
     }
 
     // TODO: multi GPU must be corrected

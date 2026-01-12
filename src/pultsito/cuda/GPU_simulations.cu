@@ -28,6 +28,7 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
 
     // tmp structure to 
     GPU_SNN_t *tmp_gpu_snn = (GPU_SNN_t*)malloc(sizeof(GPU_SNN_t)); // input neurons???
+cudaError_t err;
 
     // loop over devices and allocate memory for all of them
     for(dev = 0; dev < cuda_info->nDevices; dev++){
@@ -38,32 +39,70 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         /* Allocate memory */
 
         // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_snn->v), N * batch_per_dev * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->arrI), N * batch_per_dev * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->v_thresh), N * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->v_rest), N * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->r_period), N * sizeof(int)); 
-        cudaMalloc(&(tmp_gpu_snn->r_period_remain), N * batch_per_dev * sizeof(int)); 
-        cudaMalloc(&(tmp_gpu_snn->post_fired), N * batch_per_dev * sizeof(char)); 
-        cudaMalloc(&(tmp_gpu_snn->post_trace), N * batch_per_dev * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->res), N * sizeof(int)); 
-        cudaMalloc(&(tmp_gpu_snn->n_neuron_input_synapses), N * sizeof(size_t));
-        cudaMalloc(&(tmp_gpu_snn->neuron_input_synapses_offset), N * sizeof(size_t));
+        err = cudaMalloc(&(tmp_gpu_snn->v), N * batch_per_dev * sizeof(float)); 
+        if (err != cudaSuccess) printf("v allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->arrI), N * batch_per_dev * sizeof(float));
+        if (err != cudaSuccess) printf("arrI allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->v_thresh), N * sizeof(float)); 
+        if (err != cudaSuccess) printf("v_thresh allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->v_rest), N * sizeof(float)); 
+        if (err != cudaSuccess) printf("v_rest allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->r_period), N * sizeof(int)); 
+        if (err != cudaSuccess) printf("r_period allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->r_period_remain), N * batch_per_dev * sizeof(int));
+        if (err != cudaSuccess) printf("r_period_remain allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->post_fired), N * batch_per_dev * sizeof(char));
+        if (err != cudaSuccess) printf("post_fired allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->post_trace), N * batch_per_dev * sizeof(float));
+        if (err != cudaSuccess) printf("post_trace allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->res), N * sizeof(int)); 
+        if (err != cudaSuccess) printf("res allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->n_neuron_input_synapses), N * sizeof(size_t));
+        if (err != cudaSuccess) printf("n_neuron_input_synapses allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->neuron_input_synapses_offset), N * sizeof(size_t));
+        if (err != cudaSuccess) printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
         
         // allocate memory for synapses
-        cudaMalloc(&(tmp_gpu_snn->w), S * batch_per_dev * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->init_w), S * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->dw), S * batch_per_dev * sizeof(float)); 
-        cudaMalloc(&(tmp_gpu_snn->delay), S * sizeof(int)); 
-        cudaMalloc(&(tmp_gpu_snn->lr), S * sizeof(int)); 
-        cudaMalloc(&(tmp_gpu_snn->pre_neuron_index), S * sizeof(size_t)); 
-        cudaMalloc(&(tmp_gpu_snn->post_neuron_index), S * sizeof(size_t)); 
-        cudaMalloc(&(tmp_gpu_snn->pre_fired), S * batch_per_dev * sizeof(char)); 
-        cudaMalloc(&(tmp_gpu_snn->pre_trace), S * batch_per_dev * sizeof(float)); 
+        err = cudaMalloc(&(tmp_gpu_snn->w), S * batch_per_dev * sizeof(float));
+        if (err != cudaSuccess) printf("w allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->init_w), S * sizeof(float));
+        if (err != cudaSuccess) printf("init_w allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->dw), S * batch_per_dev * sizeof(float));
+        if (err != cudaSuccess) printf("dw allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->delay), S * sizeof(int));
+        if (err != cudaSuccess) printf("delay allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->lr), S * sizeof(int)); 
+        if (err != cudaSuccess) printf("lr allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->pre_neuron_index), S * sizeof(size_t)); 
+        if (err != cudaSuccess) printf("pre_neuron_index allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->post_neuron_index), S * sizeof(size_t)); 
+        if (err != cudaSuccess) printf("post_neuron_index allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_snn->pre_fired), S * batch_per_dev * sizeof(char));
+        if (err != cudaSuccess) printf("pre_fired allocation failed: %s\n", cudaGetErrorString(err)); 
+        
+        err = cudaMalloc(&(tmp_gpu_snn->pre_trace), S * batch_per_dev * sizeof(float));
+        if (err != cudaSuccess) printf("pre_trace allocation failed: %s\n", cudaGetErrorString(err)); 
 
         // allocate memory for spk matrix
-        cudaMalloc(&(tmp_gpu_snn->spk_matrix), (iN + N) * LT * batch_per_dev * sizeof(char)); // allocate memory for neurons
-
+        err = cudaMalloc(&(tmp_gpu_snn->spk_matrix), (iN + N) * LT * batch_per_dev * sizeof(char)); // allocate memory for neurons
+        if (err != cudaSuccess) printf("spk matrix allocation failed: %s\n", cudaGetErrorString(err));
 
         /* Copy data from CPU to GPU */
 
@@ -175,7 +214,7 @@ extern "C" GPU_results_t** initialize_results_str_in_GPU(size_t nDevices, size_t
         cudaSetDevice(dev);
 
         // allocate memory to store the number of spikes
-        cudaMalloc(&(tmp_r->n_spks), n * s * batch_size * sizeof(int));
+        cudaMalloc(&(tmp_r->n_spks), n * batch_size * sizeof(int));
 
         // final structure
         cudaMalloc(&(d_results[dev]), sizeof(GPU_results_t)); // allocate memory for neurons

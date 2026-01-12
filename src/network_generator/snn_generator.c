@@ -61,11 +61,11 @@ Configuration file format:
 - max_delay: int
 
 [IO]
-- configuration: char*
 - output: char*
 - output_neurons: char*
 - output_synapses: char*
 - output_is_separated: int
+- criteria: (0, 1, 2)
 */
 
 typedef struct {
@@ -84,7 +84,7 @@ typedef struct {
 
     // non-layered
     size_t n_synapses;
-    int randomization;
+    float randomization;
 
     // neurons
     float v_min, v_max; 
@@ -102,7 +102,13 @@ typedef struct {
     char *output_file;
     char *output_file_neurons;
     char *output_file_synapses;
+
+    char *output_file_out;
+    char *output_file_neurons_out;
+    char *output_file_synapses_out;
+
     int output_is_separated;
+    int criteria;
 
 } generator_conf_t;
 
@@ -142,6 +148,7 @@ typedef struct {
 
     // topology
     size_t **input_neurons_per_neuron;
+    size_t **output_neurons_per_neuron;
 
 } topology_t;
 
@@ -319,7 +326,7 @@ generator_conf_t* load_no_layered_section(generator_conf_t *conf, toml_table_t *
 
     // load section
     n_synapses = toml_table_int(tbl, "n_synapses");
-    randomization = toml_table_int(tbl, "randomization");
+    randomization = toml_table_double(tbl, "randomization");
 
     // check provided values and set default values
     if(!n_synapses.ok){
@@ -329,12 +336,12 @@ generator_conf_t* load_no_layered_section(generator_conf_t *conf, toml_table_t *
     }
     if(!randomization.ok){
         
-        randomization.u.i = 0.0; 
+        randomization.u.d = 0.0; 
     }
 
     // copy values to conf file
     conf->n_synapses = n_synapses.u.i;
-    conf->randomization = randomization.u.i;
+    conf->randomization = (float)randomization.u.d;
 
     return conf;
 }
@@ -480,13 +487,20 @@ generator_conf_t* load_synapses_section(generator_conf_t *conf, toml_table_t *tb
 
 generator_conf_t* load_IO_section(generator_conf_t *conf, toml_table_t *tbl){
 
-    toml_value_t output_file, output_file_neurons, output_file_synapses, output_is_separated;
+    toml_value_t output_file, output_file_neurons, output_file_synapses, output_file_out, output_file_neurons_out, output_file_synapses_out,
+                output_is_separated, criteria;
     
     // load section
     output_file = toml_table_string(tbl, "output_file");
     output_file_neurons = toml_table_string(tbl, "output_file_neurons");
     output_file_synapses = toml_table_string(tbl, "output_file_synapses");
+
+    output_file_out = toml_table_string(tbl, "output_file_out");
+    output_file_neurons_out = toml_table_string(tbl, "output_file_neurons_out");
+    output_file_synapses_out = toml_table_string(tbl, "output_file_synapses_out");
+
     output_is_separated = toml_table_int(tbl, "output_is_separated");
+    criteria = toml_table_int(tbl, "criteria");
 
     // check provided values and set default values
     if(!output_file.ok){
@@ -502,6 +516,8 @@ generator_conf_t* load_IO_section(generator_conf_t *conf, toml_table_t *tbl){
 
     // copy values to conf file
     conf->output_file = output_file.u.s;
+    conf->output_file_out = output_file_out.u.s;
+
     conf->output_is_separated = output_is_separated.u.i;
 
     if(conf->output_is_separated == 1 && !output_file_neurons.ok){
@@ -515,8 +531,31 @@ generator_conf_t* load_IO_section(generator_conf_t *conf, toml_table_t *tbl){
         exit(1);    
     }
 
+    if(conf->output_is_separated == 1 && !output_file_neurons_out.ok){
+                
+        printf(" > Output file for neurons must be provided! Exiting.\n");
+        exit(1);    
+    }
+    if(conf->output_is_separated == 1 && !output_file_synapses_out.ok){
+                
+        printf(" > Output file for synapses must be provided! Exiting.\n");
+        exit(1);    
+    }
+
+    if(!criteria.ok){
+             
+        criteria.u.i=0;
+        printf(" > Criteria not provided. Default value 0.\n");
+    }
+
+
     conf->output_file_neurons = output_file_neurons.u.s;
     conf->output_file_synapses = output_file_synapses.u.s;
+
+    conf->output_file_neurons_out = output_file_neurons_out.u.s;
+    conf->output_file_synapses_out = output_file_synapses_out.u.s;
+
+    conf->criteria = criteria.u.i;
 
     return conf;
 }
@@ -648,7 +687,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
     size_t n_neurons, n_input, n_output_neurons, n_synapses;
     size_t n_mean_input_connections, *n_input_connections_per_neuron, **input_neurons_per_neuron;
 
-    int randomization;
+    float randomization;
 
     size_t i, j;
 
@@ -669,11 +708,14 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
         n_input_connections_per_neuron[i] = n_mean_input_connections;
 
         // randomize
-        size_t n = (size_t)(rand() % (n_neurons * randomization)) / 100;
+        size_t n = (size_t)(rand() % (size_t)((float)n_neurons * randomization)) / 100;
         size_t dec = (size_t)(rand() % 2);
 
         if(dec == 0){
             
+            if(n > n_input_connections_per_neuron[i])
+                n = n_input_connections_per_neuron[i];
+
             n_input_connections_per_neuron[i] -= n;
         }
         else if(dec == 1){
@@ -846,18 +888,115 @@ synapses_t initialize_synapses(generator_conf_t *conf){
 }
 
 
-void store_network(topology_t *topology, generator_conf_t *conf){
+
+void map_network_to_output_criteria(topology_t *topology, generator_conf_t *conf){
+
+    size_t i, j, k;
+
+
+    // store old values
+    float *tmp_w = topology->synapses.w;
+    int *tmp_lr = topology->synapses.lr;
+    int *tmp_delay = topology->synapses.delay;
+
+    // allocate memory for reordered arrays
+    topology->synapses.w = (float*)malloc(topology->n_synapses * sizeof(float));
+    topology->synapses.lr = (int*)malloc(topology->n_synapses * sizeof(int));
+    topology->synapses.delay = (int*)malloc(topology->n_synapses * sizeof(int));
+
+    // count
+    size_t n_total_neurons = topology->n_neurons + topology->n_input; 
+
+    size_t *n_output_neurons_per_neuron = (size_t*)CALLOC(n_total_neurons, sizeof(size_t));
+
+
+    for(i = 0; i<topology->n_neurons; i++){
+
+        for(j = 0; j<topology->input_neurons_per_neuron[i][0]; j++){
+
+            size_t in_neuron = topology->input_neurons_per_neuron[i][j * 2 + 1];
+            n_output_neurons_per_neuron[in_neuron] += 1;//topology->input_neurons_per_neuron[i][j * 2 + 2];
+        }
+    }
+
+    // allocate
+    topology->output_neurons_per_neuron = (size_t**)CALLOC(n_total_neurons, sizeof(size_t*));
+    for(i = 0; i<n_total_neurons; i++){
+
+        topology->output_neurons_per_neuron[i] = (size_t*)malloc((n_output_neurons_per_neuron[i] * 2 + 1) * sizeof(size_t));
+        topology->output_neurons_per_neuron[i][0] = n_output_neurons_per_neuron[i];
+    }
+
+    // map connections
+    size_t *next = (size_t*)CALLOC(n_total_neurons, sizeof(size_t));
+    size_t *n_output_synapses = (size_t*)CALLOC(n_total_neurons, sizeof(size_t));
+
+    for(i = 0; i<topology->n_neurons; i++){
+
+        size_t out = i;
+
+        for(j = 0; j<topology->input_neurons_per_neuron[i][0]; j++){
+
+            size_t in = topology->input_neurons_per_neuron[i][j * 2 + 1];
+            size_t n = topology->input_neurons_per_neuron[i][j * 2 + 2];
+            topology->output_neurons_per_neuron[in][next[in] * 2 + 1] = out + topology->n_input;
+            topology->output_neurons_per_neuron[in][next[in] * 2 + 2] = n;
+            next[in] ++;
+
+            n_output_synapses[in] += n;
+        }
+    }
+
+    // compute offsets
+    size_t *synapses_offset = (size_t*)CALLOC(n_total_neurons, sizeof(size_t));
+    size_t tmp_offset = 0;
+    for(i = 0; i<n_total_neurons; i++){
+
+        synapses_offset[i] = tmp_offset;
+        tmp_offset += n_output_synapses[i];
+    }
+
+    // map synapses properties
+    size_t *neuron_synapse_offset = (size_t*)CALLOC(n_total_neurons, sizeof(size_t));
+    size_t synapse_index = 0;
+    for(i=0; i<topology->n_neurons; i++){
+
+        size_t out = i;
+
+        for(j = 0; j<topology->input_neurons_per_neuron[i][0]; j++){
+
+            size_t in = topology->input_neurons_per_neuron[i][j * 2 + 1];
+            size_t n = topology->input_neurons_per_neuron[i][j * 2 + 2];
+
+            for(k = 0; k<n; k++){
+
+                topology->synapses.w[synapses_offset[i] + neuron_synapse_offset[i]] = tmp_w[synapse_index];
+                topology->synapses.lr[synapses_offset[i] + neuron_synapse_offset[i]] = tmp_lr[synapse_index];
+                topology->synapses.delay[synapses_offset[i] + neuron_synapse_offset[i]] = tmp_delay[synapse_index];
+
+                neuron_synapse_offset[i] += n;
+                synapse_index ++;
+            }
+        }
+    }
+}
+
+
+
+void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
 
     // open files to store the network
-    FILE *f;
+    FILE *f, *f_out;
+
     f = fopen(conf->output_file, "w"); // write
     if (f == NULL){
         perror("Error opening the file\n");
         exit(1);
     }    
 
-    FILE *f_neurons;
-    FILE *f_synapses;
+
+    FILE *f_neurons, *f_neurons_out;
+    FILE *f_synapses, *f_synapses_out;
 
     if(conf->output_is_separated == 1){
     
@@ -867,11 +1006,24 @@ void store_network(topology_t *topology, generator_conf_t *conf){
             exit(1);
         }    
 
-        f_synapses = fopen(conf->output_file_synapses, "w"); // write
-        if (f_synapses == NULL){
-            perror("Error opening the file\n");
-            exit(1);
-        }    
+        if(criteria == 0){
+        
+            f_synapses = fopen(conf->output_file_synapses, "w"); // write
+            if (f_synapses == NULL){
+                perror("Error opening the file\n");
+                exit(1);
+            }    
+        }
+
+        if(criteria == 1){
+        
+            f_synapses_out = fopen(conf->output_file_synapses_out, "w"); // write
+            if (f_synapses_out == NULL){
+                perror("Error opening the file\n");
+                exit(1);
+            }    
+        }
+
     }
     
     // write general information
@@ -927,41 +1079,75 @@ void store_network(topology_t *topology, generator_conf_t *conf){
     // if is separated == 1, store neurons information in plain text
     //if(output_is_separated == 1){
     for(i=0; i<topology->n_synapses; i++){
-        fprintf(f_synapses, "%d ", topology->synapses.delay[i]);
+        
+        if(criteria == 0)
+            fprintf(f_synapses, "%d ", topology->synapses.delay[i]);
+
+        if(criteria == 1)
+            fprintf(f_synapses_out, "%d ", topology->synapses.delay[i]);
     }
     fprintf(f_synapses, "\n");
 
     for(i=0; i<topology->n_synapses; i++){
-        fprintf(f_synapses, "%lf ", topology->synapses.w[i]);
+
+        if(criteria == 0)
+            fprintf(f_synapses, "%lf ", topology->synapses.w[i]);
+        
+        if(criteria == 1)
+            fprintf(f_synapses_out, "%lf ", topology->synapses.w[i]);
     }
     fprintf(f_synapses, "\n");
 
     for(i=0; i<topology->n_synapses; i++){
-        fprintf(f_synapses, "%d ", topology->synapses.lr[i]);
+        if(criteria == 0)
+            fprintf(f_synapses, "%d ", topology->synapses.lr[i]);
+
+        if(criteria == 1)
+            fprintf(f_synapses_out, "%d ", topology->synapses.lr[i]);
     }
     fprintf(f_synapses, "\n\n");
 
     // store connectivity
-    for(size_t i = 0; i<topology->n_neurons; i++){
 
-        fprintf(f_synapses, "%zu ", topology->input_neurons_per_neuron[i][0]);
+    if(criteria == 0){
         
-        for(size_t j = 0; j<topology->input_neurons_per_neuron[i][0]; j++){
+        for(size_t i = 0; i<topology->n_neurons; i++){
 
-            fprintf(f_synapses, "%zu ", topology->input_neurons_per_neuron[i][j * 2 + 1]);
-            fprintf(f_synapses, "%zu ", topology->input_neurons_per_neuron[i][j * 2 + 2]);
+            fprintf(f_synapses, "%zu ", topology->input_neurons_per_neuron[i][0]);
+            
+            for(size_t j = 0; j<topology->input_neurons_per_neuron[i][0]; j++){
+
+                fprintf(f_synapses, "%zu ", topology->input_neurons_per_neuron[i][j * 2 + 1]);
+                fprintf(f_synapses, "%zu ", topology->input_neurons_per_neuron[i][j * 2 + 2]);
+            }
+
+            fprintf(f_synapses,"\n");
+
         }
-
-        fprintf(f_synapses,"\n");
-
     }
+    if(criteria == 1){
+        
+        for(size_t i = 0; i<topology->n_neurons + topology->n_input; i++){
 
+            fprintf(f_synapses_out, "%zu ", topology->output_neurons_per_neuron[i][0]);
+            
+            for(size_t j = 0; j<topology->output_neurons_per_neuron[i][0]; j++){
+
+                fprintf(f_synapses_out, "%zu ", topology->output_neurons_per_neuron[i][j * 2 + 1]);
+                fprintf(f_synapses_out, "%zu ", topology->output_neurons_per_neuron[i][j * 2 + 2]);
+            }
+
+            fprintf(f_synapses_out,"\n");
+
+        }
+    }
     fclose(f);
     fclose(f_neurons);
     fclose(f_synapses);
-
-
 }
+
+
+
 
 int main(int argc, char *argv[]) {
     
@@ -979,254 +1165,11 @@ int main(int argc, char *argv[]) {
     topology.synapses = initialize_synapses(conf);
 
     // store generated network
-    store_network(&topology, conf);
-
-
-    // read how much neurons are on each layer
+    store_network(&topology, conf, 0);
 /*
-    size_t n_neurons = strtoul(argv[1], NULL, 10);
-    size_t n_input = strtoul(argv[2], NULL, 10); // virtual neurons...
-    size_t n_output_neurons = strtoul(argv[3], NULL, 10);
-    size_t n_synapses = strtoul(argv[4], NULL, 10);
-
-    // compute number of input synapses for each neuron
-    size_t connect_per_neuron = n_synapses / (n_neurons + n_input);
-    size_t max_connections_per_neuron = n_synapses / 2;
-
-    // the first n_input neurons are the input ones
-    size_t **input_neurons_per_neuron = (size_t**)malloc(n_neurons * sizeof(size_t*));
-
-    for(size_t i=0; i<n_neurons; i++){
-        
-        input_neurons_per_neuron[i] = (size_t*)malloc(max_connections_per_neuron * sizeof(size_t));
-    }
-
-
-    n_synapses = 0;
-    // set input neurons for each neuron (i -> i)
-    for(size_t i=0; i<n_neurons; i++){
-        
-        size_t neuron_connections = connect_per_neuron;
-        input_neurons_per_neuron[i][0] = neuron_connections;
-
-        for(size_t j=0; j<input_neurons_per_neuron[i][0]; j++){
-            
-            // neuron i receives at least input spike train i
-            if(i <= n_input && j == i){
-
-                input_neurons_per_neuron[i][0] ++;
-                input_neurons_per_neuron[i][1] = j;
-                input_neurons_per_neuron[i][2] = 1;
-                n_synapses ++;
-            }
-            else{
-                size_t in_neuron = rand_lim(n_neurons + n_input);
-                if(in_neuron == 0) 
-                    in_neuron = 1;
-
-                size_t n = rand_lim(4);
-                if(n == 0) 
-                    n = 1;
-
-                input_neurons_per_neuron[i][j * 2 + 1] = in_neuron;
-                input_neurons_per_neuron[i][j * 2 + 2] = n;
-                n_synapses += n;
-            }
-        }
-
-        // sort array
-        selectionSort(input_neurons_per_neuron[i]);
-    }
-
-    char *file_name = argv[5];
-    FILE *f;
-    f = fopen(argv[5], "w"); // write
-    if (f == NULL){
-        perror("Error opening the file\n");
-        exit(1);
-    }    
+    // map to output criteria
+    map_network_to_output_criteria(&topology, conf);
     
-    // write general information
-    printf("Storing general information...\n");
-
-    fprintf(f, "[general]\n");
-    fprintf(f, "    neurons = %d\n", n_neurons);
-    fprintf(f, "    input_neurons = %d\n", n_input);
-    fprintf(f, "    output_neurons = %d\n", n_output_neurons);
-    fprintf(f, "    synapsis = %d\n", n_synapses);
-    fprintf(f, "    input_synapsis = %d\n", n_input);
-    fprintf(f, "    output_synapsis = %d\n", 0);
-    fprintf(f, "    network_is_separated = %d\n\n", 1);
-
-    printf("General information stored!\n");
-
-    /*
-    If output is separaed is 1, then all lists are stored in apart files with the name of the
-    original file and an extra indicating what parameter is stored into that file. Else, all
-    is stored in only one file. 
-    */
-
-
-/*
-    char *original_file_name;
-    original_file_name = strtok(file_name, "."); // split file name by extension
-    int len = strlen(original_file_name);
-
-    char* file_name_neurons = malloc((len + 20) * sizeof(char));
-    char* file_name_synapses = malloc((len + 25) * sizeof(char));
-
-    strcpy(file_name_neurons, original_file_name);  // copy original file name
-    strcpy(file_name_synapses, original_file_name);
-    
-    strcat(file_name_neurons, "_neurons.toml"); // add extension to original file name for neurons and synapses
-    strcat(file_name_synapses, "_synapses.toml");
-
-    printf("%s\n", file_name_neurons);
-    printf("%s\n", file_name_synapses);
-
-
-    // open files if information must be stored separated
-    //if(conf->output_is_separated == 1){
-    FILE *f_neurons, *f_synapses;
-    f_neurons = fopen(file_name_neurons, "w"); // write
-    if (f_neurons == NULL){
-        perror("Error opening the file\n");
-        exit(1);
-    }  
-
-    f_synapses = fopen(file_name_synapses, "w"); // write
-    if (f_synapses == NULL){
-        perror("Error opening the file\n");
-        exit(1);
-    }  
-
-    // write neurons information
-    printf("Storing neurons information...\n");
-
-    fprintf(f, "[neurons]\n");
-    fprintf(f, "    behaviour = 1\n"); // TODO: THIS IS TEMPORAL
-
-
-
-    // set input and output synapse indexes
-
-
-
-    fprintf(f, "\n");
-
-    // if is separated == 1, store neurons information in plain text
-    //if(output_is_separated == 1){
-    size_t i;
-    for(i=0; i<n_neurons; i++){
-        fprintf(f_neurons, "%d ", 1);
-    }
-    fprintf(f_neurons, "\n");
-
-    for(i=0; i<n_neurons; i++){
-        fprintf(f_neurons, "%lf ", 1.0);
-    }
-    fprintf(f_neurons, "\n");
-
-    for(i=0; i<n_neurons; i++){
-        fprintf(f_neurons, "%lf ", 0.0);
-    }
-    fprintf(f_neurons, "\n");
-
-    for(i=0; i<n_neurons; i++){
-        fprintf(f_neurons, "%d ", 1);
-    }
-    fprintf(f_neurons, "\n");
-
-
-    printf("Neurons information stored!\n");
-
-
-
-    // write synapses information
-    printf("Storing synapses information...\n");
-    
-    /*fprintf(f, "[synapsis]\n");
-
-    fprintf(f, "    latency = 1\n"); // TODO: THIS IS TEMPORAL
-    
-    if(conf->output_is_separated != 1){
-        fprintf(f, "    latency_list = [");
-        for(i=0; i<network_data->n_synapses-1; i++){
-            fprintf(f, "%d, ", network_data->latency_list[i]);
-        }
-        fprintf(f, "%d]\n", network_data->latency_list[network_data->n_synapses-1]);
-    }
-
-    if(conf->output_is_separated != 1){
-        fprintf(f, "    weights = [");
-        for(i=0; i<network_data->n_synapses-1; i++){
-            fprintf(f, "%lf, ", network_data->weights[i]);
-        }
-        fprintf(f, "%lf]\n", network_data->weights[network_data->n_synapses-1]);
-    }
-
-    fprintf(f, "    training_zones = 0\n"); // TODO: THIS IS TEMPORAL
-    if(conf->output_is_separated != 1){
-        fprintf(f, "    training_zones_list = [");
-        for(i=0; i<network_data->n_synapses-1; i++){
-            fprintf(f, "%d, ", network_data->training_zones_list[i]);
-        }
-        fprintf(f, "%d]\n", network_data->training_zones_list[network_data->n_synapses-1]);
-    }
-
-    if(conf->output_is_separated != 1){
-        fprintf(f, "    connections = [");
-        for(int i=0; i<(network_data->n_neurons+1); i++){
-            fprintf(f, "[");
-            for(int j=0; j<(network_data->connections[i][0] * 2); j++)
-                fprintf(f, "%d, ", network_data->connections[i][j]);
-
-            if(i < network_data->n_neurons)
-                fprintf(f, "%d], ", network_data->connections[i][network_data->connections[i][0] * 2]);
-            else
-                fprintf(f, "%d]", network_data->connections[i][network_data->connections[i][0]* 2]);
-        }
-        fprintf(f, "]\n");
-    }*/
-
-/*
-    printf("Synapses information stored!\n");
-
-    // if is separated == 1, store neurons information in plain text
-    //if(output_is_separated == 1){
-        
-    for(i=0; i<n_synapses; i++){
-        fprintf(f_synapses, "%d ", 1);
-    }
-    fprintf(f_synapses, "\n");
-
-    for(i=0; i<n_synapses; i++){
-        fprintf(f_synapses, "%lf ", 0.5);
-    }
-    fprintf(f_synapses, "\n");
-
-    for(i=0; i<n_synapses; i++){
-        fprintf(f_synapses, "%d ", 0);
-    }
-    fprintf(f_synapses, "\n\n");
-
-    // store connectivity
-    for(size_t i = 0; i<n_neurons; i++){
-
-        fprintf(f_synapses, "%zu ", input_neurons_per_neuron[i][0]);
-        
-        for(size_t j = 0; j<input_neurons_per_neuron[i][0]; j++){
-
-            fprintf(f_synapses, "%zu ", input_neurons_per_neuron[i][j * 2 + 1]);
-            fprintf(f_synapses, "%zu ", input_neurons_per_neuron[i][j * 2 + 2]);
-        }
-
-        fprintf(f_synapses,"\n");
-
-    }
-
-    fclose(f);
-    fclose(f_neurons);
-    fclose(f_synapses);
-*/
+    // store generated network
+    store_network(&topology, conf, 1);*/
 }

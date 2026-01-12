@@ -1170,6 +1170,8 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
     int *tmp_rperiod_remain;
     char *tmp_pstfired, *tmp_prefired;
 
+    size_t padding = 32; // 32 bytes (256 bits) of padding for copied variables // TODO: improve
+
     //char *tmp_spk_mtrx;
 
     //float *tmp_thresh, *tmp_rest, *tmp_init_w;
@@ -1210,31 +1212,35 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
 
 
     /* Memory allocation */
-    snn->v                            = (float*)malloc(N * B * sizeof(float));
+    snn->v                            = (float*)malloc(N * B * sizeof(float) + padding);
+    snn->arrI                         = (float*)malloc(N * B * sizeof(float) + padding);
+    snn->r_period_remain              = (int*)malloc(N * B * sizeof(int) + padding);
+    snn->post_fired                   = (char*)malloc(N * B * sizeof(char) + padding);
+    snn->post_trace                   = (float*)malloc(N * B * sizeof(float) + padding);
+
+
+    snn->w                            = (float*)malloc(S * B * sizeof(float) + padding);
+    snn->dw                           = (float*)malloc(S * B * sizeof(float) + padding);
+    snn->pre_trace                    = (float*)malloc(S * B * sizeof(float) + padding);
+    snn->pre_fired                    = (char*)malloc(S * B * sizeof(char) + padding); 
+    
+
     //snn->v_thresh                     = (float*)malloc(N * B * sizeof(float));
     //snn->v_rest                       = (float*)malloc(N * B * sizeof(float));
-    snn->arrI                         = (float*)malloc(N * B * sizeof(float));
     //snn->r_period                     = (int*)malloc(N * B * sizeof(int));
-    snn->r_period_remain              = (int*)malloc(N * B * sizeof(int));
     //snn->res                          = (int*)malloc(N * B * sizeof(int));
-    snn->post_fired                   = (char*)malloc(N * B * sizeof(char));
-    snn->post_trace                   = (float*)malloc(N * B * sizeof(float));
     //snn->inR                          = (int*)malloc(N * B * sizeof(int));
     //snn->n_neuron_input_synapses      = (size_t*)malloc(N * B * sizeof(size_t));
     //snn->neuron_input_synapses_offset = (size_t*)malloc(N * B * sizeof(size_t));
 
-    snn->w                            = (float*)malloc(S * B * sizeof(float));
     //snn->init_w                       = (float*)malloc(S * B * sizeof(float));
-    snn->dw                           = (float*)malloc(S * B * sizeof(float));
-    snn->pre_trace                    = (float*)malloc(S * B * sizeof(float));
-    snn->pre_fired                    = (char*)malloc(S * B * sizeof(char));
     //snn->delay                        = (int*)malloc(S * B * sizeof(int));
     //snn->lr                           = (int*)malloc(S * B * sizeof(int));
     //snn->pre_neuron_index             = (size_t*)malloc(S * B * sizeof(size_t));
     //snn->post_neuron_index            = (size_t*)malloc(S * B * sizeof(size_t));
 
     // reallocate spk matrix
-    snn->spk_matrix                   = (char*)malloc((iN + N) * B * LT * sizeof(char));
+    snn->spk_matrix                   = (char*)malloc((iN + N) * B * LT * sizeof(char) + padding);
 
 
     /* Initialization */
@@ -1287,6 +1293,39 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
         }
     }
 
+
+    // initialize padding positions to 0
+
+    // initialize padding for floats
+    for(size_t p = N * B ; p<padding / sizeof(float); p++){
+
+        snn->v[p] = 0.0;                       
+        snn->arrI[p] = 0.0;                         
+        snn->post_trace[p] = 0.0;               
+    }
+    for(size_t p = N * B ; p<padding / sizeof(int); p++){
+
+        snn->r_period_remain[p] = 0;              
+    }
+    for(size_t p = N * B ; p<padding / sizeof(char); p++){
+
+        snn->post_fired[p] = 0;     
+    }
+    for(size_t p = S * B ; p<padding / sizeof(float); p++){
+
+        snn->w[p] = 0.0;                    
+        snn->dw[p] = 0.0;  
+        snn->pre_trace[p] = 0.0;                
+    }
+    for(size_t p = S * B ; p<padding / sizeof(char); p++){
+
+        snn->pre_fired[p] = 0;
+    }
+
+    for(size_t p = (iN + N) * B * LT ; p<padding / sizeof(char); p++){
+
+        snn->spk_matrix[p] = 0;
+    }
     // TODO
     // free original arrays memory
 }
@@ -2073,6 +2112,86 @@ void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_resu
 
 
 // CUDA
+/*
+void compute_input_synapses_subsets(cuda_info_t *cuda_info, GPU_SNN_t *snn, simulation_configuration_t *conf){
+
+    size_t i, j;
+
+    // get bytes in shared memory
+    double shared_memory = cuda_info->shared_memory[0];
+
+    // store max synapses to be computed per thread
+    size_t max_synapses_per_thr = 100; // temporal
+
+    // define arrays to store offsets and numbers of offsets
+    size_t *n_subsets_neuron; // number of subsets of input synapses for each neuron
+    size_t *off_subsets_neuron; // first subset of the neuron (if neuron[i-1] has 3 subsets, the neuron[i] subset is 3)
+
+    size_t *n_input_synapses_subset; // number of input synapses for each subset
+    size_t *off_input_synapses_subset; // number of synapses processed before this subset
+
+    size_t n_subsets = 0; // total number of subsets (the sum of the number of subsets of each neuron)
+    size_t r_subset = 0; // helper variable
+
+    // allocate memory
+    off_subsets_neuron = (size_t*)calloc(snn->n_neurons, sizeof(size_t));
+    n_subsets_neuron = (size_t*)calloc(snn->n_neurons, sizeof(size_t));
+
+
+    // count total number of subsets first, and set number of subsets per neuron and the offset of the neuron
+    for(i = 0; i<snn->n_neurons; i++){
+
+        off_subsets_neuron[i] = n_subsets; // offset of the subset
+
+        // compute number of subsets of the neuron and the number of synapses in the last subset (probably less than the max value)
+        n_subsets_neuron[i] = snn->n_input_synapses[i] / max_synapses_per_thr;
+        r_subset = snn->n_input_synapses[i] % max_synapses_per_thr; 
+
+        // if there are remaining subsets, add 1
+        if(r_subset > 0)
+            n_subsets_neuron[i] += 1;
+
+        // add number of subsets of the neuron to the total number of subsets
+        n_subsets += n_subsets_neuron[i];
+    }
+
+
+    // allocate memory
+    off_input_synapses_subset = (size_t*)calloc(n_subsets, sizeof(size_t));
+    n_input_synapses_subset = (size_t*)calloc(n_subsets, sizeof(size_t));    // loop over neurons to divide input synapses in subsets
+    size_t next_subset = 0;
+    size_t n_synapses = 0;
+    for(i = 0; i<snn->n_neurons; i++){
+
+        r_subset = snn->n_input_synapses[i] % max_synapses_per_thr; 
+
+        // loop over subsets of the neuron, and set the number of synapses on each subset
+        for(j = 0; j<n_subsets_neuron[i]-1; j++){
+
+            off_input_synapses_subset[next_subset] = n_synapses;
+            n_input_synapses_subset[next_subset] = max_synapses_per_thr; // subset has the maximum number of synapses in it
+
+            n_synapses += max_synapses_per_thr;
+            next_subset ++;
+        }
+
+        // if r_subset is 0, then all subsets have {max_synapses_per_thr}, else, set the remaining 
+        off_input_synapses_subset[next_subset] = n_synapses;
+        if(r_subset == 0){
+            
+            n_input_synapses_subset[next_subset] = max_synapses_per_thr;
+            n_synapses += max_synapses_per_thr;
+        }
+        else{
+            
+            n_input_synapses_subset[next_subset] = r_subset;
+            n_synapses += r_subset;
+        }
+
+        next_subset ++;
+    }
+}*/
+
 
 void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf){
 
@@ -2104,6 +2223,7 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
 
     // check if all batch copies can be stored in the device
     total_mem_snn = cuda_info->network_size + cuda_info->network_cpy_size * (float)conf->batch_size;
+    cuda_info->dev_batch_size = conf->batch_size;
 
     if(total_mem_snn < available_memory){
 
@@ -2129,7 +2249,7 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
     cuda_info->n_threads_per_blk_synapses_x = 512;
     cuda_info->n_threads_per_blk_synapses_y = 1;
     cuda_info->n_threads_per_blk_synapses_z = 1;
-    cuda_info->n_blk_synapses_x = snn->n_synapses * conf->batch_size / cuda_info->n_threads_per_blk_synapses_x + 1;
+    cuda_info->n_blk_synapses_x = (snn->n_synapses * conf->batch_size) / cuda_info->n_threads_per_blk_synapses_x + 1;
     cuda_info->n_blk_synapses_y = 1;
     cuda_info->n_blk_synapses_z = 1;
 
