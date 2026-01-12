@@ -2071,49 +2071,55 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                 float I = 0.0;
 
                 // check wether the neuron is in refractary period: pre_fired flag not activated although it should be
-                if(snn->r_period_remain[g_neuron_index + b] <= 0 || conf->learn){
-                
-                    // loop over input synapses
-                    for(j=0; j<iS; j++){
+                //if(snn->r_period_remain[g_neuron_index + b] <= 0 || conf->learn){
 
-                        // get synapse index. In not copied variables use synapse_index, in copied g_synapse_index 
-                        synapse_index = base_synapse + j;
-                        g_synapse_index = synapse_index * B; // scale base synapse, since now there are B copies of each one
-                        
-                        // get input neuron index (not copied)
-                        in_neuron_index = snn->pre_neuron_index[synapse_index]; 
+                // loop over input synapses
+                for(j=0; j<iS; j++){
 
-                        // get synapse delay (not copied)
-                        delay = snn->delay[synapse_index];
-
-                        // get spike time
-                        spk_time = (int)t - delay;
+                    // get synapse index. In not copied variables use synapse_index, in copied g_synapse_index 
+                    synapse_index = base_synapse + j;
+                    g_synapse_index = synapse_index * B; // scale base synapse, since now there are B copies of each one
                     
-                        // correct spk_time
-                        if(spk_time < 0 && gt >= LT){ // CHECK
-                            spk_time = (int)LT + spk_time;
+                    // get input neuron index (not copied)
+                    in_neuron_index = snn->pre_neuron_index[synapse_index]; 
+
+                    // get synapse delay (not copied)
+                    delay = snn->delay[synapse_index];
+
+                    // get spike time
+                    spk_time = (int)t - delay;
+                
+                    // correct spk_time
+                    if(spk_time < 0 && gt >= LT){ // CHECK
+                        spk_time = (int)LT + spk_time;
+                    }
+
+                    // process spike 
+                    if(spk_time >= 0){
+                        
+                        // index to load the spike from
+                        size_t index = ((iN + N) * B * (size_t)spk_time) + ((in_neuron_index * B));
+
+                        // get spike
+                        spk = (float)(snn->spk_matrix[index + b]); 
+
+                        // update I if r period remain <= 0 and spike received
+                        if(snn->r_period_remain[g_neuron_index + b] <= 0 && (int)spk == 1){
+                            
+                            I += snn->w[g_synapse_index + b] * spk; // spk = 0 / 1
                         }
 
-                        // process spike 
-                        if(spk_time >= 0){
-                            
-                            // index to load the spike from
-                            size_t index = ((iN + N) * B * (size_t)spk_time) + ((in_neuron_index * B));
+                        // spike received, move to the next position
+                        if((int)spk == 1){
 
-                            // get spike
-                            spk = (float)(snn->spk_matrix[index + b]); 
+                            snn->spikes_received[synapse_index * conf->time_steps + snn->next_pos_neuron[synapse_index]] += 1;
+                        }
 
-                            // update I if r period remain <= 0 and spike received
-                            if(snn->r_period_remain[g_neuron_index + b] <= 0 && (int)spk == 1){
-                                
-                                I += snn->w[g_synapse_index + b] * spk; // spk = 0 / 1
-                            }
 
-                            // store if the presynaptic neuron fired for TR-STDP
-                            if(conf->learn && (int)spk == 1){
+                        // store if the presynaptic neuron fired for TR-STDP
+                        if(conf->learn && (int)spk == 1){
 
-                                snn->pre_fired[g_synapse_index + b] = (char)spk;
-                            }
+                            snn->pre_fired[g_synapse_index + b] = (char)spk;
                         }
                     }
                 }
@@ -2618,6 +2624,11 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                 // check whether fired
                 if(snn->v[g_neuron_index + b] >= snn->v_thresh[neuron_index]){
             
+                    for(size_t j = 0; j<snn->n_neuron_input_synapses[i]; j++){
+
+                        snn->next_pos_neuron[snn->neuron_input_synapses_offset[i] + j] ++; // move to the next time step
+                    }
+
                     snn->spk_matrix[idx + b] = 1;
 
                     // reinit neuron values
@@ -3809,7 +3820,7 @@ void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configu
 
     // initialize results struct to store batch results
     GPU_results_t *batch_results = initialize_batch_results_cpu(conf, snn->n_neurons, conf->batch_size, 1);
-    simulate_batch_CPU(snn, dataset, conf, batch_results, 0, 1);
+    //simulate_batch_CPU(snn, dataset, conf, batch_results, 0, 1);
 
 
     // simulate and print first batch results
@@ -3838,6 +3849,26 @@ void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configu
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     printf(" > Finished in %lf!\n", elapsed_time); 
+
+
+    // print spikes
+
+    for(size_t i = 0; i<snn->n_neurons; i++){
+
+        printf(" Neuron %zu:\n", i);
+        for(size_t j = 0; j<snn->n_neuron_input_synapses[i]; j++){
+
+            size_t synapse_index = snn->neuron_input_synapses_offset[i] + j;
+            printf(" > Synapse %zu: ", synapse_index);
+
+            for(size_t k = 0; k<snn->next_pos_neuron[synapse_index]; k++){
+
+                printf("%zu ", snn->spikes_received[synapse_index * conf->time_steps + k]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
 
 
     // print information in results struct

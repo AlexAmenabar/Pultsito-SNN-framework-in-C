@@ -343,7 +343,6 @@ typedef struct {
     size_t *neuron_input_synapses_offset; // [n_neurons]: index of the first input synapse for each neuron
     size_t *n_neuron_output_synapses; // [n_neurons]: number of output synapses for the neuron
     size_t *neuron_output_synapses_offset; // [n_neurons]: index of the first output synapse for each neuron
-    
 
     // synapses
     float *w; // [n_synapses]: weight of the synapse
@@ -357,6 +356,10 @@ typedef struct {
     float *pre_trace; // [n_synapses]: presynaptic trace
 
     char *spk_matrix; // [(n_input_synapses + n_neurons) * t_len * batch_size]
+
+    // count received spikes
+    size_t *spikes_received; // [n_neurons][time_steps]
+    size_t *next_pos_neuron;
 
     // FLOAT(3N + 2M) + INT(7N + 5M) + NT = 32(10N + 7M) + 32NT bit
 

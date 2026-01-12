@@ -1225,6 +1225,10 @@ void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf){
     snn->pre_fired                    = (char*)malloc(S * B * sizeof(char) + padding); 
     
 
+    // allocate memory for 
+    snn->spikes_received              = (size_t*)calloc(S * conf->time_steps * B, sizeof(size_t));
+    snn->next_pos_neuron              = (size_t*)calloc(S * B, sizeof(size_t));
+
     //snn->v_thresh                     = (float*)malloc(N * B * sizeof(float));
     //snn->v_rest                       = (float*)malloc(N * B * sizeof(float));
     //snn->r_period                     = (int*)malloc(N * B * sizeof(int));
@@ -1583,6 +1587,11 @@ GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_cons
 
     // connect network
     connect_network_input_criteria(snn, data, conf);
+
+
+    // allocate memory for 
+    snn->spikes_received = (size_t*)calloc(snn->n_synapses * conf->time_steps, sizeof(size_t));
+    snn->next_pos_neuron = (size_t*)calloc(snn->n_synapses, sizeof(size_t));
 
     // return SNN structure
     return snn;
