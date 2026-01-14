@@ -2112,16 +2112,16 @@ void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_resu
 
 
 // CUDA
-/*
 void compute_input_synapses_subsets(cuda_info_t *cuda_info, GPU_SNN_t *snn, simulation_configuration_t *conf){
 
     size_t i, j;
 
-    // get bytes in shared memory
-    double shared_memory = cuda_info->shared_memory[0];
+    // get available bytes in shared memory per each block
+    double shared_memory = cuda_info->shared_memory_mem[0];
 
     // store max synapses to be computed per thread
     size_t max_synapses_per_thr = 100; // temporal
+
 
     // define arrays to store offsets and numbers of offsets
     size_t *n_subsets_neuron; // number of subsets of input synapses for each neuron
@@ -2141,42 +2141,48 @@ void compute_input_synapses_subsets(cuda_info_t *cuda_info, GPU_SNN_t *snn, simu
     // count total number of subsets first, and set number of subsets per neuron and the offset of the neuron
     for(i = 0; i<snn->n_neurons; i++){
 
-        off_subsets_neuron[i] = n_subsets; // offset of the subset
+        // subset offset is the number of previous offsets
+        off_subsets_neuron[i] = n_subsets; 
 
-        // compute number of subsets of the neuron and the number of synapses in the last subset (probably less than the max value)
-        n_subsets_neuron[i] = snn->n_input_synapses[i] / max_synapses_per_thr;
-        r_subset = snn->n_input_synapses[i] % max_synapses_per_thr; 
+        // compute number of subsets of the neuron and the number of synapses in the last subset
+        n_subsets_neuron[i] = snn->n_neuron_input_synapses[i] / max_synapses_per_thr;
 
-        // if there are remaining subsets, add 1
-        if(r_subset > 0)
+        // if there are remaining subsets, add one more subset
+        if((snn->n_neuron_input_synapses[i] % max_synapses_per_thr) > 0)
             n_subsets_neuron[i] += 1;
 
-        // add number of subsets of the neuron to the total number of subsets
+        // compute total number of subsets
         n_subsets += n_subsets_neuron[i];
     }
 
 
-    // allocate memory
-    off_input_synapses_subset = (size_t*)calloc(n_subsets, sizeof(size_t));
-    n_input_synapses_subset = (size_t*)calloc(n_subsets, sizeof(size_t));    // loop over neurons to divide input synapses in subsets
+    // allocate memory synapses information of each offset
+    off_input_synapses_subset = (size_t*)calloc(n_subsets, sizeof(size_t)); // offset of the first synapse on each subset
+    n_input_synapses_subset = (size_t*)calloc(n_subsets, sizeof(size_t)); // number of synapses on each subset
+    
+    // control variables
     size_t next_subset = 0;
-    size_t n_synapses = 0;
+    size_t n_synapses = 0; // total number of synapses processed to be used as offset
+
+    // loop over input synapses of the neuron to form the subsets
     for(i = 0; i<snn->n_neurons; i++){
 
-        r_subset = snn->n_input_synapses[i] % max_synapses_per_thr; 
-
-        // loop over subsets of the neuron, and set the number of synapses on each subset
+        // all subsets until the last has the maximum number of synapses
         for(j = 0; j<n_subsets_neuron[i]-1; j++){
 
-            off_input_synapses_subset[next_subset] = n_synapses;
+            off_input_synapses_subset[next_subset] = n_synapses; // set the offset of the subset in the array of synapses
             n_input_synapses_subset[next_subset] = max_synapses_per_thr; // subset has the maximum number of synapses in it
 
-            n_synapses += max_synapses_per_thr;
-            next_subset ++;
+            // update control variables
+            n_synapses += max_synapses_per_thr; // processed synapses
+            next_subset ++; // synapse counter
         }
 
-        // if r_subset is 0, then all subsets have {max_synapses_per_thr}, else, set the remaining 
+        // set the last subset
         off_input_synapses_subset[next_subset] = n_synapses;
+
+        // if r_subset > 0, the last subset of the neuron has less synapses than the max 
+        r_subset = snn->n_neuron_input_synapses[i] % max_synapses_per_thr; 
         if(r_subset == 0){
             
             n_input_synapses_subset[next_subset] = max_synapses_per_thr;
@@ -2190,7 +2196,7 @@ void compute_input_synapses_subsets(cuda_info_t *cuda_info, GPU_SNN_t *snn, simu
 
         next_subset ++;
     }
-}*/
+}
 
 
 void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf){
@@ -2273,6 +2279,17 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
     cuda_info->n_blk_uw_x = snn->n_synapses / cuda_info->n_thr_per_blk_uw_x + 1;
     cuda_info->n_blk_uw_y = 1;
     cuda_info->n_blk_uw_z = 1;
+
+
+    // {N * batch_size * thrN} threads, max per block = 512
+    size_t neurons_is = snn->n_neurons * thrN;
+
+    cuda_info->n_thr_per_blk_is_x = 512;
+    cuda_info->n_thr_per_blk_is_y = 1;
+    cuda_info->n_thr_per_blk_is_z = 1;
+    cuda_info->n_blk_is_x = (neurons_is * conf->batch_size) / cuda_info->n_thr_per_blk_is_x + 1;
+    cuda_info->n_blk_is_y = 1;
+    cuda_info->n_blk_is_z = 1;
 
 
     // find the maximum number of possible copies

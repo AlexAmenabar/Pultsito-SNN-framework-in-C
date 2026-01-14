@@ -12,6 +12,8 @@
     typedef float real_t;
 #endif
 
+// temporal thrN
+#define thrN 16 
 
 /* Simulation configuration struct containing all the data for the simulation */
 
@@ -452,17 +454,18 @@ typedef struct {
     size_t n_thr_per_blk_in_neurons_x, n_thr_per_blk_in_neurons_y, n_thr_per_blk_in_neurons_z;
     size_t n_thr_per_blk_all_neurons_x, n_thr_per_blk_all_neurons_y, n_thr_per_blk_all_neurons_z;
     size_t n_thr_per_blk_uw_x, n_thr_per_blk_uw_y, n_thr_per_blk_uw_z;
+    size_t n_thr_per_blk_is_x, n_thr_per_blk_is_y, n_thr_per_blk_is_z;
 
     size_t n_blk_neurons_x, n_blk_neurons_y, n_blk_neurons_z;
     size_t n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z;
     size_t n_blk_in_neurons_x, n_blk_in_neurons_y, n_blk_in_neurons_z;
     size_t n_blk_all_neurons_x, n_blk_all_neurons_y, n_blk_all_neurons_z;
     size_t n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
+    size_t n_blk_is_x, n_blk_is_y, n_blk_is_z; 
 
 
 
 
-    
     unsigned int n_threads_per_blk_reinspk_m_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
     unsigned int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
     unsigned int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;

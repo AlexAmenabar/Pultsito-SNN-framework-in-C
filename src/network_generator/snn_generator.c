@@ -658,7 +658,7 @@ topology_t generate_layered_topology(generator_conf_t *conf){
             input_neurons_per_neuron[next_neuron][0] = n_neurons_per_layer[i-1];
         
             for(size_t l = 0; l<n_neurons_per_layer[i-1]; l++){
-                input_neurons_per_neuron[next_neuron][l * 2 + 1] = next_neuron - j - n_neurons_per_layer[i-1] + l;
+                input_neurons_per_neuron[next_neuron][l * 2 + 1] = next_neuron - j - n_neurons_per_layer[i-1] + l + n_input;
                 input_neurons_per_neuron[next_neuron][l * 2 + 2] = 1;
             }
 
