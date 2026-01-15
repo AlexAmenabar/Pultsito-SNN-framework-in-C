@@ -2198,16 +2198,90 @@ void compute_input_synapses_subsets(cuda_info_t *cuda_info, GPU_SNN_t *snn, simu
     }
 }
 
-
+// TODO: think about this function, very caotic
 void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf){
 
-    double available_memory, total_mem_snn;
+    size_t i, off;
+    double available_memory, total_mem_snn, mem;
+    size_t n_max_devices, nDevices;
+    size_t batch_size = conf->batch_size;
+    size_t batch_per_dev, rem_samples;
 
     // store information in cuda info struct
-    cuda_info->n_samples = dataset->n_samples;
-    cuda_info->time_steps = conf->time_steps;
-    cuda_info->multi_gpu_allowed = conf->multi_gpu;
-    cuda_info->batch_size = conf->batch_size;
+    cuda_info->n_samples = dataset->n_samples; // store number of samples in the dataset
+    cuda_info->time_steps = conf->time_steps; // time steps of the simulation
+    cuda_info->batch_size = batch_size; // store batch size in cuda info
+
+
+    /* Compute number of devices */
+    
+    cuda_info->multi_gpu_allowed = conf->multi_gpu >= 1; // whether multi gpu is allowed (0, no; 1: all devices; n > 1: number of devices)
+    
+    // compute number of gpus to use in the simulation
+    if(conf->multi_gpu > 1){ // if multi_gpu > 1, that is the number of max devices
+
+        n_max_devices = conf->multi_gpu;
+    }
+    else if(cuda_info->multi_gpu_allowed == 1){ // if 1, use all available devices
+
+        n_max_devices = cuda_info->nDevices;
+    }
+    else{ // if 0, use only 1 device
+
+        n_max_devices = 1;
+    }
+
+    // we can not use more than the available devices, correct number
+    if(n_max_devices > cuda_info->nDevices){
+
+        n_max_devices = cuda_info->nDevices;
+        printf(" > There are no %zu devices available, %zu devices will be used.\n", n_max_devices, cuda_info->nDevices);
+        fflush(stdout);
+    }
+
+    // set the number of devices to be used to simulate
+    cuda_info->nDevices = n_max_devices;
+    nDevices = cuda_info->nDevices;
+
+
+    /* Compute the batch size and the offsets for each device */
+
+    // compute batch_size per device
+    batch_per_dev = batch_size / nDevices; 
+    rem_samples = batch_size % nDevices; // compute how much samples do not fit on the devices
+
+    // allocate memory for each device
+    cuda_info->dev_batch_size = (size_t*)calloc(nDevices, sizeof(size_t)); // number of samples simulated by each sample on each batch
+    cuda_info->dev_batch_offset = (size_t*)calloc(nDevices, sizeof(size_t)); // offset of the batch
+    cuda_info->n_networks_per_dev = (size_t*)calloc(nDevices, sizeof(size_t)); // number of maximum networks per dev
+
+    // set the batch_per_dev to each device
+    for(i = 0; i<cuda_info->nDevices; i++){
+    
+        cuda_info->dev_batch_size[i] = batch_per_dev;
+    }
+
+    // update batch_per_dev (set the remaining samples to devices until all are set)
+    i = 0;
+    while(rem_samples > 0){
+
+        cuda_info->dev_batch_size[i] ++;
+        rem_samples --;
+        
+        i++;
+    }
+
+    // compute offsets
+    off = 0;
+    for(size_t i = 0; i<cuda_info->nDevices; i++){
+
+        cuda_info->dev_batch_offset[i] = off; // set the offset to the device
+        off += cuda_info->dev_batch_size[i]; // sum the samples in the device for the next offset
+    }
+
+
+
+    /* Get memory occupation in GPU: improve the part of n_networks */
 
     // get memory occupation data for GPU by data structures
     cuda_info->network_size = get_snn_size(snn);
@@ -2215,83 +2289,114 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
     cuda_info->dataset_size = get_dataset_size(dataset); 
     cuda_info->results_size = get_results_size(snn->n_neurons, dataset->n_samples, conf->time_steps);
 
+    // compute available memory in the GPU without copies
+    mem = cuda_info->gpu_free_mem[0] - cuda_info->dataset_size - cuda_info->results_size - cuda_info->network_size - 500 * 1024 * 1024;
 
-    // compute available memory for copies after copying network, datasets, results, and reserving some memory for cuda 
-    available_memory = cuda_info->gpu_free_mem[0];
-    available_memory -= cuda_info->dataset_size;
-    available_memory -= cuda_info->results_size;
-    available_memory -= cuda_info->network_size;
-    available_memory -= 500 * 1024 * 1024; // reserve 500MB for cuda // too much?
+    // TODO: temp, if not enough memory do something instead of leaving
+    if((mem - (cuda_info->network_cpy_size * cuda_info->dev_batch_size[0])) <= 0){
 
-    // usable memory
+        // compute maximum number of networks copies that can be allocated in the GPU
+        printf(" > Not enough memory in the GPU! Reduce the batch size. Exiting\n");
+        exit(1);
+    }
     printf(" > Available memory for SNN copies in GPU = %.2fMB\n", available_memory / 1024.0 / 1024.0);
-
-
-    // check if all batch copies can be stored in the device
-    total_mem_snn = cuda_info->network_size + cuda_info->network_cpy_size * (float)conf->batch_size;
-    cuda_info->dev_batch_size = conf->batch_size;
-
-    if(total_mem_snn < available_memory){
-
-        cuda_info->n_networks_per_dev = conf->batch_size;
-        cuda_info->dev_batch_size = conf->batch_size;
-    }
-    else{
-
-        // TODO
+    fflush(stdout);
+    for(size_t i=0; i<cuda_info->nDevices; i++){
+        
+        cuda_info->n_networks_per_dev[i] = cuda_info->dev_batch_size[i];
     }
 
-    // TODO: multi-gpu / single-GPU differenciation
+
+    // TODO: refactorize to function
+    // allocate memory for number of threads on each device kernel
+    cuda_info->n_thr_per_blk_neurons_x      = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_neurons_y      = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_neurons_z      = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_neurons_x              = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_neurons_y              = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_neurons_z              = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_threads_per_blk_synapses_x = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_threads_per_blk_synapses_y = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_threads_per_blk_synapses_z = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_synapses_x             = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_synapses_y             = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_synapses_z             = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_in_neurons_x   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_in_neurons_y   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_in_neurons_z   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_in_neurons_x           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_in_neurons_y           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_in_neurons_z           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_all_neurons_x  = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_all_neurons_y  = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_all_neurons_z  = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_all_neurons_x          = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_all_neurons_y          = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_all_neurons_z          = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_uw_x           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_uw_y           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_uw_z           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_uw_x                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_uw_y                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_uw_z                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_is_x           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_is_y           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_thr_per_blk_is_z           = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_is_x                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_is_y                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
+    cuda_info->n_blk_is_z                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
 
 
-    // simple configuration: one thread per each neuron / synapse in batch
-    cuda_info->n_thr_per_blk_neurons_x = 512;
-    cuda_info->n_thr_per_blk_neurons_y = 1;
-    cuda_info->n_thr_per_blk_neurons_z = 1;
-    cuda_info->n_blk_neurons_x = ((snn->n_neurons * conf->batch_size) / cuda_info->n_thr_per_blk_neurons_x) + 1;
-    cuda_info->n_blk_neurons_y = 1;
-    cuda_info->n_blk_neurons_z = 1;
+    // set number of threads for each kernel 
+    for(size_t dev = 0; dev < cuda_info->nDevices; dev ++){
+        
+        cuda_info->n_thr_per_blk_neurons_x[dev] = 512;
+        cuda_info->n_thr_per_blk_neurons_y[dev] = 1;
+        cuda_info->n_thr_per_blk_neurons_z[dev] = 1;
+        cuda_info->n_blk_neurons_x[dev] = ((snn->n_neurons * cuda_info->n_networks_per_dev[dev]) / cuda_info->n_thr_per_blk_neurons_x[dev]) + 1;
+        cuda_info->n_blk_neurons_y[dev] = 1;
+        cuda_info->n_blk_neurons_z[dev] = 1;
 
-    cuda_info->n_threads_per_blk_synapses_x = 512;
-    cuda_info->n_threads_per_blk_synapses_y = 1;
-    cuda_info->n_threads_per_blk_synapses_z = 1;
-    cuda_info->n_blk_synapses_x = (snn->n_synapses * conf->batch_size) / cuda_info->n_threads_per_blk_synapses_x + 1;
-    cuda_info->n_blk_synapses_y = 1;
-    cuda_info->n_blk_synapses_z = 1;
+        cuda_info->n_threads_per_blk_synapses_x[dev] = 512;
+        cuda_info->n_threads_per_blk_synapses_y[dev] = 1;
+        cuda_info->n_threads_per_blk_synapses_z[dev] = 1;
+        cuda_info->n_blk_synapses_x[dev] = (snn->n_synapses * cuda_info->n_networks_per_dev[dev]) / cuda_info->n_threads_per_blk_synapses_x[dev] + 1;
+        cuda_info->n_blk_synapses_y[dev] = 1;
+        cuda_info->n_blk_synapses_z[dev] = 1;
 
-    cuda_info->n_thr_per_blk_in_neurons_x = 512;
-    cuda_info->n_thr_per_blk_in_neurons_y = 1;
-    cuda_info->n_thr_per_blk_in_neurons_z = 1;
-    cuda_info->n_blk_in_neurons_x = snn->n_input_neurons * conf->batch_size / cuda_info->n_thr_per_blk_in_neurons_x + 1;
-    cuda_info->n_blk_in_neurons_y = 1;
-    cuda_info->n_blk_in_neurons_z = 1;
+        cuda_info->n_thr_per_blk_in_neurons_x[dev] = 512;
+        cuda_info->n_thr_per_blk_in_neurons_y[dev] = 1;
+        cuda_info->n_thr_per_blk_in_neurons_z[dev] = 1;
+        cuda_info->n_blk_in_neurons_x[dev] = snn->n_input_neurons * cuda_info->n_networks_per_dev[dev] / cuda_info->n_thr_per_blk_in_neurons_x[dev] + 1;
+        cuda_info->n_blk_in_neurons_y[dev] = 1;
+        cuda_info->n_blk_in_neurons_z[dev] = 1;
 
-    cuda_info->n_thr_per_blk_all_neurons_x = 512;
-    cuda_info->n_thr_per_blk_all_neurons_y = 1;
-    cuda_info->n_thr_per_blk_all_neurons_z = 1;
-    cuda_info->n_blk_all_neurons_x = (snn->n_input_neurons + snn->n_neurons) * conf->batch_size / cuda_info->n_thr_per_blk_all_neurons_x + 1;
-    cuda_info->n_blk_all_neurons_y = 1;
-    cuda_info->n_blk_all_neurons_z = 1;
+        cuda_info->n_thr_per_blk_all_neurons_x[dev] = 512;
+        cuda_info->n_thr_per_blk_all_neurons_y[dev] = 1;
+        cuda_info->n_thr_per_blk_all_neurons_z[dev] = 1;
+        cuda_info->n_blk_all_neurons_x[dev] = (snn->n_input_neurons + snn->n_neurons) * cuda_info->n_networks_per_dev[dev] / cuda_info->n_thr_per_blk_all_neurons_x[dev] + 1;
+        cuda_info->n_blk_all_neurons_y[dev] = 1;
+        cuda_info->n_blk_all_neurons_z[dev] = 1;
+        
+        cuda_info->n_thr_per_blk_uw_x[dev] = 512;
+        cuda_info->n_thr_per_blk_uw_y[dev] = 1;
+        cuda_info->n_thr_per_blk_uw_z[dev] = 1;
+        cuda_info->n_blk_uw_x[dev] = snn->n_synapses / cuda_info->n_thr_per_blk_uw_x[dev] + 1;
+        cuda_info->n_blk_uw_y[dev] = 1;
+        cuda_info->n_blk_uw_z[dev] = 1;
+
+
+        // {N * batch_size * thrN} threads, max per block = 512
+        size_t neurons_is = snn->n_neurons * thrN;
+        cuda_info->n_thr_per_blk_is_x[dev] = 512;
+        cuda_info->n_thr_per_blk_is_y[dev] = 1;
+        cuda_info->n_thr_per_blk_is_z[dev] = 1;
+        cuda_info->n_blk_is_x[dev] = (neurons_is * cuda_info->n_networks_per_dev[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
+        cuda_info->n_blk_is_y[dev] = 1;
+        cuda_info->n_blk_is_z[dev] = 1;
+    }
+
     
-    cuda_info->n_thr_per_blk_uw_x = 512;
-    cuda_info->n_thr_per_blk_uw_y = 1;
-    cuda_info->n_thr_per_blk_uw_z = 1;
-    cuda_info->n_blk_uw_x = snn->n_synapses / cuda_info->n_thr_per_blk_uw_x + 1;
-    cuda_info->n_blk_uw_y = 1;
-    cuda_info->n_blk_uw_z = 1;
-
-
-    // {N * batch_size * thrN} threads, max per block = 512
-    size_t neurons_is = snn->n_neurons * thrN;
-
-    cuda_info->n_thr_per_blk_is_x = 512;
-    cuda_info->n_thr_per_blk_is_y = 1;
-    cuda_info->n_thr_per_blk_is_z = 1;
-    cuda_info->n_blk_is_x = (neurons_is * conf->batch_size) / cuda_info->n_thr_per_blk_is_x + 1;
-    cuda_info->n_blk_is_y = 1;
-    cuda_info->n_blk_is_z = 1;
-
-
     // find the maximum number of possible copies
 
     // memory of each kernel for thread (bits)

@@ -680,7 +680,7 @@ __global__ void print_n_spikes(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, s
 extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, tmp_batch_cpu_t *gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t *cpu_results){
 
     
-    size_t N, iN, S, n_samples, n_features, n_networks, batch_size, dev_batch_size, T, LT;
+    size_t N, iN, S, n_samples, n_features, n_networks, batch_size, T, LT;
     size_t t, s, snn;
     cudaError_t err;
     
@@ -702,28 +702,27 @@ extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_da
     n_features = cpu_dataset->n_features;
 
     batch_size = cuda_info->batch_size;
-    dev_batch_size = cuda_info->dev_batch_size;
     n_networks = cuda_info->n_networks;
     
     // set dim3 struct to launch kernels
 
-    dim3 grid_neurons(cuda_info->n_blk_neurons_x, cuda_info->n_blk_neurons_y, cuda_info->n_blk_neurons_z);
-    dim3 block_neurons(cuda_info->n_thr_per_blk_neurons_x, cuda_info->n_thr_per_blk_neurons_y, cuda_info->n_thr_per_blk_neurons_z);
+    dim3 grid_neurons(cuda_info->n_blk_neurons_x[0], cuda_info->n_blk_neurons_y[0], cuda_info->n_blk_neurons_z[0]);
+    dim3 block_neurons(cuda_info->n_thr_per_blk_neurons_x[0], cuda_info->n_thr_per_blk_neurons_y[0], cuda_info->n_thr_per_blk_neurons_z[0]);
 
-    dim3 grid_synapses(cuda_info->n_blk_synapses_x, cuda_info->n_blk_synapses_y, cuda_info->n_blk_synapses_z);
-    dim3 block_synapses(cuda_info->n_threads_per_blk_synapses_x, cuda_info->n_threads_per_blk_synapses_y, cuda_info->n_threads_per_blk_synapses_z);
+    dim3 grid_synapses(cuda_info->n_blk_synapses_x[0], cuda_info->n_blk_synapses_y[0], cuda_info->n_blk_synapses_z[0]);
+    dim3 block_synapses(cuda_info->n_threads_per_blk_synapses_x[0], cuda_info->n_threads_per_blk_synapses_y[0], cuda_info->n_threads_per_blk_synapses_z[0]);
 
-    dim3 grid_in_neurons(cuda_info->n_blk_in_neurons_x, cuda_info->n_blk_in_neurons_y, cuda_info->n_blk_in_neurons_z);
-    dim3 block_in_neurons(cuda_info->n_thr_per_blk_in_neurons_x, cuda_info->n_thr_per_blk_in_neurons_y, cuda_info->n_thr_per_blk_in_neurons_z);
+    dim3 grid_in_neurons(cuda_info->n_blk_in_neurons_x[0], cuda_info->n_blk_in_neurons_y[0], cuda_info->n_blk_in_neurons_z[0]);
+    dim3 block_in_neurons(cuda_info->n_thr_per_blk_in_neurons_x[0], cuda_info->n_thr_per_blk_in_neurons_y[0], cuda_info->n_thr_per_blk_in_neurons_z[0]);
 
-    dim3 grid_all_neurons(cuda_info->n_blk_all_neurons_x, cuda_info->n_blk_all_neurons_y, cuda_info->n_blk_all_neurons_z);
-    dim3 block_all_neurons(cuda_info->n_thr_per_blk_all_neurons_x, cuda_info->n_thr_per_blk_all_neurons_y, cuda_info->n_thr_per_blk_all_neurons_z);
+    dim3 grid_all_neurons(cuda_info->n_blk_all_neurons_x[0], cuda_info->n_blk_all_neurons_y[0], cuda_info->n_blk_all_neurons_z[0]);
+    dim3 block_all_neurons(cuda_info->n_thr_per_blk_all_neurons_x[0], cuda_info->n_thr_per_blk_all_neurons_y[0], cuda_info->n_thr_per_blk_all_neurons_z[0]);
 
-    dim3 grid_uw(cuda_info->n_blk_uw_x, cuda_info->n_blk_uw_y, cuda_info->n_blk_uw_z);
-    dim3 block_uw(cuda_info->n_thr_per_blk_uw_x, cuda_info->n_thr_per_blk_uw_y, cuda_info->n_thr_per_blk_uw_z);
+    dim3 grid_uw(cuda_info->n_blk_uw_x[0], cuda_info->n_blk_uw_y[0], cuda_info->n_blk_uw_z[0]);
+    dim3 block_uw(cuda_info->n_thr_per_blk_uw_x[0], cuda_info->n_thr_per_blk_uw_y[0], cuda_info->n_thr_per_blk_uw_z[0]);
 
-    dim3 grid_is(cuda_info->n_blk_is_x, cuda_info->n_blk_is_y, cuda_info->n_blk_is_z);
-    dim3 block_is(cuda_info->n_thr_per_blk_is_x, cuda_info->n_thr_per_blk_is_y, cuda_info->n_thr_per_blk_is_z);
+    dim3 grid_is(cuda_info->n_blk_is_x[0], cuda_info->n_blk_is_y[0], cuda_info->n_blk_is_z[0]);
+    dim3 block_is(cuda_info->n_thr_per_blk_is_x[0], cuda_info->n_thr_per_blk_is_y[0], cuda_info->n_thr_per_blk_is_z[0]);
 
 
 
@@ -778,7 +777,7 @@ extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_da
         clock_gettime(CLOCK_MONOTONIC, &start_in);
 
         //process_input_currect_batch<<<grid_neurons, block_neurons>>>(gpu_snn, iN, N, batch_size, lt, t, (size_t)conf->learn);
-        process_input_currect_batch<<<grid_is, block_is, cuda_info->n_thr_per_blk_is_x * sizeof(float)>>>(gpu_snn, iN, N, batch_size, lt, t, (size_t)conf->learn);
+        process_input_currect_batch<<<grid_is, block_is, cuda_info->n_thr_per_blk_is_x[0] * sizeof(float)>>>(gpu_snn, iN, N, batch_size, lt, t, (size_t)conf->learn);
         cudaCheckError(cudaPeekAtLastError());  // check launch errors
         cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
         cudaDeviceSynchronize();
@@ -882,6 +881,7 @@ extern "C" void simulate_batches_LIF_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gp
         cudaError_t err = cudaMemcpyToSymbol(n_samples, &cpu_dataset->n_samples, sizeof(size_t));
     }
 
+    
     // if it is executed in only one device
     if(cuda_info->nDevices == 1){
         
@@ -940,7 +940,6 @@ extern "C" void simulate_batches_LIF_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gp
     }
 
     // TODO: multi GPU must be corrected
-    // if it is multi GPU
     else{
 
         int e, b, dev, batch_number = 0;
@@ -1037,8 +1036,8 @@ extern "C" void simulate_LIF_in_multi_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu
 
     time_steps = cuda_info->time_steps;
     batch_size = cuda_info->batch_size;
-    dev_batch_size = cuda_info->dev_batch_size;
-    n_networks = cuda_info->n_networks_per_dev;
+    dev_batch_size = cuda_info->dev_batch_size[0];
+    n_networks = cuda_info->n_networks_per_dev[0];
 
     // set dim3 struct to launch kernels
     /*dim3 grid_n_spkmatrix_reinit_blk((unsigned int)(cuda_info->n_threads_per_blk_rsm_x), cuda_info->n_threads_per_blk_rsm_y, cuda_info->n_threads_per_blk_rsm_z );
@@ -1147,111 +1146,4 @@ extern "C" void simulate_LIF_in_multi_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu
         cudaCheckError(cudaPeekAtLastError());  // check launch errors
         cudaCheckError(cudaDeviceSynchronize());  // check runtime errors  
     }*/
-}
-
-
-// general function to manage the execution in cuda
-extern "C" void simulate_LIF_in_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, simulation_configuration_t *conf, cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset){
-
-
-    // copy constant(s) to all gpu devices
-    for(size_t i = 0; i<cuda_info->nDevices; i++){
-        
-        cudaSetDevice(i);
-        cudaError_t err = cudaMemcpyToSymbol(n_samples, &cpu_dataset->n_samples, sizeof(size_t));
-    }
-
-    // if it is executed in only one device
-    if(cuda_info->nDevices == 1){
-        
-        cudaSetDevice(0);
-        //simulate_LIF_in_single_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], conf, cuda_info, cpu_snn, cpu_dataset);
-    }
-
-    // TODO: multi GPU must be corrected
-    // if it is multi GPU
-    else{
-
-        int e, b, dev, batch_number = 0;
-        int n_batches = 0;
-
-        // allocate memory for managing dw updates
-        GPU_SNN_t **tmp_snn = (GPU_SNN_t**)malloc(cuda_info->nDevices * sizeof(GPU_SNN_t*));
-        float **dw = (float**)malloc(cuda_info->nDevices * sizeof(float*));
-        for(int i = 0; i<cuda_info->nDevices; i++){
-            tmp_snn[i] = (GPU_SNN_t*)malloc(sizeof(GPU_SNN_t));
-            dw[i] = (float*)malloc(cpu_snn->n_synapses * sizeof(float));
-        }
-
-
-        // loop over epochs
-        for(e=0; e<conf->epochs; e++){
-
-            // compute the number of batches
-            n_batches = cuda_info->n_samples / cuda_info->batch_size;
-            if(cuda_info->n_samples % cuda_info->batch_size != 0)
-                n_batches += 1;
-
-
-            // loop over batches
-            for(b=0; b<n_batches; b++){
-     
-                // start the simulation using several devices. Each device is managed by a openMP thread
-                #pragma omp parallel num_threads(cuda_info->nDevices)
-                {
-                    //for(dev = 0; dev<cuda_info->nDevices; dev++){
-                    
-                    int dev = omp_get_thread_num();
-
-                    //printf(" Dev = %d\n", dev);
-                    fflush(stdout);
-
-                    // set the device dev as the current one for the thread
-                    cudaSetDevice(dev);
-
-                    // simulate a part of the batch in the device
-                    simulate_LIF_in_multi_GPU(gpu_snn[dev], gpu_dataset[dev], gpu_results[dev], conf, cuda_info, cpu_snn, cpu_dataset, dev, b);
-
-                    // wait until all GPU tasks finished
-                    cudaDeviceSynchronize();
-
-                    // if training
-                    if(conf->learn == 1){
-                        // sum dw values of different devices
-                        // cpy weights to CPU
-                        cudaMemcpy(tmp_snn[dev], gpu_snn[dev], sizeof(GPU_SNN_t), cudaMemcpyDeviceToHost); // cpy SNN structure GPU2CPU
-                        cudaMemcpy(dw[dev], tmp_snn[dev]->dw, cpu_snn->n_synapses * sizeof(float), cudaMemcpyDeviceToHost); // cpy dw GPU2CPU
-
-                        // wait until all threads obtained their weights
-                        #pragma omp barrier
-                        
-                        // sum all dws
-                        if(dev == 0){
-                            for(int i = 0; i<cpu_snn->n_synapses; i++){
-
-                                for(int j = 0; j<cuda_info->nDevices; j++){
-                                        
-                                    //printf(" > dev 0 (fixed) final dW[%d] = %f\n", i, dw[dev][i]);
-                                    if(dev != j){
-            
-                                        //printf(" > dev %d final dW[%d] = %f\n", j, i, dw[j][i]);    
-                                        dw[dev][i] += dw[j][i];
-                                    }
-                                }
-                                
-                                // divide by batch_size
-                                dw[dev][i] = dw[dev][i] / (float)(conf->batch_size);
-                                //printf(" dev %d: dW[%d] = %f\n", dev, i, dw[dev][i]);
-                            }
-                        }
-
-                        #pragma omp barrier
-                            
-                        // cpy again to gpu
-                        cudaMemcpy(tmp_snn[dev]->dw, dw[0], cpu_snn->n_synapses * sizeof(float), cudaMemcpyHostToDevice); // cpy dw CPU2GPU
-                    }
-                }
-            }
-        }
-    }
 }

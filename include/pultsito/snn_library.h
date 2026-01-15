@@ -443,25 +443,27 @@ typedef struct {
 
 
     // multigpu control variables
-    size_t dev_batch_size; // sample simulated by each device in the batch
-    size_t gpuId; // used to index the correct information on each GPU
-    size_t n_networks_per_dev;
+    size_t *dev_batch_size; // [nDevices] part of the batch simulated by each device
+    size_t *dev_batch_offset; // [nDevices] the first sample in the batch to be simulated by device 
+    size_t *n_networks_per_dev; // [nDevices]: number of copies on each device
 
+    size_t gpuId; // used to index the correct information on each GPU
+    
 
     // number of threads and blocks per kernel
-    size_t n_thr_per_blk_neurons_x, n_thr_per_blk_neurons_y, n_thr_per_blk_neurons_z;
-    size_t n_thr_per_blk_synapses_x, n_thr_per_blk_synapses_y, n_thr_per_blk_synapses_z;
-    size_t n_thr_per_blk_in_neurons_x, n_thr_per_blk_in_neurons_y, n_thr_per_blk_in_neurons_z;
-    size_t n_thr_per_blk_all_neurons_x, n_thr_per_blk_all_neurons_y, n_thr_per_blk_all_neurons_z;
-    size_t n_thr_per_blk_uw_x, n_thr_per_blk_uw_y, n_thr_per_blk_uw_z;
-    size_t n_thr_per_blk_is_x, n_thr_per_blk_is_y, n_thr_per_blk_is_z;
+    size_t *n_thr_per_blk_neurons_x, *n_thr_per_blk_neurons_y, *n_thr_per_blk_neurons_z;
+    size_t *n_thr_per_blk_synapses_x, *n_thr_per_blk_synapses_y, *n_thr_per_blk_synapses_z;
+    size_t *n_thr_per_blk_in_neurons_x, *n_thr_per_blk_in_neurons_y, *n_thr_per_blk_in_neurons_z;
+    size_t *n_thr_per_blk_all_neurons_x, *n_thr_per_blk_all_neurons_y, *n_thr_per_blk_all_neurons_z;
+    size_t *n_thr_per_blk_uw_x, *n_thr_per_blk_uw_y, *n_thr_per_blk_uw_z;
+    size_t *n_thr_per_blk_is_x, *n_thr_per_blk_is_y, *n_thr_per_blk_is_z;
 
-    size_t n_blk_neurons_x, n_blk_neurons_y, n_blk_neurons_z;
-    size_t n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z;
-    size_t n_blk_in_neurons_x, n_blk_in_neurons_y, n_blk_in_neurons_z;
-    size_t n_blk_all_neurons_x, n_blk_all_neurons_y, n_blk_all_neurons_z;
-    size_t n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
-    size_t n_blk_is_x, n_blk_is_y, n_blk_is_z; 
+    size_t *n_blk_neurons_x, *n_blk_neurons_y, *n_blk_neurons_z;
+    size_t *n_blk_synapses_x, *n_blk_synapses_y, *n_blk_synapses_z;
+    size_t *n_blk_in_neurons_x, *n_blk_in_neurons_y, *n_blk_in_neurons_z;
+    size_t *n_blk_all_neurons_x, *n_blk_all_neurons_y, *n_blk_all_neurons_z;
+    size_t *n_blk_uw_x, *n_blk_uw_y, *n_blk_uw_z;
+    size_t *n_blk_is_x, *n_blk_is_y, *n_blk_is_z; 
 
 
 
@@ -469,7 +471,7 @@ typedef struct {
     unsigned int n_threads_per_blk_reinspk_m_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
     unsigned int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
     unsigned int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
-    unsigned int n_threads_per_blk_synapses_x, n_threads_per_blk_synapses_y, n_threads_per_blk_synapses_z;
+    size_t *n_threads_per_blk_synapses_x, *n_threads_per_blk_synapses_y, *n_threads_per_blk_synapses_z;
     unsigned int n_threads_per_blk_uw_x, n_threads_per_blk_uw_y, n_threads_per_blk_uw_z;
 
     unsigned int n_blk_rsm_x, n_blk_rsm_y, n_blk_rsm_z;
