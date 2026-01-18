@@ -2387,11 +2387,29 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
 
 
         // {N * batch_size * thrN} threads, max per block = 512
-        size_t neurons_is = snn->n_neurons * thrN;
-        cuda_info->n_thr_per_blk_is_x[dev] = 512;
+        //size_t n_threads_is_per_block = thr
+        //size_t neurons_is = snn->n_neurons * thrN;
+        cuda_info->batch_size_per_block = 1024 / thrN; // on each cuda block 1024 / thrN samples are processed, not entire batches
+        if(batch_size < cuda_info->batch_size_per_block)
+            cuda_info->batch_size_per_block = batch_size;
+
+        // batch_size * thrN is the minimum number of simultaneous threads, compute number of neurons
+        //size_t sim_neurons = 50000 / (batch_size * )
+        //cuda_info->max_threads = 50000 / ; // max 50000 threads launched
+        
+
+        cuda_info->blocks_per_batch = batch_size / cuda_info->batch_size_per_block; // each block processes batch_size_per_block samples,
+        // so batch_size / batch_size_per_block blocks are necessary to process the entire batch. Each neuron is processed by block_per_batch
+        // blocks, since each batch processes one neuron
+
+        cuda_info->n_thr_per_blk_is_x[dev] = thrN * cuda_info->batch_size_per_block;
+        //cuda_info->n_thr_per_blk_is_x[dev] = thrN * cuda_info->batch_size_per_block;
+
         cuda_info->n_thr_per_blk_is_y[dev] = 1;
         cuda_info->n_thr_per_blk_is_z[dev] = 1;
-        cuda_info->n_blk_is_x[dev] = (neurons_is * cuda_info->n_networks_per_dev[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
+
+        cuda_info->n_blk_is_x[dev] = snn->n_neurons * cuda_info->blocks_per_batch;//(snn->n_neurons * cuda_info->n_thr_per_blk_is_x[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
+        //cuda_info->n_blk_is_x[dev] = cuda_info->max_threads / cuda_info->n_thr_per_blk_is_x[dev] + 1;//snn->n_neurons * cuda_info->blocks_per_batch;//(snn->n_neurons * cuda_info->n_thr_per_blk_is_x[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
         cuda_info->n_blk_is_y[dev] = 1;
         cuda_info->n_blk_is_z[dev] = 1;
     }

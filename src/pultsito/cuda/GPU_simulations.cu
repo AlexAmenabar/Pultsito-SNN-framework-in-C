@@ -157,7 +157,9 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         cudaMemcpy(tmp_gpu_snn->post_neuron_index, cpu_snn->post_neuron_index, S * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
 
         // final structure allocation and data copy
-        cudaMalloc(&(d_GPU_SNN[dev]), sizeof(GPU_SNN_t));
+        err = cudaMalloc(&(d_GPU_SNN[dev]), sizeof(GPU_SNN_t));
+        if (err != cudaSuccess) 
+            printf("Network allocation failed: %s\n", cudaGetErrorString(err));
         cudaMemcpy(d_GPU_SNN[dev], tmp_gpu_snn, sizeof(GPU_SNN_t), cudaMemcpyHostToDevice); // copy neurons information
     }
 
@@ -181,20 +183,39 @@ extern "C" GPU_dataset_t** cpy_dataset2GPU(GPU_dataset_t *cpu_dataset, cuda_info
     // allocate to temporal
     GPU_dataset_t *tmp_gpu_dataset = (GPU_dataset_t *)malloc(sizeof(GPU_dataset_t));
     GPU_dataset_t **d_gpu_dataset = (GPU_dataset_t**)malloc(cuda_info->nDevices * sizeof(GPU_dataset_t*));
+    cudaError_t err;
 
     // loop over devices
     for(dev = 0; dev < cuda_info->nDevices; dev++){
         
         // set dev as active one
         cudaSetDevice(dev);
+
         
         // allocate memory in GPU
-        cudaMalloc(&(tmp_gpu_dataset->spikes), nSpks * sizeof(size_t)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->n_spikes_per_feature), nS * nF * sizeof(size_t)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->sample_offset), nS * sizeof(size_t)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->feature_offset), nS * nF * sizeof(size_t)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->freq), nS * nF * sizeof(size_t)); // allocate memory for neurons
-        cudaMalloc(&(tmp_gpu_dataset->first_spk), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        err = cudaMalloc(&(tmp_gpu_dataset->spikes), nSpks * sizeof(size_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
+        
+        err = cudaMalloc(&(tmp_gpu_dataset->n_spikes_per_feature), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
+
+        err = cudaMalloc(&(tmp_gpu_dataset->sample_offset), nS * sizeof(size_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
+
+        err = cudaMalloc(&(tmp_gpu_dataset->feature_offset), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
+
+        err = cudaMalloc(&(tmp_gpu_dataset->freq), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
+
+        err = cudaMalloc(&(tmp_gpu_dataset->first_spk), nS * nF * sizeof(size_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
 
         // copy data to GPU
         tmp_gpu_dataset->n_samples = cpu_dataset->n_samples;
@@ -210,7 +231,10 @@ extern "C" GPU_dataset_t** cpy_dataset2GPU(GPU_dataset_t *cpu_dataset, cuda_info
         cudaMemcpy(tmp_gpu_dataset->first_spk, cpu_dataset->first_spk, nS * nF * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
 
         // copy to GPU
-        cudaMalloc(&(d_gpu_dataset[dev]), sizeof(GPU_dataset_t)); // allocate memory for neurons
+        err = cudaMalloc(&(d_gpu_dataset[dev]), sizeof(GPU_dataset_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
+
         cudaMemcpy(d_gpu_dataset[dev], tmp_gpu_dataset, sizeof(GPU_dataset_t), cudaMemcpyHostToDevice); // copy neurons information
     }
 
@@ -227,7 +251,8 @@ extern "C" GPU_results_t** initialize_results_str_in_GPU(size_t nDevices, size_t
 
     size_t dev, dev_batch_size;
     GPU_results_t *tmp_r, **d_results;
-    
+    cudaError_t err;
+
     // allocate memory
     tmp_r = (GPU_results_t*)malloc(sizeof(GPU_results_t));
     d_results = (GPU_results_t**)malloc(nDevices * sizeof(GPU_results_t*));
@@ -242,10 +267,15 @@ extern "C" GPU_results_t** initialize_results_str_in_GPU(size_t nDevices, size_t
         dev_batch_size = cuda_info->dev_batch_size[dev];
 
         // allocate memory to store the number of spikes
-        cudaMalloc(&(tmp_r->n_spks), n * dev_batch_size * sizeof(int));
+        err = cudaMalloc(&(tmp_r->n_spks), n * dev_batch_size * sizeof(int));
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
 
         // final structure
-        cudaMalloc(&(d_results[dev]), sizeof(GPU_results_t)); // allocate memory for neurons
+        err = cudaMalloc(&(d_results[dev]), sizeof(GPU_results_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));        
+        
         cudaMemcpy(d_results[dev], tmp_r, sizeof(GPU_results_t), cudaMemcpyHostToDevice); // copy neurons information
     }
     
@@ -259,7 +289,8 @@ extern "C" tmp_batch_cpu_t** allocate_batch_matrix_in_GPU(size_t nDevices, size_
 
     size_t dev, dev_batch_size;
     tmp_batch_cpu_t *tmp_batch, **d_tmp_batch;
-    
+    cudaError_t err;
+
     // allocate memory
     tmp_batch = (tmp_batch_cpu_t*)malloc(sizeof(tmp_batch_cpu_t));
     d_tmp_batch = (tmp_batch_cpu_t**)malloc(nDevices * sizeof(tmp_batch_cpu_t*));
@@ -274,10 +305,15 @@ extern "C" tmp_batch_cpu_t** allocate_batch_matrix_in_GPU(size_t nDevices, size_
         dev_batch_size = cuda_info->dev_batch_size[dev];
 
         // allocate memory to store the number of spikes
-        cudaMalloc(&(tmp_batch->spikes), iN * dev_batch_size * T * sizeof(char));
+        err = cudaMalloc(&(tmp_batch->spikes), iN * dev_batch_size * T * sizeof(char));
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
 
         // final structure
-        cudaMalloc(&(d_tmp_batch[dev]), sizeof(tmp_batch_cpu_t)); // allocate memory for neurons
+        err = cudaMalloc(&(d_tmp_batch[dev]), sizeof(tmp_batch_cpu_t)); // allocate memory for neurons
+        if (err != cudaSuccess) 
+            printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
+
         cudaMemcpy(d_tmp_batch[dev], tmp_batch, sizeof(tmp_batch_cpu_t), cudaMemcpyHostToDevice); // copy neurons information
     }
     

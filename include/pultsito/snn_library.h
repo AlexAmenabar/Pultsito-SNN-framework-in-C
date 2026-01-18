@@ -13,7 +13,7 @@
 #endif
 
 // temporal thrN
-#define thrN 16 
+#define thrN 8
 
 /* Simulation configuration struct containing all the data for the simulation */
 
@@ -440,7 +440,9 @@ typedef struct {
     size_t n_samples; // n samples in the dataset
     size_t batch_size; // batch_size of the simulation
     size_t time_steps; // time steps of the simulation
-
+    size_t batch_size_per_block;
+    size_t blocks_per_batch;
+    size_t max_threads;
 
     // multigpu control variables
     size_t *dev_batch_size; // [nDevices] part of the batch simulated by each device

@@ -631,7 +631,7 @@ topology_t generate_layered_topology(generator_conf_t *conf){
     // TODO
     // n neurons is the sum of all neuron in all layers, and n_unput
     // should be the neurons in the first layer? The last is incorrect
-    n_input = n_neurons_per_layer[0];
+    //n_input = n_neurons_per_layer[0];
 
     input_neurons_per_neuron = (size_t **)malloc(n_neurons * sizeof(size_t*));
 
@@ -639,7 +639,7 @@ topology_t generate_layered_topology(generator_conf_t *conf){
     
     // input layer: TEMPORAL: 1:1
     size_t next_neuron = 0;
-    for(size_t i = 0; i<n_neurons_per_layer[0]; i++){
+    /*for(size_t i = 0; i<n_neurons_per_layer[0]; i++){
 
         input_neurons_per_neuron[next_neuron] = (size_t*)malloc((1 * 2 + 1) * sizeof(size_t));
         input_neurons_per_neuron[next_neuron][0] = 1;
@@ -648,8 +648,24 @@ topology_t generate_layered_topology(generator_conf_t *conf){
 
         n_synapses ++;
         next_neuron ++;
-    }
+    }*/
     
+    // all input neurons to all input spike trains
+    for(size_t i = 0; i<n_neurons_per_layer[0]; i++){
+
+        input_neurons_per_neuron[next_neuron] = (size_t*)malloc((n_input * 2 + 1) * sizeof(size_t));
+        input_neurons_per_neuron[next_neuron][0] = n_input; // each neuron connected to all input spike trains
+
+        for(size_t j = 0; j<n_input; j++){
+        
+            input_neurons_per_neuron[next_neuron][j * 2 + 1] = j;
+            input_neurons_per_neuron[next_neuron][j * 2 + 2] = 1;
+            n_synapses ++;
+        }
+
+        next_neuron ++;
+    }
+
     for(size_t i = 1; i<n_layers; i++){
 
         for(size_t j = 0; j<n_neurons_per_layer[i]; j++){
