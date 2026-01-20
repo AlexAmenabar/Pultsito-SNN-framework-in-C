@@ -13,7 +13,7 @@
 #endif
 
 // temporal thrN
-#define thrN 8
+#define thrN 16
 
 /* Simulation configuration struct containing all the data for the simulation */
 
@@ -351,6 +351,7 @@ typedef struct {
     float *w; // [n_synapses]: weight of the synapse
     float *init_w; // [n_synapses]: initial weight of the synapse
     float *dw; // [n_synapses]: weight difference of the synapse
+    float *acc_dw; // [n_synapses]: accumulated dw for all batch elements
     int *delay; // [n_synapses]: delay or latency of the synapse
     int *lr; // [n_synapses]: learning rule of the synapse
     size_t *pre_neuron_index; // [n_synapses]: index of the presynaptic neuron
@@ -440,10 +441,11 @@ typedef struct {
     size_t n_samples; // n samples in the dataset
     size_t batch_size; // batch_size of the simulation
     size_t time_steps; // time steps of the simulation
+    
     size_t batch_size_per_block;
-    size_t blocks_per_batch;
-    size_t max_threads;
+    size_t *blocks_per_batch;
 
+    
     // multigpu control variables
     size_t *dev_batch_size; // [nDevices] part of the batch simulated by each device
     size_t *dev_batch_offset; // [nDevices] the first sample in the batch to be simulated by device 
@@ -451,6 +453,11 @@ typedef struct {
 
     size_t gpuId; // used to index the correct information on each GPU
     
+    
+    // helpers for weight updating
+    GPU_SNN_t **tmp_snn; // tmp snn structure
+    float **dw; // dw [nDevices, nSynapses]     
+
 
     // number of threads and blocks per kernel
     size_t *n_thr_per_blk_neurons_x, *n_thr_per_blk_neurons_y, *n_thr_per_blk_neurons_z;
@@ -467,20 +474,7 @@ typedef struct {
     size_t *n_blk_uw_x, *n_blk_uw_y, *n_blk_uw_z;
     size_t *n_blk_is_x, *n_blk_is_y, *n_blk_is_z; 
 
-
-
-
-    unsigned int n_threads_per_blk_reinspk_m_x, n_threads_per_blk_rsm_y, n_threads_per_blk_rsm_z;
-    unsigned int n_threads_per_blk_ls_x, n_threads_per_blk_ls_y, n_threads_per_blk_ls_z;
-    unsigned int n_threads_per_blk_nrs_x, n_threads_per_blk_nrs_y, n_threads_per_blk_nrs_z;
     size_t *n_threads_per_blk_synapses_x, *n_threads_per_blk_synapses_y, *n_threads_per_blk_synapses_z;
-    unsigned int n_threads_per_blk_uw_x, n_threads_per_blk_uw_y, n_threads_per_blk_uw_z;
-
-    unsigned int n_blk_rsm_x, n_blk_rsm_y, n_blk_rsm_z;
-    unsigned int n_blk_ls_x, n_blk_ls_y, n_blk_ls_z;
-    unsigned int n_blk_nrs_x, n_blk_nrs_y, n_blk_nrs_z;
-    //unsigned int n_blk_synapses_x, n_blk_synapses_y, n_blk_synapses_z; 
-    //unsigned int n_blk_uw_x, n_blk_uw_y, n_blk_uw_z;
 
 } cuda_info_t;
 

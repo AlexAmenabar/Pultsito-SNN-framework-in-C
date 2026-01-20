@@ -96,7 +96,11 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         err = cudaMalloc(&(tmp_gpu_snn->dw), S * dev_batch_size * sizeof(float));
         if (err != cudaSuccess) 
             printf("dw allocation failed: %s\n", cudaGetErrorString(err)); 
-        
+
+        err = cudaMalloc(&(tmp_gpu_snn->acc_dw), S * sizeof(float));
+        if (err != cudaSuccess) 
+            printf("acc_dw allocation failed: %s\n", cudaGetErrorString(err)); 
+
         err = cudaMalloc(&(tmp_gpu_snn->delay), S * sizeof(int));
         if (err != cudaSuccess) 
             printf("delay allocation failed: %s\n", cudaGetErrorString(err)); 
@@ -271,11 +275,13 @@ extern "C" GPU_results_t** initialize_results_str_in_GPU(size_t nDevices, size_t
         if (err != cudaSuccess) 
             printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
 
+
         // final structure
         err = cudaMalloc(&(d_results[dev]), sizeof(GPU_results_t)); // allocate memory for neurons
         if (err != cudaSuccess) 
             printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));        
         
+        // copy data to GPU
         cudaMemcpy(d_results[dev], tmp_r, sizeof(GPU_results_t), cudaMemcpyHostToDevice); // copy neurons information
     }
     
@@ -314,6 +320,8 @@ extern "C" tmp_batch_cpu_t** allocate_batch_matrix_in_GPU(size_t nDevices, size_
         if (err != cudaSuccess) 
             printf("neuron_input_synapses_offset allocation failed: %s\n", cudaGetErrorString(err));
 
+
+        // copy data to GPU
         cudaMemcpy(d_tmp_batch[dev], tmp_batch, sizeof(tmp_batch_cpu_t), cudaMemcpyHostToDevice); // copy neurons information
     }
     
@@ -324,7 +332,8 @@ extern "C" tmp_batch_cpu_t** allocate_batch_matrix_in_GPU(size_t nDevices, size_
 }
 
 
-extern "C" void cpy_batch_results_GPU2CPU(GPU_results_t *cpu_results, GPU_results_t **gpu_results, cuda_info_t *cuda_info, size_t N, size_t T){
+// copy results from GPU to CPU
+extern "C" void cpy_batch_results_GPU2CPU(GPU_results_t **cpu_results, GPU_results_t **gpu_results, cuda_info_t *cuda_info, size_t N, size_t T){
 
     size_t dev;
     size_t batch_size = cuda_info->batch_size;
@@ -348,7 +357,7 @@ extern "C" void cpy_batch_results_GPU2CPU(GPU_results_t *cpu_results, GPU_result
         cudaMemcpy(tmp_results, gpu_results[dev], sizeof(GPU_results_t), cudaMemcpyDeviceToHost);
 
         // copy results (REVISE)
-        cudaMemcpy(cpu_results->n_spks + dev_batch_offset, tmp_results->n_spks, N * dev_batch_size * sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(cpu_results[dev]->n_spks, tmp_results->n_spks, N * dev_batch_size * sizeof(int), cudaMemcpyDeviceToHost);
     }
 
     free(tmp_results);

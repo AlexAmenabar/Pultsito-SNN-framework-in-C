@@ -81,17 +81,11 @@ int main(int argc, char *argv[]) {
             // get GPU information
             cuda_info_t *cuda_info = getGPUProperties();
 
-            // get memory occupation
-            printf(" > Network memory occupation = %.3lfMB\n", get_snn_size(cpu_snn) / 1024.0 / 1024.0);
-            printf(" > Network copy memory occupation = %.3lfMB (%zu copies = %.3lf)\n", get_snn_cpy_size(cpu_snn) / 1024.0 / 1024.0, conf->batch_size, get_snn_cpy_size(cpu_snn) / 1024.0 / 1024.0 * (float)(conf->batch_size));
-            printf(" > Dataset memory occupation = %.3lfMB\n", get_dataset_size(cpu_dataset) / 1024.0 / 1024.0);
-            printf(" > Get results memory occupation = %.3lfMB\n", get_results_size(cpu_snn->n_neurons, cpu_dataset->n_samples, conf->time_steps) / 1024.0 / 1024.0);
-
             // configure GPU simulation
             configure_cuda_simulation(cuda_info, cpu_snn, cpu_dataset, conf);
 
             // simulate
-            GPU_results_t *cpu_results = simulate_batches_GPU(cuda_info, cpu_snn, cpu_dataset, conf);
+            cpu_results = simulate_batches_GPU(cuda_info, cpu_snn, cpu_dataset, conf);
         }
         #else
         {
