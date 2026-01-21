@@ -13,7 +13,7 @@
 #endif
 
 // temporal thrN
-#define thrN 16
+#define thrN 64
 
 /* Simulation configuration struct containing all the data for the simulation */
 
@@ -424,6 +424,9 @@ typedef struct {
     double *gpu_total_mem; // free memory in the GPU
     double *gpu_free_mem; // memory available in the GPU
     double *shared_memory_mem; // Bytes in shared memory
+    size_t maxThreadsPerMultiprocessor;
+    size_t nMultiprocessor;
+    size_t maxThreads;
     // TOOD: max threads....
 
     // cuda simulation details (network size, dataset size...)
@@ -450,6 +453,7 @@ typedef struct {
     size_t *dev_batch_size; // [nDevices] part of the batch simulated by each device
     size_t *dev_batch_offset; // [nDevices] the first sample in the batch to be simulated by device 
     size_t *n_networks_per_dev; // [nDevices]: number of copies on each device
+    //size_t thrN;
 
     size_t gpuId; // used to index the correct information on each GPU
     

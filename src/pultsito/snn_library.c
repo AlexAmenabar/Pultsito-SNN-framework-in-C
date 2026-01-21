@@ -2319,6 +2319,43 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
     }
 
 
+
+
+    // compute max threads
+    cuda_info->maxThreads = 3 * cuda_info->nMultiprocessor * cuda_info->maxThreadsPerMultiprocessor;
+    
+
+
+
+    // compute in how much section the input synapses will be divided
+    
+    // find the max and min n_input_synapses values
+    /*size_t max_n_input = 0, min_n_input=99999999, mean_n_input = 0;
+
+    for(size_t i = 0; i<snn->n_neurons; i++){
+
+        if(snn->n_neuron_input_synapses[i] > max_n_input){
+
+            max_n_input = snn->n_neuron_input_synapses[i];
+        }
+
+        if(snn->n_neuron_input_synapses[i] < min_n_input){
+            
+            min_n_input = snn->n_neuron_input_synapses[i];
+        }
+
+        mean_n_input += snn->n_neuron_input_synapses[i];
+    }
+
+    mean_n_input /= snn->n_neurons;
+
+    size_t n_sections = min_n_input;
+
+    if(min_n_input )*/
+
+
+
+
     // TODO: refactorize to function
     // allocate memory for number of threads on each device kernel
     cuda_info->n_thr_per_blk_neurons_x      = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
@@ -2423,6 +2460,8 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
 
         // compute the number of blocks
         cuda_info->n_blk_is_x[dev] = snn->n_neurons * cuda_info->blocks_per_batch[dev];//(snn->n_neurons * cuda_info->n_thr_per_blk_is_x[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
+        
+        
         cuda_info->n_blk_is_y[dev] = 1;
         cuda_info->n_blk_is_z[dev] = 1;
         

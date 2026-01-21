@@ -77,6 +77,9 @@ extern "C" cuda_info_t* getGPUProperties(){
 
         // store some data // TODO: in the future more data should be stored
         cuda_info->shared_memory_mem[i] = prop.sharedMemPerBlock; // Bytes
+        
+        cuda_info->maxThreadsPerMultiprocessor = (size_t)prop.maxThreadsPerMultiProcessor;
+        cuda_info->nMultiprocessor = (size_t)prop.multiProcessorCount;
     }
 
     cudaSetDevice(0);

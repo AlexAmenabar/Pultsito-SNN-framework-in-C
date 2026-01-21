@@ -62,14 +62,6 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         if (err != cudaSuccess) 
             printf("r_period_remain allocation failed: %s\n", cudaGetErrorString(err)); 
         
-        err = cudaMalloc(&(tmp_gpu_snn->post_fired), N * dev_batch_size * sizeof(char));
-        if (err != cudaSuccess) 
-            printf("post_fired allocation failed: %s\n", cudaGetErrorString(err)); 
-        
-        err = cudaMalloc(&(tmp_gpu_snn->post_trace), N * dev_batch_size * sizeof(float));
-        if (err != cudaSuccess) 
-            printf("post_trace allocation failed: %s\n", cudaGetErrorString(err)); 
-        
         err = cudaMalloc(&(tmp_gpu_snn->res), N * sizeof(int)); 
         if (err != cudaSuccess) 
             printf("res allocation failed: %s\n", cudaGetErrorString(err));
@@ -117,19 +109,31 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         if (err != cudaSuccess) 
             printf("post_neuron_index allocation failed: %s\n", cudaGetErrorString(err));
         
-        err = cudaMalloc(&(tmp_gpu_snn->pre_fired), S * dev_batch_size * sizeof(char));
-        if (err != cudaSuccess) 
-            printf("pre_fired allocation failed: %s\n", cudaGetErrorString(err)); 
-        
-        err = cudaMalloc(&(tmp_gpu_snn->pre_trace), S * dev_batch_size * sizeof(float));
-        if (err != cudaSuccess) 
-            printf("pre_trace allocation failed: %s\n", cudaGetErrorString(err)); 
-
         // allocate memory for spk matrix
         err = cudaMalloc(&(tmp_gpu_snn->spk_matrix), (iN + N) * LT * dev_batch_size * sizeof(char)); // allocate memory for neurons
         if (err != cudaSuccess) 
             printf("spk matrix allocation failed: %s\n", cudaGetErrorString(err));
 
+
+        if(conf->learn){
+        
+            err = cudaMalloc(&(tmp_gpu_snn->post_fired), N * dev_batch_size * sizeof(char));
+            if (err != cudaSuccess) 
+                printf("post_fired allocation failed: %s\n", cudaGetErrorString(err)); 
+            
+            err = cudaMalloc(&(tmp_gpu_snn->post_trace), N * dev_batch_size * sizeof(float));
+            if (err != cudaSuccess) 
+                printf("post_trace allocation failed: %s\n", cudaGetErrorString(err)); 
+
+            err = cudaMalloc(&(tmp_gpu_snn->pre_fired), S * dev_batch_size * sizeof(char));
+            if (err != cudaSuccess) 
+                printf("pre_fired allocation failed: %s\n", cudaGetErrorString(err)); 
+            
+            err = cudaMalloc(&(tmp_gpu_snn->pre_trace), S * dev_batch_size * sizeof(float));
+            if (err != cudaSuccess) 
+                printf("pre_trace allocation failed: %s\n", cudaGetErrorString(err)); 
+
+        }
 
 
         /* Copy data from CPU to GPU */
