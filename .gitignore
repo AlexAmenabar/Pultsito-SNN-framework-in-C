@@ -47,6 +47,7 @@
 /performance_experiments/
 /ACMS/
 /tmp/
+/.uv/
 *.err
 *.out
 *.toml

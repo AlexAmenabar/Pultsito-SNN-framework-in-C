@@ -43,7 +43,7 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     
     // [general] section
     toml_value_t execution_type, neuron_type, execution_obj, n_process, n_inner_process, cuda, multigpu, 
-                learn, encode, batch_size;
+                learn, encode, batch_size, thrN;
     
     // [simulation] section
     toml_value_t time_steps, max_spikes, max_input_spikes;
@@ -87,7 +87,8 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     learn = toml_table_int(tbl_general, "learn"); // inference or training
     encode = toml_table_int(tbl_general, "encode"); // encode input or not
     batch_size = toml_table_int(tbl_general, "batch_size");
-    
+    thrN = toml_table_int(tbl_general, "thrN");
+
     if(!execution_type.ok)
         execution_type.u.i = 0; // clock-based
     if(!neuron_type.ok)
@@ -108,6 +109,9 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
         encode.u.i = 0; // input already encoded
     if(!batch_size.ok)
         batch_size.u.i = 1; // only one sample in the batch
+    if(!thrN.ok)
+        thrN.u.i = 1;
+
 
     // load information in configuration struct
     conf->simulation_type = execution_type.u.i;
@@ -120,7 +124,7 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     conf->learn = learn.u.i;
     conf->encode = encode.u.i;
     conf->batch_size = (size_t)batch_size.u.i;
-
+    conf->thrN = (size_t)thrN.u.i;
 
 
     /* read [simulation] section */

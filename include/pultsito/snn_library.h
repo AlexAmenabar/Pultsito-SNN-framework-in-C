@@ -12,8 +12,6 @@
     typedef float real_t;
 #endif
 
-// temporal thrN
-#define thrN 64
 
 /* Simulation configuration struct containing all the data for the simulation */
 
@@ -31,6 +29,7 @@ typedef struct{
     int learn; // inference (0) / training (1)
     int encode; // input encoded (0) / encode input (1) // TODO
     size_t batch_size; // batch size
+    size_t thrN; // 
 
     // [simulation] data
     size_t time_steps; // time steps of the simulations
@@ -447,6 +446,9 @@ typedef struct {
     
     size_t batch_size_per_block;
     size_t *blocks_per_batch;
+    size_t n_neuron_launchs;
+    size_t n_neurons_per_launch;
+    size_t *thrN_per_launch;
 
     
     // multigpu control variables

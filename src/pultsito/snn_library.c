@@ -2318,41 +2318,9 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
         cuda_info->dw[dev] = (float*)malloc(snn->n_synapses * sizeof(float));
     }
 
-
-
-
     // compute max threads
-    cuda_info->maxThreads = 3 * cuda_info->nMultiprocessor * cuda_info->maxThreadsPerMultiprocessor;
+    //cuda_info->maxThreads = 3 * cuda_info->nMultiprocessor * cuda_info->maxThreadsPerMultiprocessor;
     
-
-
-
-    // compute in how much section the input synapses will be divided
-    
-    // find the max and min n_input_synapses values
-    /*size_t max_n_input = 0, min_n_input=99999999, mean_n_input = 0;
-
-    for(size_t i = 0; i<snn->n_neurons; i++){
-
-        if(snn->n_neuron_input_synapses[i] > max_n_input){
-
-            max_n_input = snn->n_neuron_input_synapses[i];
-        }
-
-        if(snn->n_neuron_input_synapses[i] < min_n_input){
-            
-            min_n_input = snn->n_neuron_input_synapses[i];
-        }
-
-        mean_n_input += snn->n_neuron_input_synapses[i];
-    }
-
-    mean_n_input /= snn->n_neurons;
-
-    size_t n_sections = min_n_input;
-
-    if(min_n_input )*/
-
 
 
 
@@ -2394,7 +2362,6 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
     cuda_info->n_blk_is_x                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
     cuda_info->n_blk_is_y                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
     cuda_info->n_blk_is_z                   = (size_t*)calloc(cuda_info->nDevices, sizeof(size_t));
-
 
     // set number of threads for each kernel 
     for(size_t dev = 0; dev < cuda_info->nDevices; dev ++){
@@ -2438,13 +2405,46 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
         cuda_info->n_blk_uw_z[dev] = 1;
 
 
-        // the grid of the kernel to run the input step is more complex 
 
-        cuda_info->batch_size_per_block = 1024 / thrN; // on each cuda block 1024 / thrN samples are processed, not entire batches
+
+        // 
+        cuda_info->n_neurons_per_launch = snn->n_neurons; // all neurons in one launch
+        cuda_info->n_neuron_launchs = 1; // only one launch including all neurons
+        //cuda_info->n_neuron_launchs = snn->n_neurons / cuda_info->n_neurons_per_launch + 1; 
+        
+        // compute thrN for each launch
+        //cuda_info->thrN_per_launch = (size_t*)calloc(cuda_info->n_neuron_launchs, sizeof(size_t));
+
+
+        // find the max and min n_input_synapses values
+        //size_t max_n_input = 0, min_n_input=99999999, mean_n_input = 0;
+        
+        /*
+        for(size_t i = 0; i<snn->n_neurons; i++){
+
+            if(snn->n_neuron_input_synapses[i] > max_n_input){
+
+                max_n_input = snn->n_neuron_input_synapses[i];
+            }
+
+            if(snn->n_neuron_input_synapses[i] < min_n_input){
+                
+                min_n_input = snn->n_neuron_input_synapses[i];
+            }
+
+            mean_n_input += snn->n_neuron_input_synapses[i];
+        }
+        mean_n_input /= snn->n_neurons;
+        size_t n_sections = min_n_input;*/
+
+
+
+        // slicing the loop of synapses in trhN sections, compute how much cuda blocks are necessary
+        cuda_info->batch_size_per_block = 1024 / conf->thrN; // on each cuda block 1024 / thrN samples are processed, not entire batches
         if(cuda_info->dev_batch_size[dev] < cuda_info->batch_size_per_block)
             cuda_info->batch_size_per_block = cuda_info->dev_batch_size[dev];
 
-        
+    
         // since sometimes it is impossible to compute the entire batch in only one block, compute how much samples in the
         // batch will be computed inside each cuda block
         cuda_info->blocks_per_batch[dev] = cuda_info->dev_batch_size[dev] / cuda_info->batch_size_per_block; // each block processes batch_size_per_block samples,
@@ -2454,35 +2454,17 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
         // blocks, since each batch processes one neuron
 
         // compute number of threads on each cuda block
-        cuda_info->n_thr_per_blk_is_x[dev] = thrN * cuda_info->batch_size_per_block; // the number of divisions to the array of synapses * the batch samples
+        cuda_info->n_thr_per_blk_is_x[dev] = conf->thrN * cuda_info->batch_size_per_block; // the number of divisions to the array of synapses * the batch samples
         cuda_info->n_thr_per_blk_is_y[dev] = 1;
         cuda_info->n_thr_per_blk_is_z[dev] = 1;
 
         // compute the number of blocks
-        cuda_info->n_blk_is_x[dev] = snn->n_neurons * cuda_info->blocks_per_batch[dev];//(snn->n_neurons * cuda_info->n_thr_per_blk_is_x[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
+        //cuda_info->n_blk_is_x[dev] = snn->n_neurons * cuda_info->blocks_per_batch[dev];//(snn->n_neurons * cuda_info->n_thr_per_blk_is_x[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
         
-        
+        cuda_info->n_blk_is_x[dev] = cuda_info->n_neurons_per_launch * cuda_info->blocks_per_batch[dev];
         cuda_info->n_blk_is_y[dev] = 1;
         cuda_info->n_blk_is_z[dev] = 1;
         
         printf(" Device %zu: \n - dev batch size = %zu \n - blocks per batch = %zu \n - batch size per block = %zu\n", dev, cuda_info->dev_batch_size[dev], cuda_info->blocks_per_batch[dev], cuda_info->batch_size_per_block);
-
-
-        // since too much threads can be launched simultaneously, limit the number        
-        //cuda_info->max_threads = 100000 / ; // max 50000 threads launched
-    
-        //cuda_info->n_blk_is_x[dev] = cuda_info->max_threads / cuda_info->n_thr_per_blk_is_x[dev] + 1;//snn->n_neurons * cuda_info->blocks_per_batch;//(snn->n_neurons * cuda_info->n_thr_per_blk_is_x[dev]) / cuda_info->n_thr_per_blk_is_x[dev] + 1;
-
-        // avoid running all threads simultaneously by dividing the computation in several iterations
-        //size_t sim_blocks = cuda_info->max_threads / cuda_info->n_thr_per_blk_is_x[dev]; // number of blocks launched on each iteration
-        //cuda_info->n_blk_is_x[dev] = sim_blocks;
-
-        // store helpfull information
-        //cuda_info->sim_blocks = sim_blocks;
-        //cuda_info->neurons_per_sim_blocks = sim_blocks / cuda_info->blocks_per_batch; // number of neurons processed on each launch
-
-        // at least one neuron on each simultaneous blocks simulation
-        
-        //cuda_info->iterations = snn->n_neurons * cuda_info->blocks_per_batch / sim_blocks;
     }
 }

@@ -1125,6 +1125,8 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
 
     // store connectivity
 
+
+    printf(" Storing connectivity\n");
     if(criteria == 0){
         
         for(size_t i = 0; i<topology->n_neurons; i++){
