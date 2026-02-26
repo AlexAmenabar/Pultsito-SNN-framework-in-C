@@ -1,258 +1,299 @@
-#include "snn_library.h"
-#include "training_rules/stdp.h"
-
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 
-// TODO: This must be revised, since should be introduced as input or in the network, I guess?
-#define TAU_PLUS 5.0 // ms
-#define TAU_MINUS 5.0 // ms
-#define A_PLUS 1.0 // ms
-#define A_MINUS 1.0 // ms
-#define A 0.25 // modulation magnitude for STDP
-#define P_WINDOW 50.0
-#define N_WINDOW -75.0
-#define EPSILON 0.15
+#include <omp.h>
+#include <immintrin.h> 
 
-int mod(int a, int m) {
-    return ( (a % m) + m ) % m;
-}
+#include "snn_library.h"
+#include "training_rules/stdp.h"
 
-/*
-Functions to do the simple computations of STDP based on the time difference between two spikes
-*/
+void process_trace_based_STDP_batch(GPU_SNN_t *snn, simulation_configuration_t *conf){
 
-double addSTDP_comp(synapse_t *synapse, double tdiff){
+    size_t N, S, P, B;
+    size_t i, b;
 
-    double dw = 0.0;
+    N = snn->n_neurons;
+    S = snn->n_synapses;
+    B = conf->batch_size;
+    P = conf->n_process;
 
-    if(tdiff > 0 && tdiff < P_WINDOW){
-        
-        //synapse->w += A_PLUS * exp(-time_diff / TAU_PLUS);
-        dw += A_PLUS * exp(-tdiff / TAU_PLUS);
-
-        //if(initial_weight > 0 && synapse->w < 0)
-        //    synapse->w = 0.0001;
-    }
-    else if(tdiff < 0 && tdiff > N_WINDOW){ // time window to stdp be considered
-        
-        //synapse->w -= A_MINUS * exp(time_diff / TAU_MINUS);
-        dw -= A_MINUS * exp(tdiff / TAU_MINUS);
-
-        //if(initial_weight < 0 && synapse->w > 0)
-        //    synapse->w = -0.0001;
-    }
-
-    return dw;
-}
-
-// TODO: not correctly implemented: max-min bounds?
-double mltSTDP_comp(synapse_t *synapse, double tdiff){
-
-    double dw = 0.0;
-
-    if(tdiff > 0 && tdiff < P_WINDOW){
-        
-        //synapse->w += A_PLUS * exp(-time_diff / TAU_PLUS);
-        //dw += A_PLUS * synapse->w * (1 - synapse->w) * exp(-tdiff / TAU_PLUS);
-        dw += A_PLUS * exp(-tdiff / TAU_PLUS);
-
-
-        //if(initial_weight > 0 && synapse->w < 0)
-        //    synapse->w = 0.0001;
-    }
-    else if(tdiff < 0 && tdiff > N_WINDOW){ // time window to stdp be considered
-        
-        //synapse->w -= A_MINUS * exp(time_diff / TAU_MINUS);
-        //dw -= A_MINUS * synapse->w * (1 - synapse->w) * exp(tdiff / TAU_MINUS);
-        dw -= A_MINUS * exp(tdiff / TAU_MINUS);
-
-
-        //if(initial_weight < 0 && synapse->w > 0)
-        //    synapse->w = -0.0001;
-    }
-
-    return dw;
-}
-
-double antiSTDP_comp(synapse_t *synapse, int tdiff){
-
-    double dw = 0.0;
-
-    if(tdiff > 0 && tdiff < P_WINDOW){
-        //synapse->w -= A_PLUS * exp(-time_diff / TAU_PLUS);
-        dw -= A_PLUS * exp(-tdiff / TAU_PLUS);
-
-        //if(initial_weight > 0 && synapse->w < 0)
-        //    synapse->w = 0.0001;
-    }
-    else if(tdiff < 0 && tdiff > N_WINDOW){ // time window to stdp be considered
-        //synapse->w += A_MINUS * exp(time_diff / TAU_MINUS);
-        dw += A_MINUS * exp(tdiff / TAU_MINUS);
-
-        //if(initial_weight < 0 && synapse->w > 0)
-        //    synapse->w = -0.0001;
-    }
-
-    return dw;
-}
-
-double tbSTDP_comp(synapse_t *synapse_t, int tdiff){
-
-    double dw = 0.0;
-}
-
-
-/*
-STDP general functions
-*/
-int cond_stdp(synapse_t *synapse, int t){
-
-
-    // conditions:
-    // - presynaptic and postsynaptic neurons exists (in other words, synapse is neither an input or output synapse)
-    // - both, postsynaptic and presynaptic neurons have done at least one spike to compute STDP
-    // - last spikes timestamps are different
-    // - at least one of both spikes is on t timestamp, otherwise it has been already computed
-
-    lif_neuron_t *pre, *post;
-    pre = synapse->pre_synaptic_lif_neuron;
-    post = synapse->post_synaptic_lif_neuron;
-
-    //return pre != NULL && post != NULL && // is not input or output synapse
-    //    post->t_last_spikes[0] != -1 && pre->t_last_spikes[0] != -1 && // both computed
-    //    post->t_last_spikes[(post->next_last_spike - 1) % post->n_last_spikes] != pre->t_last_spikes[(pre->next_last_spike - 1) % pre->n_last_spikes] && // if both are equal STDP results is 0
-    //    (post->t_last_spikes[(post->next_last_spike - 1) % post->n_last_spikes] == t || pre->t_last_spikes[(pre->next_last_spike - 1) % pre->n_last_spikes] == t); // one of both has to be actual t
-
-
-    // check that both neurons exist
-    if(pre == NULL || post == NULL)
-        return 0;
-
+    float pA = 0.1f, mA = 0.1f, mu = 1.0f, decay = 0.6f;
     
-    // check that at least one of both is t
-    if(pre->spike_times_arr[synapse->next_pre_spike] + synapse->delay != t && post->spike_times_arr[synapse->next_post_spike] != t)
-        return 0;
+    #if defined AVX512
+    {
+
+        if(B == 8){
+
+            // define constants
+            const __m256 vOne   = _mm256_set1_ps(1.0f);
+            const __m256 vDecay = _mm256_set1_ps(decay);
+            const __m256 vpA = _mm256_set1_ps(pA);
+            const __m256 vmA = _mm256_set1_ps(mA);
+            const __m128i vZero = _mm_set1_epi8(0); // 16 bytes of zeros
+
+            size_t n_blks = B / 8, blk;
 
 
-    return 1;
-}
+            #pragma omp parallel for num_threads(P) private(i, b, blk)
+            for(i = 0; i<N; i++){
+
+                // loop over neuron input synapses
+                size_t base_synapse = snn->neuron_input_synapses_offset[i];
+                size_t n_iS = snn->n_neuron_input_synapses[i];
+
+                // global neuron index
+                size_t g_post_neuron = i * B;
+
+                __mmask8 mPostFired[n_blks];
+                __m256 vPostTrace[n_blks];
+
+                // loop over batch to update post synaptic trace (N * B)
+                for(blk = 0; blk<n_blks; blk++){
+
+                    // compute neuron index
+                    size_t post_idx = g_post_neuron + blk * 16;
+                    
+                    // load if fired and trace
+                    //__m128i vPostFired = _mm_loadu_si128((__m128i*)(&(snn->post_fired[post_idx]))); // char
+                    __m128i vPostFired = _mm_loadu_epi8((__m128i*)(&(snn->post_fired[post_idx])));
+                    mPostFired[blk] = _mm_cmpgt_epi8_mask(vPostFired, vZero); // mask
+                    vPostTrace[blk] = _mm256_loadu_ps(&(snn->post_trace[post_idx])); // load trace
+                    
+                    // update trace and store trace
+                    __m256 vPostDecay = _mm256_mul_ps(vPostTrace[blk], vDecay);
+                    vPostTrace[blk] = _mm256_mask_blend_ps(mPostFired[blk], vPostDecay, vOne); // select conditionally
+                    _mm256_storeu_ps(&(snn->post_trace[post_idx]), vPostTrace[blk]); // store trace
+                }
+
+                // loop over input synapses
+                for(size_t j = 0; j<n_iS; j++){
+
+                    // get synapse index
+                    size_t synapse_index = base_synapse + j;
+                    size_t g_synapse_index = synapse_index * B;
+
+                    // loop over batch
+                    for(blk = 0; blk<n_blks; blk++){
+
+                        // compute post and pre indexes
+                        size_t post_idx = g_post_neuron + blk * 16;
+                        size_t pre_idx  = g_synapse_index + blk * 16;
+
+                        // load wether pre fired and trace
+                        //__m128i vPreFired = _mm_loadu_si128((__m128i*)(&(snn->pre_fired[pre_idx]))); // SSE
+                        __m128i vPreFired = _mm_loadu_epi8(&(snn->pre_fired[pre_idx])); // AVX512
+                        __mmask8 mPreFired = _mm_cmpgt_epi8_mask(vPreFired, vZero); // mask
+
+                        // update pre trace
+                        __m256 vPreTrace = _mm256_loadu_ps(&(snn->pre_trace[pre_idx])); // load trace
+                        __m256 vPreDecay = _mm256_mul_ps(vPreTrace, vDecay);
+                        vPreTrace = _mm256_mask_blend_ps(mPreFired, vPreDecay, vOne);
+                        _mm256_storeu_ps(&(snn->pre_trace[pre_idx]), vPreTrace); // store trace
+
+                        // avoid updating v and dw if no one neuron fired
+                        if(mPreFired || mPostFired[blk]){ // time reduced to 1/2 (more or less)
+                           
+                            // update dw
+                            __m256 vW = _mm256_loadu_ps(&(snn->w[pre_idx])); // load weight
+                            __m256 vPot = _mm256_maskz_mul_ps(mPostFired[blk], vpA, _mm256_mul_ps(_mm256_sub_ps(vOne, vW), vPreTrace)); // LTP
+                            __m256 vDep = _mm256_maskz_mul_ps(mPreFired, vmA, _mm256_mul_ps(vW, vPostTrace[blk])); // LTD
+                            __m256 vdW = _mm256_sub_ps(vPot, vDep); // dw
 
 
-void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synapse, double tdiff_double)){
+                            // update and store w and dw
+                            _mm256_storeu_ps(&(snn->w[pre_idx]), _mm256_add_ps(vW, vdW));
+                            _mm256_storeu_ps(&(snn->dw[pre_idx]), _mm256_add_ps(_mm256_loadu_ps(&(snn->dw[pre_idx])), vdW));
+                        }
 
-    double dw = 0;
-    
-    // check conditions to compute STDP
-    if(cond_stdp(synapse, t) == 1){
+                        // reinit pre fired to 0
+                        if(mPreFired){
+                            //_mm_storeu_si128((__m128i*)&(snn->pre_fired[pre_idx]), vZero); // SSE
+                            _mm_mask_storeu_epi8(&(snn->pre_fired[pre_idx]), mPreFired, vZero); // AVX 512           
+                        }         
+                    }
+                }
 
-        int delay;
-        double tdiff_double;
-        int tpost, tpre, prev_tpost, prev_tpre, tmp = 0;
-        lif_neuron_t *post, *pre;
-        int max_spikes, last_spike;
+                // reinit post fired
+                for(blk = 0; blk<n_blks; blk++){
 
-        // store pre and postsynaptic neurons
-        post = synapse->post_synaptic_lif_neuron;
-        pre = synapse->pre_synaptic_lif_neuron;
-        delay = synapse->delay;
-
-        // compute tdiffs
-        tpost = post->spike_times_arr[(synapse->next_post_spike) % post->max_spikes];
-        tpre = pre->spike_times_arr[(synapse->next_pre_spike) % pre->max_spikes] + delay;
-
-        // get previous spikes for both
-        //prev_tpost = post->spike_times_arr[mod(synapse->next_post_spike - 1, post->max_spikes)]; // can be useful in the future?
-        //prev_tpre = pre->spike_times_arr[mod(synapse->next_pre_spike - 1, pre->max_spikes)] + delay;
-
-        // if tdiff == 0 --> random: incrase or decrease
-
-        //int lower_bound;
-        int tmp_tdiff = tpost - tpre;
-
-        // LTP
-        if(tpost == t){
-
-            //lower_bound = synapse->next_pre_spike;
-            max_spikes = pre->max_spikes;
-            last_spike = pre->last_spike;
-            tmp_tdiff = 100000;
-
-            // conditions to keep looping:
-            // - tpre - delay > -1, there is an spike
-            // - tpost >= tpre, there are spikes to be processed in STDP
-            // - lower_bound is smaller or equal to tpre
-            while((tpre - delay) > -1 && tpost >= tpre && tpost - tpre < tmp_tdiff){
-
-                // compute stdp
-                tmp_tdiff = tpost - tpre;
-                tdiff_double = (double)(tpost - tpre) + EPSILON;
-                dw += stdp_func(synapse, tdiff_double);
-                //printf(" >> tpost = %d, tpre = %d; tdiff %lf; dw = %lf\n", tpost, tpre, tdiff_double, dw);
-
-                // update tmp
-                tmp++;
-                tpre = pre->spike_times_arr[(synapse->next_pre_spike + tmp) % pre->max_spikes] + delay;
-            }
-
-            synapse->next_pre_spike = (synapse->next_pre_spike + tmp) % pre->max_spikes;
-
+                    if(mPostFired[blk]){
+                        //_mm_storeu_si128((__m128i*)&(snn->post_fired[g_post_neuron + blk * 16]), vZero); // SSE  
+                        _mm_mask_storeu_epi8(&(snn->post_fired[g_post_neuron + blk * 16]), mPostFired[blk], vZero); // AVX 512           
+                    }
+                }
+            }        
         }
-        // LTD: if tpost != t, then tpre == t due to the cond_stdp(...) function
-        else{
+        else if(B % 16 == 0){
+
+            // define constants
+            const __m512 vOne   = _mm512_set1_ps(1.0f);
+            const __m512 vDecay = _mm512_set1_ps(decay);
+            const __m512 vpA = _mm512_set1_ps(pA);
+            const __m512 vmA = _mm512_set1_ps(mA);
+            const __m128i vZero = _mm_set1_epi8(0); // 16 bytes of zeros
+
+            size_t n_blks = B / 16, blk;
+
+
+            #pragma omp parallel for num_threads(P) private(i, b, blk)
+            for(i = 0; i<N; i++){
+
+                // loop over neuron input synapses
+                size_t base_synapse = snn->neuron_input_synapses_offset[i];
+                size_t n_iS = snn->n_neuron_input_synapses[i];
+
+                // global neuron index
+                size_t g_post_neuron = i * B;
+
+                __mmask16 mPostFired[n_blks];
+                __m512 vPostTrace[n_blks];
+
+                // loop over batch to update post synaptic trace (N * B)
+                for(blk = 0; blk<n_blks; blk++){
+
+                    // compute neuron index
+                    size_t post_idx = g_post_neuron + blk * 16;
+                    
+                    // load if fired and trace
+                    //__m128i vPostFired = _mm_loadu_si128((__m128i*)(&(snn->post_fired[post_idx]))); // char
+                    __m128i vPostFired = _mm_loadu_epi8((__m128i*)(&(snn->post_fired[post_idx])));
+                    mPostFired[blk] = _mm_cmpgt_epi8_mask(vPostFired, vZero); // mask
+                    vPostTrace[blk] = _mm512_loadu_ps(&(snn->post_trace[post_idx])); // load trace
+                    
+                    // update trace and store trace
+                    __m512 vPostDecay = _mm512_mul_ps(vPostTrace[blk], vDecay);
+                    vPostTrace[blk] = _mm512_mask_blend_ps(mPostFired[blk], vPostDecay, vOne); // select conditionally
+                    _mm512_storeu_ps(&(snn->post_trace[post_idx]), vPostTrace[blk]); // store trace
+                }
+
+                // loop over input synapses
+                for(size_t j = 0; j<n_iS; j++){
+
+                    // get synapse index
+                    size_t synapse_index = base_synapse + j;
+                    size_t g_synapse_index = synapse_index * B;
+
+                    // loop over batch
+                    for(blk = 0; blk<n_blks; blk++){
+
+                        // compute post and pre indexes
+                        size_t post_idx = g_post_neuron + blk * 16;
+                        size_t pre_idx  = g_synapse_index + blk * 16;
+
+                        // load wether pre fired and trace
+                        //__m128i vPreFired = _mm_loadu_si128((__m128i*)(&(snn->pre_fired[pre_idx]))); // SSE
+                        __m128i vPreFired = _mm_loadu_epi8(&(snn->pre_fired[pre_idx])); // AVX512
+                        __mmask16 mPreFired = _mm_cmpgt_epi8_mask(vPreFired, vZero); // mask
+
+                        // update pre trace
+                        __m512 vPreTrace = _mm512_loadu_ps(&(snn->pre_trace[pre_idx])); // load trace
+                        __m512 vPreDecay = _mm512_mul_ps(vPreTrace, vDecay);
+                        vPreTrace = _mm512_mask_blend_ps(mPreFired, vPreDecay, vOne);
+                        _mm512_storeu_ps(&(snn->pre_trace[pre_idx]), vPreTrace); // store trace
+
+                        // avoid updating v and dw if no one neuron fired
+                        if(mPreFired || mPostFired[blk]){ // time reduced to 1/2 (more or less)
+                           
+                            // update dw
+                            __m512 vW = _mm512_loadu_ps(&(snn->w[pre_idx])); // load weight
+                            __m512 vPot = _mm512_maskz_mul_ps(mPostFired[blk], vpA, _mm512_mul_ps(_mm512_sub_ps(vOne, vW), vPreTrace)); // LTP
+                            __m512 vDep = _mm512_maskz_mul_ps(mPreFired, vmA, _mm512_mul_ps(vW, vPostTrace[blk])); // LTD
+                            __m512 vdW = _mm512_sub_ps(vPot, vDep); // dw
+
+
+                            // update and store w and dw
+                            _mm512_storeu_ps(&(snn->w[pre_idx]), _mm512_add_ps(vW, vdW));
+                            _mm512_storeu_ps(&(snn->dw[pre_idx]), _mm512_add_ps(_mm512_loadu_ps(&(snn->dw[pre_idx])), vdW));
+                        }
+
+                        // reinit pre fired to 0
+                        if(mPreFired){
+                            //_mm_storeu_si128((__m128i*)&(snn->pre_fired[pre_idx]), vZero); // SSE
+                            _mm_storeu_epi8(&(snn->pre_fired[pre_idx]), vZero); // AVX 512           
+                        }         
+                    }
+                }
+
+                // reinit post fired
+                for(blk = 0; blk<n_blks; blk++){
+
+                    if(mPostFired[blk]){
+                        //_mm_storeu_si128((__m128i*)&(snn->post_fired[g_post_neuron + blk * 16]), vZero); // SSE  
+                        _mm_storeu_epi8(&(snn->post_fired[g_post_neuron + blk * 16]), vZero); // AVX 512           
+                    }
+                }
+            }
+        }
+    }
+    #else
+    {
+        // loop over synapses, update traces and weights
+        #pragma omp parallel for num_threads(P) private(i, b)
+        for(i = 0; i<N; i++){
+
+            // loop over neuron input synapses
+            size_t base_synapse = snn->neuron_input_synapses_offset[i];
+            size_t n_iS = snn->n_neuron_input_synapses[i];
+            size_t post_idx, pre_idx;
+            size_t synapse_index;
+            size_t g_synapse_index;
             
-            //lower_bound = tpost - 1;
-            max_spikes = post->max_spikes;
-            last_spike = post->last_spike;
-            tmp_tdiff = -1000000;
+            // compute neuron global index
+            size_t g_post_neuron = i * B;
 
-            // conditions to keep looping:
-            // - tpost > -1, there is an spike
-            // - tpost < tpre, there are spikes to be processed in STDP
-            // - lower_bound is smaller or equal to tpre
-            while(tpost > -1 && tpost < tpre && tpost - tpre > tmp_tdiff){
-
-                // compute stdp
-                tmp_tdiff = tpost - tpre;
-                tdiff_double = (double)(tpost - tpre) - EPSILON; // I can ignore this epsilon?
-                dw += stdp_func(synapse, tdiff_double);
-                //printf(" >> tpre = %d, tpost = %d; tdiff %lf; dw = %lf\n", tpre, tpost, tdiff_double, dw);
-
-                // update tmp
-                tmp++;
-                tpost = post->spike_times_arr[(synapse->next_post_spike + tmp) % max_spikes];
+            // update post trace (depends only on the neuron)
+            for(b = 0; b<B; b++){
+                
+                post_idx = g_post_neuron + b;
+                snn->post_trace[post_idx] = snn->post_fired[post_idx] ? 1.0f : snn->post_trace[post_idx] * decay;
             }
 
-            synapse->next_post_spike = (synapse->next_post_spike + tmp) % max_spikes;
+            // loop over input synapses, update presynaptic traces (depends on synapses) and update weights
+            for(size_t j = 0; j<n_iS; j++){
 
+                synapse_index = base_synapse + j;
+                g_synapse_index = synapse_index * B;
+
+                for(b = 0; b<B; b++){
+
+                    post_idx = g_post_neuron + b;
+                    pre_idx  = g_synapse_index + b;
+
+                    // update pre_trace
+                    snn->pre_trace[pre_idx] = snn->pre_fired[pre_idx] ? 1.0f : snn->pre_trace[pre_idx] * decay;
+
+
+                    // update w: avoid computation if no neuron fired
+                    float dPot = 0.0, dDep = 0.0;
+                    if(snn->post_fired[post_idx]){
+
+                        dPot = pA * (1.0f - snn->w[pre_idx]) * snn->pre_trace[pre_idx];
+                    }
+                    if(snn->pre_fired[pre_idx]){
+
+                        dDep = mA * (snn->w[pre_idx]) * snn->post_trace[post_idx];
+                        
+                        // reinit pre_fired
+                        snn->pre_fired[pre_idx] = 0;
+                    }
+                    
+                    if(dPot != 0 || dDep != 0){
+
+                        float dw = dPot - dDep;
+                            
+                        snn->w[pre_idx] += dw;
+                        snn->dw[pre_idx] += dw;
+                    }
+                }
+            }
+
+            // reinit whether post neuron fired for next iterations
+            for(b = 0; b<B; b++){
+                
+                snn->post_fired[g_post_neuron + b] = 0;
+            }        
         }
     }
-
-    // update weight and store weight change
-    synapse->dw += dw;
-    synapse->w += dw;
-
-    //printf(" > Sample ?, dw[?] = %f, final dw[?] = %f\n", dw, synapse->dw);
-
+    #endif
 }
-
-
-void addSTDP(synapse_t *synapse, int t, int n){
-
-    stdp(synapse, t, n, &addSTDP_comp);
-}
-
-
-void mltSTDP(synapse_t *synapse, int t, int n){
-
-    stdp(synapse, t, n, &mltSTDP_comp);
-}
-
-
-void antiSTDP(synapse_t *synapse, int t, int n){
-
-    stdp(synapse, t, n, &addSTDP_comp);
-}
-
-

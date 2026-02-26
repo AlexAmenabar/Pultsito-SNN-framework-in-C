@@ -3,17 +3,17 @@
 #include <math.h>
 #include <time.h>
 
+#include <immintrin.h>  // AVX intrinsics
+#include <omp.h> // OpenMP
+
 #include "snn_library.h"
 #include "load_data.h"
-
 #include "simulations/simulations.h"
-
-#include "neuron_models/lif_neuron.h"
-
+#include "neuron_models/neuron_models.h"
 #include "training_rules/stdp.h"
 
-#include "helpers.h"
 
+// include cuda files if defined
 #ifdef CUDA
     #include "cuda/GPU_simulations.cuh"
 
@@ -21,8 +21,6 @@
     #include "cuda/cuda_helpers.cuh"
 #endif
 
-#include <immintrin.h>  // AVX intrinsics
-#include <omp.h>
 
 
 /* main.c */
@@ -42,17 +40,13 @@ int main(int argc, char *argv[]) {
     printf(" > Configuration file loaded!\n\n");
     fflush(stdout);
 
-    // load network initialization arrays
-    printf(" > Loading network information in lists...\n");
-    network_construction_lists_t *data = load_network_information_in_lists(conf);
-    printf(" > Network information loaded!\n\n");
-    fflush(stdout);
-
     // initialize network
     printf(" > Initializing network...\n");
-    GPU_SNN_t *cpu_snn = initialize_network_cpu(conf, data);
+    GPU_SNN_t *cpu_snn = initialize_network_cpu(conf);
     printf(" > Network initialized!\n");
     fflush(stdout);
+
+    print_network(cpu_snn);
 
     // load dataset
     printf(" > Loading dataset... \n");
@@ -65,6 +59,7 @@ int main(int argc, char *argv[]) {
     GPU_results_t *cpu_results = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, conf->batch_size, 1);
     printf(" > Results struct initialized!\n");
     fflush(stdout);
+
 
 
     // simulate in CPU
@@ -87,9 +82,11 @@ int main(int argc, char *argv[]) {
             // simulate
             cpu_results = simulate_batches_GPU(cuda_info, cpu_snn, cpu_dataset, conf);
         }
+        // no device
         #else
         {
             printf(" > No cuda defice founded, simulating in CPU!\n");
+            printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
             simulate_batches(cpu_snn, cpu_dataset, conf, cpu_results);
         }
         #endif

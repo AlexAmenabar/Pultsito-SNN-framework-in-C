@@ -1060,7 +1060,10 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
     printf(" > Storing neurons information...\n");
 
     fprintf(f, "[neurons]\n");
-    fprintf(f, "    behaviour = 1\n"); // TODO: temporal, var deprecated
+    fprintf(f, "    v_thres = 1\n"); 
+    fprintf(f, "    v_rest = 1\n"); 
+    fprintf(f, "    t_refract = 1\n"); 
+    fprintf(f, "    resistance = 1\n"); 
     fprintf(f, "\n");
 
     // if is separated == 1, store neurons information as plain text
@@ -1092,6 +1095,12 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
     // write synapses information
     printf(" > Storing synapses information...\n");
     
+    fprintf(f, "[synapsis]\n");
+    fprintf(f, "    delay = 1\n"); 
+    fprintf(f, "    weight = 1\n"); 
+    fprintf(f, "    training_zone = 1\n"); 
+    fprintf(f, "\n");
+
     // if is separated == 1, store neurons information in plain text
     //if(output_is_separated == 1){
     for(i=0; i<topology->n_synapses; i++){

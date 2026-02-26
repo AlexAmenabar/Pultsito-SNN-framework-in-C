@@ -3,13 +3,9 @@
 
 #include "snn_library.h"
 
-/*
-STDP general functions
-*/
-int cond_stdp(synapse_t *synapse, int t);
-void stdp(synapse_t *synapse, int t, int n, double (*stdp_func)(synapse_t *synapse, double time_diff));
-void addSTDP(synapse_t *synapse, int t, int n);
-void mltSTDP(synapse_t *synapse, int t, int n);
-void antiSTDP(synapse_t *synapse, int t, int n);
+/// @brief Process trace-based STDP for a simulated batch time step
+/// @param snn stores the network to be simulated
+/// @param conf stores the configuration data for guiding the simulation
+void process_trace_based_STDP_batch(GPU_SNN_t *snn, simulation_configuration_t *conf);
 
 #endif

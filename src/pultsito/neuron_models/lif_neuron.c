@@ -1,456 +1,197 @@
-#include "snn_library.h"
-#include "neuron_models/lif_neuron.h"
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <math.h>
+#include <time.h>
+
+#include <omp.h>
+#include <immintrin.h> 
+
+#include "snn_library.h" // substitute by forwarded struct declarations??? 
+#include "neuron_models/neuron_models.h"
 
 
-void lif_neuron_compute_input_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results, simulation_configuration_t *conf){
+
+void allocate_memory_for_LIF_neurons(GPU_SNN_t *snn, simulation_configuration_t *conf){
+
+    // allocate memory for neurons and synapses
+    snn->v                             = (float*)malloc(snn->n_neurons * conf->batch_size * sizeof(float));
+    snn->v_thresh                      = (float*)malloc(snn->n_neurons * conf->batch_size * sizeof(float));
+    snn->v_rest                        = (float*)malloc(snn->n_neurons * conf->batch_size * sizeof(float));
+    snn->arrI                          = (float*)malloc(snn->n_neurons * conf->batch_size * sizeof(float));
+    snn->r_period                      = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
+    snn->r_period_remain               = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
+    snn->res                           = (int*)malloc(snn->n_neurons * conf->batch_size * sizeof(int));
+    snn->post_fired                    = (char*)malloc(snn->n_neurons * conf->batch_size * sizeof(char));
+    snn->post_trace                    = (float*)malloc(snn->n_neurons * conf->batch_size * sizeof(float));
+    snn->n_neuron_input_synapses       = (size_t*)malloc(snn->n_neurons * conf->batch_size * sizeof(size_t));
+    snn->neuron_input_synapses_offset  = (size_t*)malloc(snn->n_neurons * conf->batch_size * sizeof(size_t));
+}
+
+void initialize_LIF_neurons(GPU_SNN_t *snn, network_construction_lists_t *data, simulation_configuration_t *conf){
+
+    size_t i;
     
-    lif_neuron_t *lif_neuron, *pre_lif_neuron;
-    synapse_t *synapse;
-    int i, next_spike_time, synapse_index, delay; 
-    double I = 0, w;
+    // initialize neuron parameters from array
+    for(i = 0; i<snn->n_neurons; i++){
 
+        snn->v_thresh[i] = data->v_thres_list[i];
+        snn->v_rest[i] = data->v_rest_list[i]; // this or the next one?
+        snn->v[i] = snn->v_rest[i]; 
+        snn->res[i] = data->R_list[i];
+        snn->r_period[i] = data->r_time_list[i];
+        snn->r_period_remain[i] = -1;
+        snn->n_neuron_input_synapses[i] = 0;
+        snn->neuron_input_synapses_offset[i] = 0;
 
-    // get neuron to be processed
-    lif_neuron = &(snn->lif_neurons[neuron_id]);
+        // control variables
+        snn->post_fired[i] = 0;
+        snn->post_trace[i] = 0.0;
+        snn->arrI[i] = 0.0;
+    }
+}
+
+void reinitialize_LIF_neurons_batch(GPU_SNN_t *snn, simulation_configuration_t *conf){
     
+    size_t i, b;
+    size_t B, N, P;
+    size_t g_index;
 
-    #ifdef DEBUG
-        printf(" - Processing neuron %d \n", neuron_id);
-    #endif
-
-    // process input spikes for the neuron if not in refractory period
-    if(lif_neuron->r_time_rest <= 0){
+    N = snn->n_neurons;
+    P = conf->n_process;
+    B = conf->batch_size;
         
-        // loop over input synapses
-        for(i=0; i<lif_neuron->n_input_synapse; i++)
-        {
-            // get synapse from synapse array
-            synapse_index = lif_neuron->input_synapse_indexes[i];
-            synapse = &(snn->synapses[synapse_index]); // TODO: make a copy???
-            pre_lif_neuron = synapse->pre_synaptic_lif_neuron;
+    // loop over neurons
+    #pragma omp parallel for num_threads(P) private(i, b, g_index)
+    for(i = 0; i < N; i++){
 
-            w = synapse->w;
-            delay = synapse->delay;
+        g_index = i * B;
+        
+        // loop over copies in batch (serial)
+        for(b = 0; b<B; b++){
 
-            #ifdef DEBUG
-                printf(" -- Processing input synapse %d: ", synapse_index);
-            #endif
+            snn->v[g_index + b] = snn->v_rest[i];
+            snn->r_period_remain[g_index + b] = 0;
+            snn->post_fired[g_index + b] = 0;
+            snn->post_trace[g_index + b] = 0.0;
+        }
+    }
+}
 
+void compute_LIF_V_batch(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt){
+
+    // get general information
+    size_t N, P, B;
+    size_t i, b;
+    size_t neuron_index, g_neuron_index;
+
+    N = snn->n_neurons;
+    P = conf->n_process;
+    B = conf->batch_size;
+
+    // helpers
+    const float alpha = 0.95f;
+    const float beta = 0.05f;
+
+    #if defined AVX512
+    {
+        if(B == 8){
             
-            // get the time step of the next spike to be processed
-            next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
+            // initialize constants
+            __m256 avec = _mm256_set1_ps(alpha);
+            __m256 bvec = _mm256_set1_ps(beta);
 
-            // refresh index
-            while (next_spike_time < t && lif_neuron->next_spike_index[i] != pre_lif_neuron->last_spike){
+            #pragma omp parallel for num_threads(P) private(i, b, neuron_index, g_neuron_index)
+            for(i = 0; i<N; i++){   
+                
+                neuron_index = i;
+                __m256 v_rest_vec = _mm256_set1_ps(snn->v_rest[neuron_index]);
 
-                lif_neuron->next_spike_index[i] = (lif_neuron->next_spike_index[i] + 1) % pre_lif_neuron->max_spikes;
-                next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
+                for(b = 0; b+7<B; b+=8){
+
+                    g_neuron_index = i * B + b;
+
+                    // load refractary period and create mask
+                    __m256i refract_vec = _mm256_loadu_epi32(&(snn->r_period_remain[g_neuron_index]));
+                    __mmask8 rft_mask = _mm256_cmp_epi32_mask(refract_vec, _mm256_setzero_si256(), _MM_CMPINT_LE); // if lower or eual, process
+
+                    // load I, rest and v, if any neuron is not in refractory period
+                    if(rft_mask){            
+
+                        __m256 v_vec = _mm256_loadu_ps(&(snn->v[g_neuron_index]));
+                        __m256 I_vec = _mm256_loadu_ps(&(snn->arrI[g_neuron_index]));
+
+                        // compute dynamics
+                        __m256 tmp = _mm256_add_ps(I_vec, _mm256_mul_ps(v_rest_vec, bvec));
+                        __m256 rhs = _mm256_fmadd_ps(v_vec, avec, tmp);  // alpha*v + beta*v_rest + I
+                        v_vec = _mm256_mask_mov_ps(v_vec, rft_mask, rhs); // only update active lanes
+
+                        // store v
+                        _mm256_storeu_ps(&(snn->v[g_neuron_index]), v_vec);
+                    }
+                }
             }
-
-            // process input spike if the spike time + the delay is equal to the actual t
-            if((next_spike_time) == t && next_spike_time - delay != -1){
-                I += w;
-            }
-
-            #ifdef DEBUG
-                printf("\n");
-            #endif
         }
+        else if(B % 16 == 0){
 
-        // https://unaterzavia.com/neural-dynamics2/
-        lif_neuron->v = (1 - 0.05) * lif_neuron->v + lif_neuron->v_rest * 0.05 + I; // * lif_neuron->r * 1/20; // supposing r * 1/20 == 1   
+            // initialize constants
+            __m512 avec = _mm512_set1_ps(alpha);
+            __m512 bvec = _mm512_set1_ps(beta);
+
+            #pragma omp parallel for num_threads(P) private(i, b, neuron_index, g_neuron_index)
+            for(i = 0; i<N; i++){   
+                
+                neuron_index = i;
+
+                // load v_rest
+                __m512 v_rest_vec = _mm512_set1_ps(snn->v_rest[neuron_index]);
+
+                for(b = 0; b+15<B; b+=16){
+
+                    // compute neuron index
+                    g_neuron_index = i * B + b;
+
+                    // load refractary period and create mask
+                    __m512i refract_vec = _mm512_loadu_si512(&(snn->r_period_remain[g_neuron_index]));
+                    __mmask16 rft_mask = _mm512_cmp_epi32_mask(refract_vec, _mm512_setzero_si512(), _MM_CMPINT_LE); // if lower or eual, process
+
+                    // avoid computation if all neurons are in refractory period
+                    if(rft_mask){
+
+                        // load v and I
+                        __m512 v_vec = _mm512_loadu_ps(&(snn->v[g_neuron_index]));
+                        __m512 I_vec = _mm512_loadu_ps(&(snn->arrI[g_neuron_index]));
+
+                        // compute dynamics v = rft ? v : compute_lif()  <-- this is done by the next lines
+                        __m512 tmp = _mm512_add_ps(I_vec, _mm512_mul_ps(v_rest_vec, bvec));
+                        __m512 rhs = _mm512_fmadd_ps(v_vec, avec, tmp);  // alpha*v + beta*v_rest + I
+                        v_vec = _mm512_mask_mov_ps(v_vec, rft_mask, rhs); // only update active lanes
+
+                        // store v (all values are stored, mask is not necessary since the previous operation stores the final values)
+                        _mm512_storeu_ps(&(snn->v[g_neuron_index]), v_vec); 
+                    }
+                }
+            }
+        }
     }
-}
-
-void lif_neuron_compute_output_synapses(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results, simulation_configuration_t *conf){
-    
-    // get neuron to be processed
-    lif_neuron_t *lif_neuron = &(snn->lif_neurons[neuron_id]);
-
-    #ifdef DEBUG
-        printf(" - Processing neuron %d \n", neuron_id);
-    #endif
-
-    // fire an spike if neuron membrane potential is higher than the threshold and neuron is not in refractory period
-    if(lif_neuron->v >= lif_neuron->v_tresh){ // if the neuron is in refractory period is impossible to have a higher v value than the threshold, so it is not necessary to indicate it
-
-        #ifdef DEBUG
-            printf(" -- Spike generated by %d at time %d\n", neuron_id, t);
-        #endif
-
-        // add the spike to output synapse
-        lif_neuron->spike_times_arr[lif_neuron->last_spike] = t;// + synapse->delay;
-        lif_neuron->last_spike = (lif_neuron->last_spike + 1) % lif_neuron->max_spikes;
-        
-        // update control information
-        lif_neuron->r_time_rest = lif_neuron->r_time; // set refractory time period
-        lif_neuron->v = lif_neuron->v_rest; // reset potential
-
-        // store the last spike timestamp
-        //lif_neuron->t_last_spikes[lif_neuron->next_last_spike] = t; // last spike generated by the neuron
-        //lif_neuron->next_last_spike = (lif_neuron->next_last_spike + 1) % lif_neuron->n_last_spikes;
-
-
-        // add information to results struct // TODO: This should be refactorized since this will be done for all neuron types
-        // store if necessary
-        if(conf->store_generated_spikes == 1)
-            results->generated_spikes[neuron_id][t] = '|'; // TODO: probably this should be a list of unsigned int, or bits, or something
-        
-        if(conf->store_n_spikes == 1)
-            results->n_spikes_per_neuron[neuron_id] += 1; 
-    }
-    else{
-        // no spike generated
-        if(conf->store_generated_spikes == 1)
-            results->generated_spikes[neuron_id][t] = ' ';
-
-        // refresh refractory period time
-        lif_neuron->r_time_rest --; // the value can be lower than 0, so no problem
-    }
-}
-
-void lif_neuron_step(spiking_nn_t *snn, int t, int neuron_id, simulation_results_per_sample_t *results){
-
-    lif_neuron_t *lif_neuron, *pre_lif_neuron;
-    synapse_t *synapse;
-    int i, next_spike_time, synapse_index, delay; //pre_neuron_index; 
-    double I = 0, w;
-
-    // get neuron to be processed
-    lif_neuron = &(snn->lif_neurons[neuron_id]);
-    
-
-    #ifdef DEBUG
-        printf(" - Processing neuron %d \n", neuron_id);
-    #endif
-
-    //msb = lif_neuron->r_time_rest & (1 << (sizeof(int) * 8 - 1)); // check if positive
-
-    // process input spikes for the neuron if not in refractory period
-    if(lif_neuron->r_time_rest <= 0){
-        
-        // loop over input synapses
-        for(i=0; i<lif_neuron->n_input_synapse; i++)
-        {
-            // get synapse from synapse array
-            synapse_index = lif_neuron->input_synapse_indexes[i];
-            synapse = &(snn->synapses[synapse_index]); // TODO: make a copy???
-            pre_lif_neuron = synapse->pre_synaptic_lif_neuron;
-            //pre_neuron_index = synapse->pre_neuron_index;
-
-            w = synapse->w;
-            delay = synapse->delay;
-
-            #ifdef DEBUG
-                printf(" -- Processing input synapse %d: ", synapse_index);
-            #endif
-
+    #else
+    {
+        // loop over neurons
+        #pragma omp parallel for num_threads(P) private(i, b, neuron_index, g_neuron_index)
+        for (i = 0; i < N; i++) {
             
-            // get the time step of the next spike to be processed
-            next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
+            neuron_index = i;
+            g_neuron_index = i * B;
 
-            // refresh index
-            while (next_spike_time < t && lif_neuron->next_spike_index[i] != pre_lif_neuron->last_spike){
-
-                lif_neuron->next_spike_index[i] = (lif_neuron->next_spike_index[i] + 1) % pre_lif_neuron->max_spikes;
-                next_spike_time = pre_lif_neuron->spike_times_arr[lif_neuron->next_spike_index[i]] + delay;
-            }
-
-            // process input spike if the spike time + the delay is equal to the actual t
-            if((next_spike_time) == t && next_spike_time - delay != -1){
-                I += w;
-            }
-
-            #ifdef DEBUG
-                printf("\n");
-            #endif
-
-            // add sync
-            //snn->sync[pre_neuron_index]++;
-        }
-
-        // compute membrane potential --> https://colab.research.google.com/github/johanjan/MOOC-HPFEM-source/blob/master/LIF_ei_balance_irregularity.ipynb
-        // lif_neuron->v = lif_neuron->v + (-(lif_neuron->v - lif_neuron->v_rest) + (lif_neuron->r * input_current)) * (1 / 1);
-        //lif_neuron->v =  lif_neuron->v * (1 - 1 / 20) + input_current;  //(0.2) * (-(lif_neuron->v - lif_neuron->v_rest) + lif_neuron->r * input_current); // (1 / 5)
-        // https://unaterzavia.com/neural-dynamics2/
-        lif_neuron->v = (1 - 0.05) * lif_neuron->v + lif_neuron->v_rest * 0.05 + I; // * lif_neuron->r * 1/20; // supposing r * 1/20 == 1   
-
-
-        // fire an spike if neuron membrane potential is higher than the threshold and neuron is not in refractory period
-        if(lif_neuron->v >= lif_neuron->v_tresh){ // if the neuron is in refractory period is impossible to have a higher v value than the threshold, so it is not necessary to indicate it
-
-            #ifdef DEBUG
-                printf(" -- Spike generated by %d at time %d\n", neuron_id, t);
-            #endif
-
-            // add the spike to output synapse
-            lif_neuron->spike_times_arr[lif_neuron->last_spike] = t;// + synapse->delay;
-            lif_neuron->last_spike = (lif_neuron->last_spike + 1) % lif_neuron->max_spikes;
-            
-            // update control information
-            lif_neuron->r_time_rest = lif_neuron->r_time; // set refractory time period
-            lif_neuron->v = lif_neuron->v_rest; // reset potential
-
-            // store the last spike timestamp
-            //lif_neuron->t_last_spikes[lif_neuron->next_last_spike] = t; // last spike generated by the neuron
-            //lif_neuron->next_last_spike = (lif_neuron->next_last_spike + 1) % lif_neuron->n_last_spikes;
-
-            // add information to results struct // TODO: This should be refactorized since this will be done for all neuron types
-            results->generated_spikes[neuron_id][t] = '|'; // TODO: probably this should be a list of unsigned int, or bits, or something
-            results->n_spikes_per_neuron[neuron_id] += 1; 
-        }
-        else{
-            // no spike generated
-            results->generated_spikes[neuron_id][t] = ' ';
-
-            // refresh refractory period time
-            lif_neuron->r_time_rest --; // the value can be lower than 0, so no problem
-        }
-    }
-    else{
-        // no spike generated
-        results->generated_spikes[neuron_id][t] = ' ';
-
-        // refresh refractory period time
-        lif_neuron->r_time_rest --; // the value can be lower than 0, so no problem
-    }
-}
-
-
-void initialize_lif_neuron(spiking_nn_t *snn, int neuron_index, network_construction_lists_t *data, int n_input_synapse, int n_output_synapse, int max_spikes){
- 
-    int i;
-    lif_neuron_t *neuron;
-
-    // get neuron from neurons array
-    neuron = &(snn->lif_neurons[neuron_index]); 
-
-    // initialize neuron parameters from array // TODO: it's not totally correct, i guess
-    neuron->v_tresh = data->v_thres_list[neuron_index];
-    neuron->v_rest = data->v_rest_list[neuron_index]; // this or the next one?
-    neuron->v = neuron->v_rest; 
-    neuron->r = data->R_list[neuron_index];
-    neuron->excitatory = data->neuron_excitatory[neuron_index];
-    neuron->r_time_rest = -1;
-    neuron->r_time = data->r_time_list[neuron_index];
-
-    // check if neuron is input
-    if(neuron_index < snn->n_input)
-        neuron->is_input_neuron = 1;
-    else
-        neuron->is_input_neuron = 0;
-
-    // check if neuron is output
-    if(neuron_index >= (snn->n_neurons - snn->n_output))
-        neuron->is_output_neuron = 1;
-    else
-        neuron->is_output_neuron = 0;
-
-
-    // reserve memory to store input and output synapses indexes
-    neuron->input_synapse_indexes = malloc(n_input_synapse * sizeof(int));
-    neuron->output_synapse_indexes = malloc(n_output_synapse * sizeof(int));
-    
-    // store number of input and output synpases for each neuron
-    neuron->n_input_synapse = n_input_synapse;
-    neuron->n_output_synapse = n_output_synapse;
-
-    // initialize control variables
-    neuron->next_input_synapse = 0; // index that indicate the position of the next spike to read
-    neuron->next_output_synapse = 0; // index that indicate where the next spike must be write
-    
-    // TODO: temporal??? LAST SPIKES REMOVED
-    //neuron->n_last_spikes = 3; // TODO: Change this
-    //neuron->next_last_spike = 0;
-    //neuron->t_last_spikes = (int*)malloc(neuron->n_last_spikes * sizeof(int)); // TODO: temporary 3, it should be a parameter
-    //for(i=0; i<neuron->n_last_spikes; i++)
-    //    neuron->t_last_spikes[i] = -1;
-    
-    //neuron->t_last_spike = -1; // time step when the neuron fired the last spike
-
-
-    // spike array
-    neuron->last_spike = 0; 
-    neuron->next_spike_index = (int *)malloc(n_input_synapse * sizeof(int));
-    for(i=0; i<n_input_synapse; i++){
-        neuron->next_spike_index[i] = 0;
-    }
-
-    // Probably this MAX_SPIKES should be an input parameter or an L correctly computed
-    neuron->spike_times_arr = (int *)malloc(max_spikes * sizeof(int));
-    for(i = 0; i<max_spikes; i++)
-        neuron->spike_times_arr[i] = -1; // no spikes yet
-    neuron->max_spikes = max_spikes;
-}
-
-void re_initialize_lif_neuron(spiking_nn_t *snn, int neuron_index){
-    
-    int i;
-    lif_neuron_t *neuron;
-    
-    // get neuron from neurons array
-    neuron = &(snn->lif_neurons[neuron_index]); 
-
-    neuron->v = neuron->v_rest;
-    neuron->r_time_rest = 0;
-    // initialize neuron parameters from array // TODO: I think some parameters are not necessary
-    //neuron->v_tresh = data->v_thres_list[neuron_index];
-    //neuron->v_rest = data->v_rest_list[neuron_index]; // this or the next one?
-    //neuron->v= neuron->v_rest; 
-    //neuron->r = data->R_list[neuron_index];
-    //neuron->excitatory = data->neuron_excitatory[neuron_index];
-    //neuron->r_time = data->r_time_list[neuron_index];
-    
-    // reinitialize control parameters
-    //neuron->next_input_synapse = 0; 
-    //neuron->next_output_synapse = 0;
-    
-    //neuron->next_last_spike = 0;
-    //for(i = 0; i<neuron->n_last_spikes; i++)
-    //    neuron->t_last_spikes[i] = -1;
-
-    // spike array
-    neuron->last_spike = 0; 
-    for(i=0; i<neuron->n_input_synapse; i++)
-        neuron->next_spike_index[i] = 0;
-
-    for(i = 0; i<neuron->max_spikes; i++)
-        neuron->spike_times_arr[i] = -1; // no spikes yet
-}
-
-void add_input_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index){
-    
-    lif_neuron_t *neuron = &(snn->lif_neurons[neuron_index]);
-    synapse_t *synapse = &(snn->synapses[synapse_index]);
-
-    // add the synapse index to the list of the neuron
-    neuron->input_synapse_indexes[neuron->next_input_synapse] = synapse_index;
-    neuron->next_input_synapse += 1; // control parameter for initialization
-
-    // add reference to the neuron in the synapse
-    synapse->post_synaptic_lif_neuron = neuron;
-    synapse->post_neuron_index = neuron_index;
-}
-
-void add_output_synapse_to_lif_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index){
-    
-    lif_neuron_t *neuron = &(snn->lif_neurons[neuron_index]);
-    synapse_t *synapse = &(snn->synapses[synapse_index]);
-
-    // add the synapse index to the list of the neuron
-    neuron->output_synapse_indexes[neuron->next_output_synapse] = synapse_index;
-    neuron->next_output_synapse += 1;
-
-    // add reference to the neuron in the synapse
-    synapse->pre_synaptic_lif_neuron = neuron;
-    synapse->pre_neuron_index = neuron_index;
-}
-
-void cp_lif_neurons(lif_neuron_t *cp_lifs, lif_neuron_t *or_lifs, int n_neurons){
-
-    int i, j;
-    lif_neuron_t *or_lif, *cp_lif; // helpers
-
-    // copy each neuron
-    for(i = 0; i<n_neurons; i++){
-
-        // get original and copy neurons
-        or_lif = &(or_lifs[i]);
-        cp_lif = &(cp_lifs[i]);
-
-        // copy synapses data
-        cp_lif->n_input_synapse = or_lif->n_input_synapse; // number of input synapses
-        if(cp_lif->n_input_synapse > 0){
-            cp_lif->input_synapse_indexes = (int *)malloc(cp_lif->n_input_synapse * sizeof(int));
-            for(j = 0; j<cp_lif->n_input_synapse; j++){
-                cp_lif->input_synapse_indexes[j] = or_lif->input_synapse_indexes[j];
+            // loop over batches
+            for(b = 0; b<B; b++){
+                
+                if (snn->r_period_remain[g_neuron_index + b] <= 0){
+                    
+                    snn->v[g_neuron_index + b] = alpha * snn->v[g_neuron_index + b] + beta * snn->v_rest[neuron_index] + snn->arrI[g_neuron_index + b];
+                }
             }
         }
-
-        // copy output synapses data
-        cp_lif->n_output_synapse = or_lif->n_output_synapse;
-        if(cp_lif->n_output_synapse > 0){
-            cp_lif->output_synapse_indexes = (int *)malloc(cp_lif->n_output_synapse * sizeof(int));
-            for(j = 0; j<cp_lif->n_output_synapse; j++){
-                cp_lif->output_synapse_indexes[j] = or_lif->output_synapse_indexes[j];
-            }
-        }
-
-        // initialize the index of the next spikes to be processed
-        cp_lif->next_spike_index = (int *)calloc(cp_lif->n_input_synapse, sizeof(int));
-
-
-        // set whether neuron is input or output
-        cp_lif->is_input_neuron = or_lif->is_input_neuron;
-        cp_lif->is_output_neuron = or_lif->is_output_neuron;
-
-        // copy general data
-        //cp_lif->excitatory = or_lif->excitatory;
-        cp_lif->v = or_lif->v;
-        cp_lif->r = or_lif->r;
-        cp_lif->v_rest = or_lif->v_rest;
-        cp_lif->v_tresh = or_lif->v_tresh;
-        cp_lif->r_time = or_lif->r_time;
-        cp_lif->r_time_rest = or_lif->r_time_rest;
-
-        //cp_lif->n_last_spikes = or_lif->n_last_spikes;
-        //cp_lif->next_last_spike = 0;
-        //if(cp_lif->n_last_spikes > 0)
-        //    cp_lif->t_last_spikes = (int*)malloc(cp_lif->n_last_spikes * sizeof(int));
-        //else
-        //    cp_lif->t_last_spikes = 0;
-
-        //for(j = 0; j<cp_lif->n_last_spikes; j++){
-        //    cp_lif->t_last_spikes[j] = -1;
-        //}
-        
-        // spike array
-        cp_lif->last_spike = or_lif->last_spike;
-        cp_lif->max_spikes = or_lif->max_spikes;
-        // initialize array
-        cp_lif->spike_times_arr = (int *)malloc(cp_lif->max_spikes * sizeof(int));
-        for(j = 0; j<cp_lif->max_spikes; j++){
-            cp_lif->spike_times_arr[j] = -1;
-        }
     }
-}
-
-
-void load_sample_in_LIF(spiking_nn_t *snn, sample_t *sample){
-
-    int i, j;
-    lif_neuron_t *lif;
-    spike_train_t *st;
-
-    for(i = 0; i<snn->n_input; i++){
-
-        lif = &(snn->input_lif_neurons[i]); // get i.th lif neuron
-        st = &(sample->st[i]); // get the i.th spike train in the sample
-
-        // load spike train in neuron
-        for(j = 0; j<st->n_spikes; j++){ 
-            lif->spike_times_arr[j] = st->stimes[j];
-        }
-
-        // set last spike index
-        //lif->last_spike = st->n_spikes;
-        lif->last_spike = st->n_spikes;
-
-        for(j = st->n_spikes; j<lif->max_spikes; j++){
-            lif->spike_times_arr[j] = -1;
-        }
-    }
-}
-
-
-
-
-// NEW FUNCTIONS
-
-void process_LIF(){
-
+    #endif
 }

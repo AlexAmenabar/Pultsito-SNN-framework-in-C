@@ -1,57 +1,83 @@
-/// FUNCTIONS WITH SIMULATION TYPES
+#ifndef SIMULATIONS_H
+#define SIMULATIONS_H
+
 #include "snn_library.h"
-#include "load_data.h"
-#include "helpers.h"
-#include "training_rules/stdp.h"
 
-#include "neuron_models/lif_neuron.h"
+/* General simulation functions */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-#include <time.h>
-
-/// @brief 
-/// @param snn 
-/// @param conf 
-/// @param results 
-/// @param dataset 
-void train_network(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset);
-
-/// @brief 
-/// @param snn 
-/// @param conf 
-/// @param results 
-/// @param dataset 
-void test_network(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset);
-
-/// @brief 
-/// @param snn 
-/// @param conf 
-/// @param results 
-/// @param dataset 
-void simulate_samples(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results, input_data_t *dataset);
-
-/// @brief Function to simulate an SNN where input is stream data // TODO
-void stream_simulation(spiking_nn_t *snn, simulation_configuration_t *conf, simulation_results_t *results);
-
-
-
-
-
-
-
-
-
-/// Function to loop over all input synapses of a neuron and calculate the input current
-float compute_neuron_input_current(GPU_SNN_t *snn, size_t t, size_t i);
-void compute_input_current(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t);
-void compute_LIF_V(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t);
-void process_neuron_firing(GPU_SNN_t *snn, simulation_configuration_t *conf, GPU_results_t *results, size_t t);
-
-
-///
-void simulate_sample_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results, size_t sidx);
-void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results, size_t bidx);
-void update_weights_cpu(GPU_SNN_t *snn, size_t batch_size);
+/// @brief Function for simulating a dataset in batches
+/// @param snn stores the network to be simulated
+/// @param dataset stores the encoded dataset to simulate
+/// @param conf stores the configuration data for guiding the simulation
+/// @param results is used to store the necessary results during and after the simulation
 void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results);
+
+/// @brief Function for simulating a batch
+/// @param snn stores the network to be simulated
+/// @param dataset stores the encoded dataset to simulate
+/// @param conf stores the configuration data for guiding the simulation
+/// @param results is used to store the results of the batch simulation
+/// @param bidx indicates the index of the batch to be simulated in the dataset
+/// @param print_data indicates whether data should be printed during simulation
+void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, GPU_results_t *results, size_t bidx, int print_data);
+
+
+/* Function to compute input currents and neurons firing */
+
+/// @brief Function for computing the input currents
+/// @param snn stores the network to be simulated
+/// @param conf stores the configuration data for guiding the simulation
+/// @param t local time step to simulate
+/// @param gt time step of the simulation
+void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt);
+
+/// @brief Function to simulate neurons firing process
+/// @param snn stores the network to be simulated
+/// @param conf stores the configuration data for guiding the simulation
+/// @param results structure to store the neccessary results
+/// @param t local time step to simulate
+/// @param gt time step of the simulation
+void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *conf, GPU_results_t *results, size_t t, size_t gt);
+
+
+/* Functions for managing dataset  */
+
+/// @brief Function to initialize the intermediate structure for storing the data of the samples in the simulated batch
+/// @param snn stores the network to be simulated
+/// @param dataset stores the encoded dataset to simulate
+/// @param conf stores the configuration data for guiding the simulation
+/// @param results structure to store the neccessary results
+/// @param bidx indicates the index of the batch to be simulated in the dataset
+tmp_batch_cpu_t* initialize_batch_matrix(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, size_t bidx);
+
+/// @brief Function to load a time step from the intermediate structure to the spike matrix of the SNN
+/// @param snn stores the network to be simulated
+/// @param dataset stores the encoded dataset to simulate
+/// @param conf stores the configuration data for guiding the simulation
+/// @param results structure to store the neccessary results
+/// @param bidx indicates the index of the batch to be simulated in the dataset
+/// @param t time step to load
+void load_batch_time_step_in_SNN_batch(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, tmp_batch_cpu_t *batch_data, size_t bidx, size_t t);
+
+
+/* Functions to reinitialize the network(s) */
+
+/// @brief Function to reinitialize the synapses in the network
+/// @param snn stores the network to be simulated
+/// @param conf stores the configuration data for guiding the simulation
+void reinitialize_synapses_batch(GPU_SNN_t *snn, simulation_configuration_t *conf);
+
+/// @brief Function to reinitialize the spike matrix (set 0 values)
+/// @param snn stores the network to be simulated
+/// @param conf stores the configuration data for guiding the simulation
+void reinitialize_spk_matrix_batch(GPU_SNN_t *snn, simulation_configuration_t *conf);
+
+
+/* Weights updating */
+
+/// @brief Function to update network weights after simulating a batch
+/// @param snn stores the network to be simulated
+/// @param conf stores the configuration data for guiding the simulation
+void update_weights_cpu(GPU_SNN_t *snn, simulation_configuration_t *conf);
+
+#endif

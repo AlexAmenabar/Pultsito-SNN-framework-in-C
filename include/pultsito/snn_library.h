@@ -3,39 +3,27 @@
 
 #include "stdio.h"
 
-// TODO: Max spikes should be an input parameter?
 
 
-#ifdef USE_DOUBLE
-    typedef double real_t;
-#else
-    typedef float real_t;
-#endif
+/* Structures used for simulating networks */
 
-
-/* Simulation configuration struct containing all the data for the simulation */
-
-/// @brief Struct to load all the configuration data
+/// @brief Structure to store all the configuration for the simulation
 typedef struct{
 
     // [general] information
-    int simulation_type; // clock (0) / event-driven (1)
     int neuron_type; // neuron type (LIF...)
-    int simulation_obj; // simulation obj. (ML or biological simulations) // DEPRECATED???
     size_t n_process; // number of CPU processes
-    size_t n_inner_process;
     int cuda; // simulation done in cuda
-    int multi_gpu; // multi gpu simulation allowed or not: not (0), auto (1), maximize (2, use all available gpus)
-    int learn; // inference (0) / training (1)
-    int encode; // input encoded (0) / encode input (1) // TODO
+    int multi_gpu; 
+    int learn; // 0: inference;  1: training
     size_t batch_size; // batch size
     size_t thrN; // 
+    int load_network; // 0: network file provided;  1: generate the network from file data;  2: do not generate the network
+    int load_dataset; // 0: dataset file provided;  1: generate the dataset from file data;  2: do not generate the dataset 
 
     // [simulation] data
     size_t time_steps; // time steps of the simulations
-    size_t max_spikes; // length for arrays in the middle of the network
-    size_t max_input_spikes; // length for input and output neurons arrays
-    size_t epochs; // number of epochs to simulate
+    size_t max_input_spikes; // maximum number of spikes in a input spike train
 
     // [dataset] data
     int train_provided;
@@ -50,9 +38,10 @@ typedef struct{
     
     char *dataset_name; // name of the simulated dataset
     size_t n_classes; // number of classes in the dataset
-    size_t input_size;
+    size_t input_size; // number of features per each sample
 
     int shuffle_samples; // whether samples should be shuffled or not
+    size_t epochs; // number of epochs to simulate
 
     // [output] data
     int store_generated_spikes, store_n_spikes, store_execution_times, store_network;
@@ -67,16 +56,10 @@ typedef struct{
     char *network_neurons_file; // file path to load network neurons from 
     char *network_synapses_file; // file path to load network synapses from
 
-    // control variables to indicate what parameters have been provided 
-    // in case 0, variables are initialized to default values; if 1, an array is provided, and, finally,
-    // if the value is 2 a constant in provided in the file
-    int behaviours_provided, delays_provided, weights_provided, training_zones_provided, 
-        thresholds_provided, v_rests_provided, refract_times_provided, R_provided; // TODO: add more 
-
 } simulation_configuration_t;
 
 
-/// @brief Struct containing the information to initialize each neuron and synapse
+/// @brief Structure containing the initial values of the network parameters
 typedef struct{
     
     // general network information
@@ -95,225 +78,10 @@ typedef struct{
 } network_construction_lists_t;
 
 
-
-/* Struct for simualtion results */
-
-/// [DEPRECATED]
-/// @brief Struct to store the results of each sample
-typedef struct{
-    
-    // elapsed time for different sections of the simulation
-    double elapsed_time_neurons; // elapsed time computing neurons
-    double elapsed_time_neurons_input; // elapsed time processing neurons input 
-    double elapsed_time_neurons_output; // elapsed time processing neurons output
-    double elapsed_time_synapses; // elapsed time processing synapses
-    double elapsed_time_synapses_input; // elapsed time processing synapses input
-    double elapsed_time_synapses_output; // elapsed time processing synapses output
-    double elapsed_time_learning; // elapsed time processing learning rules
-    double elapsed_time_sample, elapsed_time_load_sample;
-    double elapsed_time_re_neurons, elapsed_time_re_synapses;
-
-    // information about generated spikes
-    unsigned char **generated_spikes; // generated spikes [n_neurons x n_time_steps]
-    int *n_spikes_per_neuron; // number of spikes per each neuron [n_samples x n_neurons]
-
-} simulation_results_per_sample_t;
-
-
-/// [DEPRECATED]
-/// @brief Struct to store the general results of the simulation
-typedef struct{
-    
-    simulation_results_per_sample_t *results_per_sample; // [n_samples]
-    double elapsed_time_epoch, elapsed_time, elapsed_time_batch;
-    double elapsed_time_total_inference;
-    double elapsed_time_total_learning;
-
-    double elapsed_time_neurons; // elapsed time computing neurons
-    double elapsed_time_neurons_input; // elapsed time processing neurons input 
-    double elapsed_time_neurons_output; // elapsed time processing neurons output
-    double elapsed_time_synapses; // elapsed time processing synapses
-    double elapsed_time_synapses_input; // elapsed time processing synapses input
-    double elapsed_time_synapses_output; // elapsed time processing synapses output
-    double elapsed_time_learning; // elapsed time processing learning rules
-    double elapsed_time_sample, elapsed_time_load_sample;
-    double elapsed_time_re_neurons, elapsed_time_re_synapses;
-
-} simulation_results_t;
-
-
-/* Structs for datasets */
-
-/// [DEPRECATED]
-// struct to represent a spike train
-typedef struct{
-
-    int n_spikes; // number of spikes in the train
-    int *stimes; // spike times
-    
-} spike_train_t;
-
-
-/// [DEPRECATED]
-// spike image (set of spike trains)
-typedef struct{
-
-    spike_train_t *st; // pixels
-
-} sample_t;
-
-
-/// [DEPRECATED]
-/// @brief Struct to handle different data types
-typedef struct{
-
-    int n_samples; // number of samples in the dataset
-    int type; // image, ...
-
-    // images
-    int image_size; // number of pixels []
-    sample_t *samples; // samples in the dataset
-
-    // general information
-    int n_classes;
-    int *labels; // labels of each sample
-    
-} input_data_t;
-
-
-/* Network structs */
-
-/// [DEPRECATED]
-/// @brief LIF neuron model structure
-typedef struct {
-
-    // input synapses
-    int *input_synapse_indexes; // indexes of input synapses in the synase array
-    int n_input_synapse; // number of input synapses
-    int *next_spike_index; // indexes of the next spike to compute for each input synapse
-    int next_input_synapse; // used in initialization
-
-    // output synapses
-    int *output_synapse_indexes; // indexes of output synapses in the synapse array
-    int n_output_synapse; // number of output synapses
-    int next_output_synapse; // used in initialization
-
-    // is input ot output neuron // not necessary? It depends on the position
-    int is_input_neuron; // neuron is an input neuron (in the network)
-    int is_output_neuron; // neuron is an output neuron (in the network)
-
-    // TODO: actually used?
-    int excitatory; // neuron behaviour
-
-    // neuron variables
-    double v; // membrane potential
-    double r; // neuron resistance
-    double v_rest; // neuron resting potential
-    double v_tresh; // neuron threshold potential
-    int r_time; // refractory time
-    int r_time_rest; // resting time in refractory period
-
-    // circular array array of last timestamps of generated spikes 
-    //int *t_last_spikes; // DEPRECATED?
-    //int n_last_spikes; // DEPRECATED? 
-    //int next_last_spike; // DEPRECATED?
-
-
-    // array to store spikes generated by the neuron // TODO: probably I will move this to a separated matrix
-    int *spike_times_arr; // circular array to store spikes // TODO: this MUST be refactorized
-    int last_spike; // indexes of next spike to fire and the last produced // TODO: I really don't understand very good this indexes in this moment
-    int max_spikes; // array length
-
-    //int highest_post_delay;
-
-} lif_neuron_t;
-
-
-/// [DEPRECATED]
-// define synapse_t struct
-typedef struct synapse_t synapse_t;
-
-
-/// [DEPRECATED]
-/// @brief Synapse structure
-struct synapse_t {
-
-    // synapse variables
-    double w; // synapse weight
-    double init_w;
-    double dw; // weight change
-    int delay; // latency
-
-    int lr; // learning rule index
-    void (*learning_rule)(synapse_t*, int, int); // pointer to learning rule function // this parameter should be an struct?
-    int stdp_steps; // to compute N step STDP;
-    int next_pre_spike, next_post_spike;
-
-    //int t_last_pre_spike, t_last_post_spike; // times of last presynaptic neuron and postsynaptic neurons spikes // if the difference in performance is not critical, this should be removed and neurons directly used
-
-    // probably I shoudl implement another way to handle different types of neurons
-
-    // presynaptic neuron
-    lif_neuron_t *pre_synaptic_lif_neuron; // reference to presynaptic neuron
-    int pre_neuron_index;
-    
-    // postsynaptic neuron
-    lif_neuron_t *post_synaptic_lif_neuron; // reference to postynaptic neuron
-    int post_neuron_index;
-
-};
-
-/// [DEPRECATED]
-typedef struct spiking_nn_t spiking_nn_t;
-
-/// [DEPRECATED]
-/// @brief SNN structure 
-struct spiking_nn_t{
-
-    // network general information
-    int neuron_type; // neuron type: LIF (0)
-
-    int n_neurons; // number neurons 
-    int n_input; // number of input neurons
-    int n_output; // number of output neurons
-
-    int n_synapses; // number of synapses
-    int n_input_synapses; // number of input synapses
-    int n_output_synapses; // number of output synapses
-
-    // array of neurons (an array for each neuron type)
-    lif_neuron_t *lif_neurons; 
-    //hh_neuron_t *hh_neurons; // TODO
-
-    // function pointers dependent of neuron type
-    void (*neuron_initializer)(spiking_nn_t *, int, network_construction_lists_t*, int, int, int); 
-    void (*neuron_re_initializer)(spiking_nn_t *, int); // function pointers to initialize neurons
-    void (*complete_step)(spiking_nn_t*, int, int, simulation_results_per_sample_t*); 
-    void (*input_step)(spiking_nn_t*, int, int, simulation_results_per_sample_t*, simulation_configuration_t *); 
-    void (*output_step)(spiking_nn_t*, int, int, simulation_results_per_sample_t*, simulation_configuration_t *); // functions pointers to simulate networks
-    void (*load_sample)(spiking_nn_t*, sample_t*);
-
-    // array of synapses
-    synapse_t *synapses;
-
-    // input neurons array ("virtual neurons" not included in the network, only used to fire input spikes)
-    lif_neuron_t *input_lif_neurons; // only used to introduce data in the network
-
-};
-
-// struct to store the samples in a batch
-typedef struct {
-
-    char *spikes;
-
-} tmp_batch_cpu_t;
-
-/* New structs */
-
-
+typedef struct GPU_SNN_t GPU_SNN_t; // forward declaration
 
 /// @brief SNN structure
-typedef struct {
+struct GPU_SNN_t {
 
     // char is used to reduce memory usage
     size_t neuron_type;
@@ -321,12 +89,8 @@ typedef struct {
     size_t n_input_neurons;
     size_t n_output_neurons;
     size_t n_synapses;
-    size_t n_input_synapses;
-    size_t n_output_synapses;
-    size_t max_spikes;
-    size_t n_networks;
-    size_t max_delay;
-    size_t LT; // matrix L dimension
+    size_t n_networks; // [TODO]: n_networks < batch_size in case batch can not be stored in the GPU
+    size_t LT; // matrix L dimension // [DEPRECATED] ???
 
     // neccessary parameters for all neurons
     float *v; // [n_neurons]: membrane potential of the neuron
@@ -338,19 +102,21 @@ typedef struct {
     char *post_fired; // [n_neurons]: describes if neuron fired on time t
     float *post_trace; // [n_neurons]: postsynaptic trace
     float *arrI; // [n_neurons]: input current in the time step
-    int *inR; // [n_neurons]: neuron in refractary period // [DEPRECATED]
     
     size_t *n_neuron_input_synapses; // [n_neurons]: number of input synapses for the neuron
     size_t *neuron_input_synapses_offset; // [n_neurons]: index of the first input synapse for each neuron
-    size_t *n_neuron_output_synapses; // [n_neurons]: number of output synapses for the neuron
-    size_t *neuron_output_synapses_offset; // [n_neurons]: index of the first output synapse for each neuron
     
-
+    // function pointer to generalize neurons management
+    void (*neuron_allocator)(GPU_SNN_t *snn, simulation_configuration_t *conf);
+    void (*init_neurons)(GPU_SNN_t *snn, network_construction_lists_t *data, simulation_configuration_t *conf); 
+    void (*reinit_neurons)(GPU_SNN_t *snn, simulation_configuration_t *conf); 
+    void (*neuron_dynamics)(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt); 
+     
+    
     // synapses
     float *w; // [n_synapses]: weight of the synapse
     float *init_w; // [n_synapses]: initial weight of the synapse
     float *dw; // [n_synapses]: weight difference of the synapse
-    float *acc_dw; // [n_synapses]: accumulated dw for all batch elements
     int *delay; // [n_synapses]: delay or latency of the synapse
     int *lr; // [n_synapses]: learning rule of the synapse
     size_t *pre_neuron_index; // [n_synapses]: index of the presynaptic neuron
@@ -360,35 +126,38 @@ typedef struct {
 
     char *spk_matrix; // [(n_input_synapses + n_neurons) * t_len * batch_size]
 
-    // FLOAT(3N + 2M) + INT(7N + 5M) + NT = 32(10N + 7M) + 32NT bit
-
-    // N = 1.000; M = 100.000; T = 500; 32(10.000 + 700.000 + 500.000) = 32 * 1.210.000 = 38.720.000 = 0,0045 GB
-    // N = 100.000; M = 100.000.000; T = 500; COST = 24.032.000.000 = 2,8 GB
-
-  // it should be helpfull to add output synapses to compute STDP easier?
-  // neurons are processed? Those variables could help
-
-} GPU_SNN_t;
+};
 
 
-/// @brief Structure to store the dataset
-// [TODO]: Chunks?
+
+/// @brief struct to store the samples in a batch
 typedef struct {
 
+    char *spikes;
+
+} tmp_batch_cpu_t;
+
+/// @brief Structure to store the dataset
+// [TODO]: Chunks --> Avoid copying entire dataset to the GPU 
+typedef struct {
+
+    // [Dataset information]
     int type; // dataset type
     size_t n_classes; // number of classes in the dataset
-
     size_t n_samples; // number of samples in the dataset
     size_t n_features; // number of features of the samples
-    size_t *n_spikes_per_feature; // [n_samples * n_features]: number of spikes per each feature 
 
+    // [Spike times storage]
+    size_t *n_spikes_per_feature; // [n_samples * n_features]: number of spikes per each feature 
     size_t *sample_offset; // [n_samples]: offset that indicates where each sample starts in "spikes" array   
     size_t *feature_offset; // [n_samples * n_features]: offset that indicates where each feature starts in "spikes" array
-
     size_t *spikes; // entire dataset (spike times)
     size_t n_spikes; // total number of spikes in the dataset
 
+    // [Spike train frequecy coding]
     size_t *freq; // spike trains described by frequencies
+
+    // [First spike coding]
     size_t *first_spk; // first spike time
 
 } GPU_dataset_t;
@@ -397,11 +166,11 @@ typedef struct {
 /// @brief Structure to store results during simulation
 typedef struct {
 
-    // generated spikes output
-    int *n_spks; // [n_samples * n_neurons]
-    char *gnt_spks; // [n_samples * n_neurons * timesteps] // TODO: remove in the future
+    // [Generated spikes output]
+    int *n_spks; // [n_samples * n_neurons]: number of spikes generated by each neuron
+    char *gnt_spks; // [n_samples * n_neurons * timesteps]: spike times
 
-    // time variables
+    // [Execution time info]
     double t; // total execution time
     double t_in; // time processing input spikes
     double t_v; // time processing neurons dynamics
@@ -410,11 +179,13 @@ typedef struct {
     double t_reinit; // network reinitialization
     double t_load; // loading sample or batch in network
 
+    // [TODO]
+
 } GPU_results_t;
 
 
 
-/// @brief Struct that stores data to guide the cuda simulation
+/// @brief Structure that stores the information of the kernels to launch in CUDA
 typedef struct {
 
     // devices data
@@ -426,7 +197,6 @@ typedef struct {
     size_t maxThreadsPerMultiprocessor;
     size_t nMultiprocessor;
     size_t maxThreads;
-    // TOOD: max threads....
 
     // cuda simulation details (network size, dataset size...)
     double dataset_size; // dataset size
@@ -493,235 +263,92 @@ typedef struct {
 extern "C" {
 #endif
 
+/// @brief Function to initialize the SNN structure. Load from file or generate following the instructions in the configuration file
+/// @param conf configuration file with information about the network
+/// @return SNN structure initialized
+GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf);
 
-GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf, network_construction_lists_t *data);
-void print_network(GPU_SNN_t *snn);
-void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
-void print_dataset(GPU_dataset_t *dataset);
+/// @brief Function to copy some SNN parameters for batch processing
+/// @param snn SNN structure
+/// @param conf str with the configuration information
 void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf);
-void reallocate_spk_matrix(GPU_SNN_t *snn, size_t N, size_t B, size_t T);
-// Functions to compute the memory occupated by structures
+
+/// @brief Function to initialize the batch results structure
+/// @param conf structure with the configuration info
+/// @param N number of neurons
+/// @param batch_size batch size of the simulation
+/// @param T time steps of the simulation 
+/// @return Structure for storing the results
+GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
+
+/// @brief Function to reinitialize the structure of the results for simulating another batchj
+/// @param results structure for storing the results of the batch simulation
+/// @param N number of neurons
+/// @param batch_size batch size to simulate
+/// @param T time steps of the simulation
+void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
+
+/// @brief Function to accumulate the execution times from a results struct into another one
+/// @param results structure to accumulate results in
+/// @param batch_results structure to accumulate results from
+void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_results);
+
+/// @brief Function to configure the simulation in cuda: batch size processed by GPU, grid...
+/// @param cuda_info structure to store the information for carrying out the simulation
+/// @param snn structure storing the snn
+/// @param dataset structure storing the dataset
+/// @param conf structure storing the configuration of the simulation
+void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf);
+
+/// @brief Function to get the number of bytes occuped by the SNN strcuture
+/// @param snn SNN structure
+/// @return size in bytes
 double get_snn_size(GPU_SNN_t *snn);
+
+/// @brief Function to get the size of each snn copy
+/// @param snn SNN structure
+/// @return size in bytes
 double get_snn_cpy_size(GPU_SNN_t *snn);
+
+/// @brief Function to get the size of the dataset in memory
+/// @param dataset dataset structure
+/// @return size in bytes
 double get_dataset_size(GPU_dataset_t *dataset);
+
+/// @brief Function to get the size of the results structure
+/// @param N number of neurons
+/// @param nS number of synapses
+/// @param T simulated time steps
+/// @return size in bytes
 double get_results_size(size_t N, size_t nS, size_t T);
+
+/// @brief Function to get the size of the intermediate structure that stores the bitmap of spikes
+/// @param N number of neurons
+/// @param nS number of synapses
+/// @param T simulated time steps
+/// @return size in bytes
 double get_tmp_batch_size(size_t iN, size_t nS, size_t T);
 
-void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf);
-GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
-void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
-void deallocate_results_struct(GPU_results_t *results, simulation_configuration_t *conf);
-void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_results);
+/// @brief Function to get the size of the neuron model
+/// @return size in bytes
+double get_neuron_size();
+
+/// @brief Funtiong for printing the SNN information
+/// @param snn structure
+void print_network(GPU_SNN_t *snn);
+
+/// @brief Funtiong for printing the SNN and its batch_size copies
+/// @param snn structure
+/// @param conf configuration of the simulation
+void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
+
+/// @brief Funtiong for printing the dataset
+/// @param dataset struct storing the dataset
+void print_dataset(GPU_dataset_t *dataset);
+
 
 #ifdef __cplusplus
 }
 #endif
-
-
-
-
-/// @brief Function to initialize the SNN structure
-/// @param snn SNN structure to be initialized
-/// @param conf Struct that contains the configuration data to initialize the network
-/// @param data Data to initialize the network 
-void initialize_network(spiking_nn_t *snn, simulation_configuration_t *conf, network_construction_lists_t *data);
-
-/// @brief Function to initialize the function pointers to avoid conditions during the simulation
-/// @param snn 
-void initialize_network_function_pointers(spiking_nn_t *snn);
-
-
-/* Functions related to neurons initialization */
-
-/// @brief Function to initialize the neurons in the networks
-/// @param snn SNN structure to initialize neurons in
-/// @param lists array containing the data to initialize neurons
-void initialize_neurons(spiking_nn_t *snn, simulation_configuration_t *conf, network_construction_lists_t *data);
-
-// !!!! Neurons initilization functions are located in their respective files in neuron_models directory
-
-
-/* Functions related to synapses initialization */
-
-/// @brief Function to initialize all synapses in the network
-/// @param snn SNN structure to initialize synapses in
-/// @param n_synapses Number of synapses in the network
-/// @param data Structure containing the data to initialize synapses
-void initialize_synapses(spiking_nn_t *snn, int n_synapses, simulation_configuration_t *conf, network_construction_lists_t *data);
-
-/// @brief Function to initialize a synapse
-/// @param synapse Synapse structure to be initialized
-/// @param data Structure containing the data to initialize the synapse with
-/// @param snn SNN structure
-/// @param synapse_id Neuron index in the synapses array
-void initialize_synapse(synapse_t *synapse, network_construction_lists_t *data, spiking_nn_t *snn, int synapse_id);
-
-/// @brief Function to reinitialize synapses
-/// @param snn SNN structure to reinitialize synapases in
-void re_initialize_synapses(spiking_nn_t *snn);
-
-/// @brief Function to reinitialize a synapse
-/// @param synapse Synapse to be reinitialized
-void re_initialize_synapse(synapse_t *synapse);
-
-/// @brief 
-/// @param snn 
-void update_weights(spiking_nn_t *snn);
-
-/// @brief 
-/// @param synapse 
-void update_weight(synapse_t *synapse);
-
-
-/* Functions to connect neurons and synapses */
-
-/// @brief Connect neuron to input and output synapses
-/// @param snn SNN structure
-/// @param synapse_matrix Synapse matrix 
-void connect_neurons_and_synapses(spiking_nn_t *snn, int **synaptic_connections);
-
-/// @brief Add input synapse to a neuron
-/// @param snn SNN structure
-/// @param neuron_index Index of the neuron to add a synapse
-/// @param synapse_index Index of the synapse to be added as input to neuron
-void add_input_synapse_to_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index);
-
-/// @brief Add output synapse to a neuron
-/// @param snn SNN structure
-/// @param neuron_index Index of the neuron to add a synapse
-/// @param synapse_index Index of the synapse to be added as output to neuron
-void add_output_synapse_to_neuron(spiking_nn_t *snn, int neuron_index, int synapse_index);
-
-/// ACTUALLY DEPRECATED
-/// @brief Initialize weights of the network
-/// @param snn Spiking neural network structure
-void initialize_network_weights(spiking_nn_t *snn);
-
-
-
-/* Function to copy networks */
-
-/// @brief Function to copy a SNN structure
-/// @param cp_snn Copied SNN struct
-/// @param or_snn Original SNN struct
-/// @param conf Configuration infor to help the copy process
-void cp_network(spiking_nn_t *cp_snn, spiking_nn_t *or_snn, simulation_configuration_t *conf);
-
-/// @brief Function to copy neurons
-/// @param cp_snn Struct to copy neurons in
-/// @param or_snn Struct to copy neurons from
-void cp_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
-
-/// @brief 
-/// @param cp_snn 
-/// @param or_snn 
-void cp_input_neurons(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
-
-/// @brief Function to copy synapses
-/// @param cp_snn Struct to copy synapses in
-/// @param or_snn Struct to copy synapses from
-void cp_synapses(spiking_nn_t *cp_snn, spiking_nn_t *or_snn);
-
-
-/* Other functions */
-
-/// @brief This function reorders the list of synapses and local list of synapse indexes of neurons following the input criterion
-/// @param snn Spiking neural network structure to reorder synapses
-void reorder_synapse_list(spiking_nn_t *snn);
-
-
-
-/* CPU2GPU mapping functions */
-GPU_SNN_t* SNN_CPU2GPU_mapping(spiking_nn_t *snn, simulation_configuration_t *conf);
-GPU_dataset_t* dataset_CPU2GPU_mapping(input_data_t *dataset, simulation_configuration_t *conf);
-
-
-
-//
-void free_gpu_snn_in_CPU(GPU_SNN_t *gpu_snn);
-void free_gpu_dataset_in_CPU(GPU_dataset_t *gpu_dataset);
-void free_gpu_results_in_CPU(GPU_results_t *gpu_results);
-
-
-/* Functions for results structs */
-
-/// @brief Function to initialize results struct
-/// @param results Structure to store results
-/// @param conf Structure containing information about the configuration of the simulation
-void initialize_results_struct(simulation_results_t *results, simulation_configuration_t *conf, int n_samples, int n_neurons);
-
-/// @brief Function to initialize the structure for the results of a sample
-/// @param results_per_sample Structure to store the results of a sample
-/// @param conf Structure containing information about the configuration of the simulation
-void initialize_sample_results_struct(simulation_results_per_sample_t *results_per_sample, simulation_configuration_t *conf, int n_samples, int n_neurons);
-
-/// @brief Function to reinitialize results structure
-/// @param results 
-/// @param conf 
-void reinitialize_results_struct(simulation_results_t *results, simulation_configuration_t *conf, int n_samples, int n_neurons);
-
-/// @brief Function to reinitialize a struct to store results of a sample
-/// @param results_per_sample 
-/// @param conf 
-void reinitialize_sample_results_struct(simulation_results_per_sample_t *results_per_sample, simulation_configuration_t *conf, int n_samples, int n_neurons);
-
-/// @brief TODO
-/// @param results 
-/// @param conf 
-void free_results_struct_memory(simulation_results_t *results, simulation_configuration_t *conf, int n_samples, int n_neurons);
-
-/// @brief TODO
-/// @param results_per_sample 
-/// @param conf 
-void free_sample_results_struct_memory(simulation_results_per_sample_t *results_per_sample, simulation_configuration_t *conf, int n_samples, int n_neurons);
-
-
-/* Functions to allocate and free memory */
-
-// TODO
-
-/// @brief Function to free the memory of the lists used to initialize the network
-/// @param lists Structure of lists to free
-/// @param snn Spiking neural network structure
-void free_lists_memory(network_construction_lists_t *lists, spiking_nn_t *snn);
-void free_snn_struct_memory(spiking_nn_t *snn);
-void free_lif_neurons(spiking_nn_t *snn);
-void free_synapses(spiking_nn_t *snn);
-
-
-
-/* Functions to print the network information */
-
-/// @brief
-/// @param
-void print_lif_neuron_information(lif_neuron_t *lif_neuron);
-
-/// @brief
-/// @param
-void print_lif_neurons_information(spiking_nn_t *snn);
-
-/// @brief
-/// @param
-void print_neurons_information(spiking_nn_t *snn);
-
-/// @brief
-/// @param
-void print_input_synapse_information(synapse_t *synapse);
-
-/// @brief
-/// @param
-void print_synapse_information(synapse_t *synapse);
-
-/// @brief
-/// @param
-void print_output_synapse_information(synapse_t *synapse);
-
-/// @brief
-/// @param
-void print_synapses_information(spiking_nn_t *snn);
-
-/// @brief
-/// @param
-void print_network_information(spiking_nn_t *snn);
 
 #endif
