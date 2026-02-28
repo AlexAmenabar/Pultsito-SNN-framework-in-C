@@ -6,28 +6,28 @@
 
 
 // function to get the memory available in the GPU
-extern "C" int get_memory_info(cuda_info_t *cuda_info, int dev) {
+extern "C" void get_memory_info(cuda_info_t *cuda_info, int dev) {
     
     size_t free_mem, total_mem;
+    cudaError_t err;
 
     // Get memory info from the currently active device
-    cudaError_t err = cudaMemGetInfo(&free_mem, &total_mem);
+    err = cudaMemGetInfo(&free_mem, &total_mem);
+    // error handling
     if (err != cudaSuccess) {
         fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err));
         return 1;
     }
 
+    // store free memory in device
+    cuda_info->gpu_total_mem[dev] = (double)total_mem;
+    cuda_info->gpu_free_mem[dev] = (double)free_mem;
+
+    // print GPU memory information
     printf("  > GPU memory usage:\n");
     printf("    > Total memory: %.2f MB (%.2f GB)\n", total_mem / 1024.0 / 1024.0, total_mem / 1024.0 / 1024.0 / 1024.0);
     printf("    > Free memory : %.2f MB\n", free_mem / 1024.0 / 1024.0);
-    printf("    > Used memory : %.2f MB\n", (total_mem - free_mem) / 1024.0 / 1024.0);
-
-
-    // store free memory in device
-    cuda_info->gpu_total_mem[dev] = (double)total_mem;
-    cuda_info->gpu_free_mem[dev] = (double)free_mem;  
-
-    return 0;
+    printf("    > Used memory : %.2f MB\n", (total_mem - free_mem) / 1024.0 / 1024.0);  
 }
 
 
@@ -35,7 +35,7 @@ extern "C" cuda_info_t* getGPUProperties(){
 
     // define varibales
     cuda_info_t *cuda_info;
-    int nDevices;
+    int nDevices, i;
 
     // allocate memory to store cuda data
     cuda_info = (cuda_info_t*)malloc(sizeof(cuda_info_t));
@@ -43,6 +43,8 @@ extern "C" cuda_info_t* getGPUProperties(){
   
     // store the number of devices
     cuda_info->nDevices = (size_t)nDevices;
+
+    // allocate memory for stroing the avaiable memory for each device
     cuda_info->gpu_total_mem = (double*)malloc(nDevices * sizeof(double));
     cuda_info->gpu_free_mem = (double*)malloc(nDevices * sizeof(double));
     cuda_info->shared_memory_mem = (double*)malloc(nDevices * sizeof(double));
@@ -51,9 +53,14 @@ extern "C" cuda_info_t* getGPUProperties(){
     printf("Number of devices: %d\n", nDevices);
     
     // loop over devices and print information
-    for (size_t i = 0; i < (size_t)nDevices; i++) {
+    for (i = 0; i < (size_t)nDevices; i++) {
+
         cudaDeviceProp prop;
+
+        // get device information
         cudaGetDeviceProperties(&prop, i);
+
+        // print GPU information
         printf(" > Device Number: %zu\n", i);
         printf("  > Device name: %s\n", prop.name);
         printf("  > Total global memory (Gbytes) %.1f\n",(float)(prop.totalGlobalMem)/1024.0/1024.0/1024.0);
@@ -75,14 +82,15 @@ extern "C" cuda_info_t* getGPUProperties(){
         cudaSetDevice(i);
         get_memory_info(cuda_info, i);
 
-        // store some data // TODO: in the future more data should be stored
+        // [TODO]: in the future more data should be stored
+        // store some data 
         cuda_info->shared_memory_mem[i] = prop.sharedMemPerBlock; // Bytes
-        
         cuda_info->maxThreadsPerMultiprocessor = (size_t)prop.maxThreadsPerMultiProcessor;
         cuda_info->nMultiprocessor = (size_t)prop.multiProcessorCount;
     }
 
     cudaSetDevice(0);
 
+    // return the gathered information
     return cuda_info;
 }

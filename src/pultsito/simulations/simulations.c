@@ -192,6 +192,10 @@ void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configu
         acc_batch_execution_times(results, batch_results);
     }
 
+    // deallocate memory of batch_restuls
+    deallocate_results_str(batch_results);
+
+    
     // compute execution times for each phase // [TODO]: not always required
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;

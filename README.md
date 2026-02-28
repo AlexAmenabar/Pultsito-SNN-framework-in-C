@@ -1,6 +1,6 @@
-# Pultsito
+# ARCEUS
 
-Framework to build, simulate and train SNNs. This framework offers features to simulate SNNs of several biological plausible degrees. This networks can be used either run biological simulations and machine learning tasks.
+Framework to build, simulate and train Spiking Neural Networks (SNNs). This framework offers features to simulate SNNs of several biological plausible degrees, especially focused on Machine Learning oriented simulations, providing features to efficiently simulate datasets. 
 
 
 ## Features
@@ -9,94 +9,74 @@ The framework offers the following features:
 
 ### Neuron models
 
-Actually, only the LIF neuron model is implemented. However, implementation allows to easily integrate more neuron models.
+Actually, only the LIF neuron model [ref] is implemented. However, implementation allows to easily integrate new neuron models without changing the core code.
 
-In addition, neurons can be excitatory or inhibitory.
 
-#### Leaky-Integrate-and-Fire
+#### Leaky-Integrate-and-Fire (LIF)
 
 The equations that simulate the LIF neurons are the following:
 
 
+
 Additionally, the following parameters are included in the structures to simulate this models:
-- Membrane potential.
-- Membrane potential threshold.
-- Resting potential.
-- Neuron resistance.
-- Refractory period.
+- Membrane potential (V).
+- Membrane potential threshold (V_{thresh}).
+- Resting potential (V_{rest}).
+- Neuron resistance (R).
+- Refractory period (rftp).
 
 ### Synapses
 
-Synapses include the following properties:
+Synaptic connections (connections between neurons) include the following properties:
 - Weight.
-- Latency / Delay
+- Delay
 - Learning rule.
 
-Including the learning rule as a synaptic parameter allows to incorporate several learning rules in the same network. However, not all learning rules are compatible.
+The learning rule allows to combine different learning paradigms in the same network.
 
 ### Learning rules
 
-Actually, 3 STDP variants are implemented:
-- Additive-STDP
-- Multiplicative-STDP
-- Anti-STDP
+Currently only the trace-based STDP learning rule is included [ref]
 
 
 ### Simulation schema
 
-SNNs can be simulated either by clock-based and event-driven approaches. Actually, only clock-based ones are implemented.
+SNNs can be simulated either following clock-based and event-driven approaches. This framework incorporates the clock-based approach, where in all time steps all neurons and synapses are processed. This approach allows to efficiently simulate samples in batches, which is very common in Machine Learning simulations.
 
 
-### Parallelization strategy
+### CPU simulations
 
-Simulations are accelerated in CPU using OpenMP. However, a GPU implementation is in progress.
+CPU simulations are accelerated combining both parallelization and vectorization. The former is achieved using OpenMP, while the latter takes advantage of AVX512.
 
+### GPU simulations
 
-### More tools: network generator, input spike trains generator
-
+The simulation loop is also implemented in the GPU, allowing both single-GPU and multi-GPU simulations using CUDA. 
 
 
 ## Configuration files
 
-Simulations are configured using several configuration files. This file especifies 
+Simulations follow the instructions provided by a configuration file, which inlcudes the parameters indicated in the following table. The configuration file is on .TOML format. 
 
 
-### Simulation configuration files
-
-The files to set the configure the simulations has a .toml format. It is organized with the following fields:
-
-
-| concept     | parameter             | description                                         | values range | type            |
-| ------------|-----------------------|-----------------------------------------------------|--------------|-----------------|
-| general     | execution_type        | clock-based / event-driven                          | 0 / 1        | int             |
-|             | neuron_type           | neuron type for simulations                         | 0            | int             |  
-|             | execution_obj         | biological simulations / machine learning           | 0 / 1        | int             |
-|             | n_process             | number of parallel threads                          | n > 0        | int             |
-|             | learn                 | learning done or not                                | 0 / 1        | int             |
+| Section     | Parameter             | Description                                         | Type         |
+| ------------|-----------------------|-----------------------------------------------------|--------------|
+| general     | neuron_type           | neuron type for simulations                         | int (n > 0)  |
+|             | n_process             | number of parallel threads                          | int (n > 0)  |
+|             | learn                 | inference or learning                               | 0 / 1        | int             |
+|             | cuda                  | cuda not used or used                               | 0 / 1        | int             |
+|             | multi_gpu             | number of GPUs: all / 1 / n                         | n >= 0       | int             |
+|             | batch_size            | batch size                                          | n > 0        | int             |
+|             | thrN                  | TODO                                                | n > 0        | int             |
+|             | load_network          | TODO                                                | TODO         | TODO            |
+|             | load_dataset          | TODO                                                | TODO         | TODO            |
 |-------------|-----------------------|-----------------------------------------------------|--------------|-----------------|
-| simulation  | time_steps            | time steps for the simulation                       | n > 0        | int             |
-|             | input_file            | file path containing input spikes                   | *            | char[]          |
+| simulation  | time_steps            | time steps for simulating each sample               | n > 0        | int             |
+|             | max_input_spikes      | maximum number spikes on each input spike train     | n > 0        | int             |
 |-------------|-----------------------|-----------------------------------------------------|--------------|-----------------|
-| samples     | dataset               | file path containing the dataset to simulate        | *            | char[]          |
-|             | dataset_name          | dataset name                                        | *            | char[]          |
-|             | num_classes           | number of classes in the dataset                    | n >= 0       | int             |
-|             | epochs                | number of epochs to train the network               | n >= 0       | int             |
-|-------------|-----------------------|-----------------------------------------------------|--------------|-----------------|
-| output      | generated_spikes      | file path to store the spikes generated             | *            | char[]          |
-|             | final_weights         | file path to store the weights after train          | *            | char[]          |
-|             | execution_times       | file path to store the simulation times             | *            | char[]          |
-|             | spikes_per_neuron     | file path to store the n spikes per neuron          | *            | char[]          |
-|             | store_network         | not store final network / store                     | 0 / 1        | int             |
-|             | store_network_file    | file path to store final network                    | *            | char[]          |
-|-------------|-----------------------|-----------------------------------------------------|--------------|-----------------|
-| network     | network_file          | file path to load the input network                 | *            | char[]          |
-|             | network_neurons_file  | file path to load neurons data                      | *            | char[]          |
-|             | network_synapses_file | file path to load synapses data                     | *            | char[]          |
-|             | behaviours            | whether neurons behaviours are in network_file      | 0 / 1        | int             |
-|             | delays                | whether synapses delays are in network_file         | 0 / 1        | int             |
-|             | training_zones        | whehter learning rules are in network_file          | 0 / 1        | int             |
-|             | thresh                | whether thresholds are in network_file              | 0 / 1        | int             |
-|             | t_refract             | whether refractory periods are in network_file      | 0 / 1        | int             |
+| dataset     | train_provided        | train set not provided or provided                  | 0 / 1        | int             |
+|             | train_set             | path to the file with the train set                 | String       | char[]          |
+|             | train_labels          | number of classes in the dataset                    | n >= 0       | int             |
+|             | n_train               | number of epochs to train the network               | n >= 0       | int             |
 |-------------|-----------------------|-----------------------------------------------------|--------------|-----------------|
 
 The input SNN file format is especified in the next section of this documentation.

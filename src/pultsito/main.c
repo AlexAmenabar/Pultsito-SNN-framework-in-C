@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
+#include <unistd.h>
+
 
 #include <immintrin.h>  // AVX intrinsics
 #include <omp.h> // OpenMP
@@ -46,7 +48,7 @@ int main(int argc, char *argv[]) {
     printf(" > Network initialized!\n");
     fflush(stdout);
 
-    print_network(cpu_snn);
+    //print_network(cpu_snn);
 
     // load dataset
     printf(" > Loading dataset... \n");
@@ -59,7 +61,6 @@ int main(int argc, char *argv[]) {
     GPU_results_t *cpu_results = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, conf->batch_size, 1);
     printf(" > Results struct initialized!\n");
     fflush(stdout);
-
 
 
     // simulate in CPU
