@@ -10,6 +10,99 @@
 #include "config/config_loader.h"
 #include "networks/snn.h"
 #include "neuron_models/neuron_models.h"
+#include "networks/snn_generator.h"
+
+
+void allocate_memory_for_LIF_neurons(GPU_SNN_t *snn, size_t N, simulation_configuration_t *conf){
+
+    // allocate memory for neurons and synapses
+    snn->v               = (float*)malloc(N * sizeof(float));
+    snn->v_thresh        = (float*)malloc(N * sizeof(float));
+    snn->v_rest          = (float*)malloc(N * sizeof(float));
+    snn->arrI            = (float*)malloc(N * sizeof(float));
+    snn->r_period        = (int*)malloc(N * sizeof(int));
+    snn->r_period_remain = (int*)malloc(N * sizeof(int));
+    snn->res             = (int*)malloc(N * sizeof(int));
+}
+
+void deallocate_memory_for_LIF_neurons(GPU_SNN_t *snn){
+
+    if(snn->v) free(snn->v);
+    if(snn->v_thresh) free(snn->v_thresh);
+    if(snn->v_rest) free(snn->v_rest);
+    if(snn->arrI) free(snn->arrI);
+    if(snn->r_period) free(snn->r_period);
+    if(snn->r_period_remain) free(snn->r_period_remain);
+    if(snn->res) free(snn->res);
+}
+
+void initialize_LIF_neurons(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf){
+
+    size_t i;
+    
+    // initialize neuron parameters from array
+    for(i = 0; i<snn->n_neurons; i++){
+
+        snn->v_thresh[i] = topology->neurons.v_thresh[i];
+        snn->v_rest[i] = topology->neurons.v_rest[i]; // this or the next one?
+        snn->v[i] = snn->v_rest[i]; 
+        snn->res[i] = (int)(topology->neurons.R[i]);
+        snn->r_period[i] = topology->neurons.rft_per[i];
+        snn->r_period_remain[i] = -1;
+        snn->arrI[i] = 0.0;
+    }
+}
+
+
+void cpy_LIF(GPU_SNN_t *snn, simulation_configuration_t *conf){
+
+    size_t i, j, p, N, B;
+    N = snn->n_neurons;
+    B = conf->batch_size;
+
+    size_t padding = 32;
+
+    float *tmp_v, *tmp_arrI;
+    int *tmp_rperiod_remain;
+
+    // store
+    tmp_v              = snn->v;
+    tmp_rperiod_remain = snn->r_period_remain;
+    tmp_arrI           = snn->arrI;
+
+    // allocate new
+    snn->v               = (float*)malloc(N * B * sizeof(float) + padding);
+    snn->arrI            = (float*)malloc(N * B * sizeof(float) + padding);
+    snn->r_period_remain = (int*)malloc(N * B * sizeof(int) + padding);
+
+    // cpy data
+    for(i = 0; i<N; i++){
+
+        for(j = 0; j<B; j++){
+
+            // copy values
+            snn->v[i * B + j] = tmp_v[i];
+            snn->r_period_remain[i * B + j] = tmp_rperiod_remain[i];
+            snn->arrI[i * B + j] = tmp_arrI[i];
+        }
+    }
+
+    // initialize padding to 0
+    for(p = N * B ; p<(padding / sizeof(float)) + N * B; p++){
+
+        snn->v[p] = 0.0;                       
+        snn->arrI[p] = 0.0;                         
+    }
+    for(p = N * B ; p<(padding / sizeof(int)) + N * B; p++){
+
+        snn->r_period_remain[p] = 0;              
+    }
+
+    // deallocate old
+    if(tmp_v) free(tmp_v);
+    if(tmp_rperiod_remain) free(tmp_rperiod_remain);
+    if(tmp_arrI) free(tmp_arrI);
+}
 
 void reinitialize_LIF_neurons_batch(GPU_SNN_t *snn, simulation_configuration_t *conf){
     

@@ -8,7 +8,7 @@
 /* [PUBLIC] */
 GPU_dataset_t* allocate_dataset_str(size_t n_samples, size_t n_features, size_t n_classes, size_t n_spikes){
 
-    GPU_dataset_t *dataset = (GPU_dataset_t*)malloc(sizeof(GPU_dataset_t));
+    GPU_dataset_t *dataset = (GPU_dataset_t*)calloc(1, sizeof(GPU_dataset_t));
 
     // load general dataset information from configuration struct
     dataset->n_classes = n_classes;

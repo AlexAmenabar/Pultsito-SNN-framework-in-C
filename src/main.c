@@ -88,5 +88,9 @@ int main(int argc, char *argv[]) {
         #endif
     }
 
+    deallocate_snn_str(cpu_snn);
+    deallocate_dataset_str(cpu_dataset);
+    deallocate_results_str(cpu_results);
+
     return 0;
 }

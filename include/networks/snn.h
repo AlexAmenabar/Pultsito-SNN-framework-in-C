@@ -6,6 +6,7 @@
 
 typedef struct GPU_SNN_t GPU_SNN_t; // forward declaration
 typedef struct simulation_configuration_t simulation_configuration_t; // forward declaration
+typedef struct topology_t topology_t; // forward declaration
 
 
 /// @brief SNN structure
@@ -35,6 +36,9 @@ typedef struct GPU_SNN_t {
     size_t *neuron_input_synapses_offset; // [n_neurons]: index of the first input synapse for each neuron
     
     // function pointer to generalize neurons management
+    void (*allocate_neurons)(GPU_SNN_t *snn, size_t N, simulation_configuration_t *conf);
+    void (*init_neurons)(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
+    void (*cpy_neurons)(GPU_SNN_t *snn, simulation_configuration_t *conf);
     void (*reinit_neurons)(GPU_SNN_t *snn, simulation_configuration_t *conf); 
     void (*neuron_dynamics)(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt); 
      
@@ -73,6 +77,25 @@ void deallocate_snn_str(GPU_SNN_t *snn);
 /// @param conf configuration file with information about the network
 /// @return SNN structure initialized
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf);
+
+/// @brief Initialize synaptic arrays
+/// @param snn SNN structure to initialize synapses in
+/// @param topology structure with the values for initializing the neurons
+/// @param conf structure with configuration information
+/// @return SNN structure
+void initialize_neurons_CPU(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
+
+/// @brief Initialize synaptic arrays
+/// @param snn SNN structure to initialize synapses in
+/// @param topology structure with the values for initializing the synapses
+/// @param conf structure with configuration information
+void initialize_synapses_CPU(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
+
+/// @brief Connect the network following an input criteria, where, for each neuron, its input synapses are stored
+/// @param snn SNN structure
+/// @param data Structure containing helper values
+/// @param conf structure containing the configuration of the simulation
+void connect_network_input_criteria(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
 
 /// @brief Function to copy some SNN parameters for batch processing
 /// @param snn SNN structure

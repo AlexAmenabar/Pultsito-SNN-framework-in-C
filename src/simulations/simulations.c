@@ -314,6 +314,9 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
 
+    // deallocate batch matrix structure
+    deallocate_batch_matrix(batch_data);
+
     // store execution times and number of spikes
     results->t = elapsed_time;
     results->t_in = et2;
@@ -855,7 +858,7 @@ tmp_batch_cpu_t* initialize_batch_matrix(GPU_SNN_t *snn, GPU_dataset_t *dataset,
     size_t sidx; // var to store the global index of the sample
 
     // allocate memory for temporal batch samples matrix // TODO: refactorize to function
-    tmp_batch_cpu_t *tmp_batch = (tmp_batch_cpu_t*)malloc(sizeof(tmp_batch_cpu_t));
+    tmp_batch_cpu_t *tmp_batch = (tmp_batch_cpu_t*)calloc(1, sizeof(tmp_batch_cpu_t));
     tmp_batch->spikes = (char*)calloc(iN * B * T, sizeof(char));
 
 
@@ -895,6 +898,12 @@ tmp_batch_cpu_t* initialize_batch_matrix(GPU_SNN_t *snn, GPU_dataset_t *dataset,
     }
 
     return tmp_batch;
+}
+
+void deallocate_batch_matrix(tmp_batch_cpu_t* batch_matrix){
+    
+    if(batch_matrix->spikes) free(batch_matrix->spikes);
+    if(batch_matrix) free(batch_matrix);
 }
 
 void load_batch_time_step_in_SNN_batch(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, tmp_batch_cpu_t *batch_data, size_t bidx, size_t t){

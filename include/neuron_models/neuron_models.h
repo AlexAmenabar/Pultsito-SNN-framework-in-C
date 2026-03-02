@@ -3,8 +3,31 @@
 
 typedef struct GPU_SNN_t GPU_SNN_t;
 typedef struct simulation_configuration_t simulation_configuration_t; 
+typedef struct topology_t topology_t;
 
 /* LIF neuron */
+
+/// @brief Allocate memory for  LIF neuron arrays
+/// @param snn SNN structure to initialize neurons in
+/// @param N Number of neurons in the network
+/// @param conf structure with configuration information
+void allocate_memory_for_LIF_neurons(GPU_SNN_t *snn, size_t N, simulation_configuration_t *conf);
+
+/// @brief Deallocate memory of LIF neuron arrays
+/// @param snn SNN structure to initialize neurons in
+void deallocate_memory_for_LIF_neurons(GPU_SNN_t *snn);
+
+/// @brief Initialize LIF neuron arrays
+/// @param snn SNN structure to initialize neurons in
+/// @param data structure with the values for initializing the neurons
+/// @param conf structure with configuration information
+/// @return SNN structure
+void initialize_LIF_neurons(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
+
+/// @brief Copy neurons of the SNN for batch simulation
+/// @param snn SNN structure to expand
+/// @param conf Structure with the configuration structure
+void cpy_LIF(GPU_SNN_t *snn, simulation_configuration_t *conf);
 
 /// @brief Reinitialize LIF neurons in network
 /// @param snn stores the network to be simulated

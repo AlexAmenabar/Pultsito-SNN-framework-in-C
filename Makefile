@@ -15,8 +15,8 @@ LCC=g++ #compiler for linking C and C++ code (CPU and CUDA)
 
 # CC compiler options:
 CC=gcc
-CC_FLAGS = -O3 -fopenmp
-#CC_FLAGS= -g -O0 -fopenmp
+#CC_FLAGS = -O3 -fopenmp
+CC_FLAGS= -g -O0 -fopenmp
 CC_LIBS=
 
 # NVCC compiler options:
@@ -68,6 +68,7 @@ $(OBJ_DIR)/results.o \
 $(OBJ_DIR)/simulations.o \
 $(OBJ_DIR)/stdp.o \
 $(OBJ_DIR)/utils.o \
+$(OBJ_DIR)/snn_generator.o \
 $(OBJ_DIR)/toml.o \
 
 GPU_OBJS = \

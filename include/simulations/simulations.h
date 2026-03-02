@@ -62,6 +62,10 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
 /// @param bidx indicates the index of the batch to be simulated in the dataset
 tmp_batch_cpu_t* initialize_batch_matrix(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf, size_t bidx);
 
+/// @brief Function to deallocate batch matrix struct
+/// @param batchmatrix Structure to deallocate
+void deallocate_batch_matrix(tmp_batch_cpu_t* batch_matrix);
+
 /// @brief Function to get the size of the intermediate structure that stores the bitmap of spikes
 /// @param N number of neurons
 /// @param nS number of synapses
