@@ -10,6 +10,9 @@
 #include "config/config_loader.h"
 #include "utils.h"
 
+
+/* [PRIVATE FUNCTIONS] */
+
 simulation_configuration_t* load_general_section_from_toml(simulation_configuration_t *conf, toml_table_t *tbl){
 
     // [general] section
@@ -299,11 +302,13 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
             exit(1);
         }
     }
+
     // [TODO]
     else if(conf->load_network == 1){
 
         printf(" > load_network = 1 not implemented yet. Exiting.\n");
     }
+
     // [TODO]
     else if(conf->load_network == 2){
 
@@ -313,7 +318,9 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
 }
 
 
+
 /* [PUBLIC] */
+
 simulation_configuration_t* load_configuration_params_from_toml(const char *file_name){
     
     FILE *f = NULL;

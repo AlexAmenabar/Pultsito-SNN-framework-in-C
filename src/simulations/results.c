@@ -1,22 +1,23 @@
 #include <stdio.h>
-#include <string.h>
-#include <math.h>
 #include <stdlib.h>
 
+// public headers
 #include "simulations/results.h"
 #include "config/config_loader.h"
 
-void deallocate_results_str(GPU_results_t *results){
+GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results){
 
-    if(results->n_spks)
-        free(results->n_spks);
-    if(results->gnt_spks)
-        free(results->gnt_spks);
+    // allocate memory for the results structure
+    GPU_results_t **results = (GPU_results_t**)calloc(n_results, sizeof(GPU_results_t*));
 
-    if(results)
-        free(results);
+    for(size_t i = 0; i<n_results; i++){
+        
+        results[i] = initialize_batch_results_cpu(conf, N, batch_size, T, frq);
+    }
+
+    // return results structure
+    return results;
 }
-
 
 // [TODO]: rethink how to generalize for storing any result type
 GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq){
@@ -71,6 +72,16 @@ void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configura
     results->t_load   = 0.0; // loading sample or batch in network
 }
 
+void deallocate_results_str(GPU_results_t *results){
+
+    if(results->n_spks)
+        free(results->n_spks);
+    if(results->gnt_spks)
+        free(results->gnt_spks);
+
+    if(results)
+        free(results);
+}
 
 void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_results){
 

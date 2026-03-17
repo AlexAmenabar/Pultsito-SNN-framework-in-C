@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <cuda_runtime.h>
 
-#include "snn_library.h"
-#include "cuda/cuda_helpers.cuh"
+#include "cuda/cuda_simulations_conf.h"
+#include "cuda/cuda_utils.cuh"
 
 
 // function to get the memory available in the GPU
-extern "C" void get_memory_info(cuda_info_t *cuda_info, int dev) {
+extern "C" int get_memory_info(cuda_info_t *cuda_info, int dev) {
     
     size_t free_mem, total_mem;
     cudaError_t err;
@@ -27,7 +27,9 @@ extern "C" void get_memory_info(cuda_info_t *cuda_info, int dev) {
     printf("  > GPU memory usage:\n");
     printf("    > Total memory: %.2f MB (%.2f GB)\n", total_mem / 1024.0 / 1024.0, total_mem / 1024.0 / 1024.0 / 1024.0);
     printf("    > Free memory : %.2f MB\n", free_mem / 1024.0 / 1024.0);
-    printf("    > Used memory : %.2f MB\n", (total_mem - free_mem) / 1024.0 / 1024.0);  
+    printf("    > Used memory : %.2f MB\n", (total_mem - free_mem) / 1024.0 / 1024.0); 
+    
+    return 0;
 }
 
 
@@ -61,7 +63,7 @@ extern "C" cuda_info_t* getGPUProperties(){
         cudaGetDeviceProperties(&prop, i);
 
         // print GPU information
-        printf(" > Device Number: %zu\n", i);
+        printf(" > Device Number: %d\n", i);
         printf("  > Device name: %s\n", prop.name);
         printf("  > Total global memory (Gbytes) %.1f\n",(float)(prop.totalGlobalMem)/1024.0/1024.0/1024.0);
         printf("  > Shared memory per block (Kbytes) %.1f\n",(float)(prop.sharedMemPerBlock)/1024.0);

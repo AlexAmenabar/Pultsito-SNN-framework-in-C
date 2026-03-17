@@ -7,11 +7,122 @@
 #include <omp.h>
 #include <immintrin.h> 
 
+// libs
+#include "toml_c/toml.h"
+
+// public headers
 #include "config/config_loader.h"
 #include "networks/snn.h"
 #include "neuron_models/neuron_models.h"
 #include "networks/snn_generator.h"
+#include "utils.h"
 
+// internal headers
+#include "priv_neuron_models.h"
+#include "simulations/priv_simulations.h"
+
+
+neurons_t load_LIF_neurons_from_file(topology_t *topology, simulation_configuration_t *conf, toml_table_t *tbl){
+
+    toml_value_t v_thres, v_rest, t_refract, res;
+    neurons_t neurons; // structure to store neurons data
+    size_t i;
+
+    FILE *f = NULL;
+    open_file(&f, conf->network_neurons_file); // TOML file
+
+    size_t N = topology->n_neurons;
+    float tmp = 0.0;
+    int tmp_int = 0;
+
+    neurons.v_thresh = (float *)malloc(N * sizeof(float)); // thresholds
+    neurons.v_rest = (float *)malloc(N * sizeof(float)); // resting potentials
+    neurons.rft_per = (int *)malloc(N * sizeof(int)); // refractary times
+    neurons.R = (float *)malloc(N * sizeof(float)); // resistances
+
+    /* load [Neurons] section */
+    // load whether different parameters are included in the input file
+    v_thres = toml_table_int(tbl, "v_thres");
+    v_rest = toml_table_int(tbl, "v_rest");
+    t_refract = toml_table_int(tbl, "t_refract");
+    res = toml_table_int(tbl, "resistance");
+
+
+    // load thresholds
+    if(v_thres.ok && v_thres.u.i == 1){
+        for(i=0; i<N; i++)
+            fscanf(f, "%f", &(neurons.v_thresh[i]));
+    }
+    else if(v_thres.ok && v_thres.u.i == 2){
+        fscanf(f, "%f", &(tmp));
+        for(i=0; i<N; i++)
+            neurons.v_thresh[i] = tmp;
+    }
+    else{
+        for(i=0; i<N; i++)
+            neurons.v_thresh[i] = 1.0;
+    }
+
+    // load resting potentials
+    if(v_rest.ok && v_rest.u.i == 1){
+        for(i=0; i<N; i++)
+            fscanf(f, "%f", &((neurons.v_rest)[i]));
+    }    
+    else if(v_rest.ok && v_rest.u.i == 2){
+        fscanf(f, "%f", &(tmp));
+        for(i=0; i<N; i++)
+            neurons.v_rest[i] = tmp;
+    }
+    else{
+        for(i=0; i<N; i++)
+            neurons.v_rest[i] = 0.0;
+    }
+
+    // load refractory periods
+    if(t_refract.ok && t_refract.u.i == 1){
+        for(i=0; i<N; i++)
+            fscanf(f, "%d", &((neurons.rft_per)[i]));
+    }    
+    else if(t_refract.ok && t_refract.u.i == 2){
+        fscanf(f, "%d", &(tmp_int));
+        for(i=0; i<N; i++)
+            neurons.rft_per[i] = (int)(tmp_int);
+    }
+    else{
+        for(i=0; i<N; i++)
+            neurons.rft_per[i] = 1;
+    }
+
+    // load resistances
+    if(res.ok && res.u.i == 1){
+        for(i=0; i<N; i++)
+            fscanf(f, "%f", &((neurons.R)[i]));
+    }    
+    else if(res.ok && res.u.i == 2){
+        fscanf(f, "%f", &(tmp));
+        for(i=0; i<N; i++)
+            neurons.R[i] = tmp;
+    }
+    else{
+        for(i=0; i<N; i++)
+            neurons.R[i] = 1.0;
+    }
+    fclose(f);
+
+    return neurons;
+}
+
+void set_LIF_ptrs(GPU_SNN_t *snn){
+
+    snn->allocate_neurons = &allocate_memory_for_LIF_neurons;
+    snn->init_neurons = &initialize_LIF_neurons;
+    snn->cpy_neurons = &init_batch_LIF;
+    snn->reinit_neurons = &reinitialize_LIF_neurons_batch;
+    snn->compute_input_current = &compute_input_current_batch; 
+    snn->compute_dynamics = &compute_LIF_V_batch;
+    snn->compute_firing = &process_neuron_firing_batch;
+    snn->deallocate_neurons = &deallocate_memory_for_LIF_neurons;
+}
 
 void allocate_memory_for_LIF_neurons(GPU_SNN_t *snn, size_t N, simulation_configuration_t *conf){
 
@@ -27,13 +138,13 @@ void allocate_memory_for_LIF_neurons(GPU_SNN_t *snn, size_t N, simulation_config
 
 void deallocate_memory_for_LIF_neurons(GPU_SNN_t *snn){
 
-    if(snn->v) free(snn->v);
-    if(snn->v_thresh) free(snn->v_thresh);
-    if(snn->v_rest) free(snn->v_rest);
-    if(snn->arrI) free(snn->arrI);
-    if(snn->r_period) free(snn->r_period);
+    if(snn->v)               free(snn->v);
+    if(snn->v_thresh)        free(snn->v_thresh);
+    if(snn->v_rest)          free(snn->v_rest);
+    if(snn->arrI)            free(snn->arrI);
+    if(snn->r_period)        free(snn->r_period);
     if(snn->r_period_remain) free(snn->r_period_remain);
-    if(snn->res) free(snn->res);
+    if(snn->res)             free(snn->res);
 }
 
 void initialize_LIF_neurons(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf){
@@ -54,7 +165,7 @@ void initialize_LIF_neurons(GPU_SNN_t *snn, topology_t *topology, simulation_con
 }
 
 
-void cpy_LIF(GPU_SNN_t *snn, simulation_configuration_t *conf){
+void init_batch_LIF(GPU_SNN_t *snn, simulation_configuration_t *conf){
 
     size_t i, j, p, N, B;
     N = snn->n_neurons;
@@ -65,17 +176,17 @@ void cpy_LIF(GPU_SNN_t *snn, simulation_configuration_t *conf){
     float *tmp_v, *tmp_arrI;
     int *tmp_rperiod_remain;
 
-    // store
+    // store old values in temporal variables
     tmp_v              = snn->v;
     tmp_rperiod_remain = snn->r_period_remain;
     tmp_arrI           = snn->arrI;
 
-    // allocate new
+    // allocate memory for storing variables copies
     snn->v               = (float*)malloc(N * B * sizeof(float) + padding);
     snn->arrI            = (float*)malloc(N * B * sizeof(float) + padding);
     snn->r_period_remain = (int*)malloc(N * B * sizeof(int) + padding);
 
-    // cpy data
+    // copy original data copied batch_size times
     for(i = 0; i<N; i++){
 
         for(j = 0; j<B; j++){
@@ -98,7 +209,8 @@ void cpy_LIF(GPU_SNN_t *snn, simulation_configuration_t *conf){
         snn->r_period_remain[p] = 0;              
     }
 
-    // deallocate old
+
+    // deallocate memory allocated by original arrays
     if(tmp_v) free(tmp_v);
     if(tmp_rperiod_remain) free(tmp_rperiod_remain);
     if(tmp_arrI) free(tmp_arrI);
@@ -125,11 +237,7 @@ void reinitialize_LIF_neurons_batch(GPU_SNN_t *snn, simulation_configuration_t *
 
             snn->v[g_index + b] = snn->v_rest[i];
             snn->r_period_remain[g_index + b] = 0;
-            snn->post_fired[g_index + b] = 0;
-
-            if(conf->learn == 1){
-                snn->post_trace[g_index + b] = 0.0;
-            }
+            snn->arrI[g_index + b] = 0.0;
         }
     }
 }

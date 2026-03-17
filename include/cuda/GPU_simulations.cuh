@@ -7,6 +7,13 @@ extern "C" {
 #endif
 
 
+typedef struct GPU_SNN_t GPU_SNN_t;
+typedef struct GPU_dataset_t GPU_dataset_t;
+typedef struct simulation_configuration_t simulation_configuration_t;
+typedef struct GPU_results_t GPU_results_t;
+typedef struct tmp_batch_cpu_t tmp_batch_cpu_t;
+typedef struct cuda_info_t cuda_info_t;
+
 // Simulations related functions
 GPU_results_t* simulate_batches_GPU(cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, simulation_configuration_t *conf);
 

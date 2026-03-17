@@ -88,9 +88,13 @@ int main(int argc, char *argv[]) {
         #endif
     }
 
-    deallocate_snn_str(cpu_snn);
-    deallocate_dataset_str(cpu_dataset);
-    deallocate_results_str(cpu_results);
+    //deallocate_snn_str(cpu_snn);
+    //deallocate_dataset_str(cpu_dataset);
+    //deallocate_results_str(cpu_results);
+
+    // define 
+    //deallocate_memory();
+    // called when simulation finishes
 
     return 0;
 }

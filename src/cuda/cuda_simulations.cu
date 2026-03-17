@@ -2,10 +2,15 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
 
-#include "snn_library.h"
 #include "cuda/GPU_simulations.cuh"
 #include "neuron_models/GPU_lif_neuron.cuh"
+#include "cuda/cuda_simulations_conf.h"
 
+#include "networks/snn.h"
+#include "datasets/datasets.h"
+#include "simulations/simulations.h"
+#include "simulations/results.h"
+#include "config/config_loader.h"
 
 
 extern "C" GPU_results_t* simulate_batches_GPU(cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, simulation_configuration_t *conf){
@@ -37,15 +42,16 @@ extern "C" GPU_results_t* simulate_batches_GPU(cuda_info_t *cuda_info, GPU_SNN_t
     // TODO: adapt for several neuron types
     simulate_batches_LIF_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, cpu_snn, cpu_dataset);
 
-    /*switch (conf->neuron_type){
+    switch (conf->neuron_type){
         // LIF neurons
-        case 0:
+        case 1:
             simulate_LIF_in_GPU(gpu_snn, gpu_dataset, gpu_results, conf, cuda_info, cpu_snn, cpu_dataset);
             break;
         default:
-            simulate_LIF_in_GPU(gpu_snn, gpu_dataset, gpu_results, conf, cuda_info, cpu_snn, cpu_dataset);
+            printf(" Neuron models combinations not implemented yet!\n");
+            exit(1);
             break;
-    }*/
+    }
     
     clock_gettime(CLOCK_MONOTONIC, &end_helper);
     elpt_simulation += (end_helper.tv_sec - start_helper.tv_sec) + (end_helper.tv_nsec - start_helper.tv_nsec) / 1e9;
@@ -68,6 +74,21 @@ extern "C" GPU_results_t* simulate_batches_GPU(cuda_info_t *cuda_info, GPU_SNN_t
 
     return (cpu_results);
 }
+
+extern "C" void setKernelFunctionPtrs(simulation_configuration_t *conf){
+
+    switch(conf->neuron_type){
+
+        case 1:
+            
+            break;
+        default:
+            printf(" Neuron model not specified!\n");
+            exit(1);
+            break;
+    }
+}
+
 
 
 // functions below should be moved to a more general file

@@ -13,4 +13,11 @@ int open_file(FILE **f, const char *file_name);
 /// @param file_name path of the file to open
 int open_file_w(FILE **f, const char *file_name);
 
+/// @brief Get maximum value in the array
+/// @param arr Array
+/// @param n Number of elements in the array
+/// @return Maximum value in the array
+int get_max_value(int *arr, size_t n);
+
+
 #endif

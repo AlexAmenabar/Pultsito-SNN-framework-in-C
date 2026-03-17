@@ -1,10 +1,10 @@
 #include <math.h>
 #include <stdlib.h>
-#include <stdio.h>
 
 #include <omp.h>
 #include <immintrin.h> 
 
+// public headers
 #include "training_rules/stdp.h"
 #include "networks/snn.h"
 #include "config/config_loader.h"

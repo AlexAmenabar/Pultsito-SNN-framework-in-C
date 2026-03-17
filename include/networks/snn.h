@@ -1,12 +1,10 @@
 #ifndef SNN_H
 #define SNN_H
 
-#include "stdio.h"
-
-
 typedef struct GPU_SNN_t GPU_SNN_t; // forward declaration
 typedef struct simulation_configuration_t simulation_configuration_t; // forward declaration
 typedef struct topology_t topology_t; // forward declaration
+typedef struct GPU_results_t GPU_results_t; // forward declaration
 
 
 /// @brief SNN structure
@@ -40,13 +38,16 @@ typedef struct GPU_SNN_t {
     void (*init_neurons)(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
     void (*cpy_neurons)(GPU_SNN_t *snn, simulation_configuration_t *conf);
     void (*reinit_neurons)(GPU_SNN_t *snn, simulation_configuration_t *conf); 
-    void (*neuron_dynamics)(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt); 
-     
+    void (*compute_input_current)(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt);
+    void (*compute_dynamics)(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt);
+    void (*compute_firing)(GPU_SNN_t *snn, simulation_configuration_t *conf, GPU_results_t *results, size_t t, size_t gt);
+    void (*deallocate_neurons)(GPU_SNN_t *snn);
     
     // synapses
     float *w; // [n_synapses]: weight of the synapse
     float *init_w; // [n_synapses]: initial weight of the synapse
     float *dw; // [n_synapses]: weight difference of the synapse
+    float *acc_dw; // [n_synapses]
     int *delay; // [n_synapses]: delay or latency of the synapse
     int *lr; // [n_synapses]: learning rule of the synapse
     size_t *pre_neuron_index; // [n_synapses]: index of the presynaptic neuron
@@ -59,48 +60,24 @@ typedef struct GPU_SNN_t {
 } GPU_SNN_t;
 
 
-/// @brief Function to get the maximum delay value in the network
-/// @param snn SNN network structure
-/// @return Maximum delay value
-size_t get_max_delay(GPU_SNN_t *snn);
-
-/// @brief Function to allocate memory for a SNN structure
-/// @param snn SNN network structure
-/// @param conf Structure containing the configuration data of the simulation
-GPU_SNN_t* allocate_memory_for_SNN(size_t N, size_t iN, size_t S, size_t mD, simulation_configuration_t *conf);
-
-/// @brief Function to allocate memory for a SNN structure
-/// @param snn SNN network structure
-void deallocate_snn_str(GPU_SNN_t *snn);
-
 /// @brief Function to initialize the SNN structure. Load from file or generate following the instructions in the configuration file
 /// @param conf configuration file with information about the network
 /// @return SNN structure initialized
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf);
 
-/// @brief Initialize synaptic arrays
-/// @param snn SNN structure to initialize synapses in
-/// @param topology structure with the values for initializing the neurons
-/// @param conf structure with configuration information
-/// @return SNN structure
-void initialize_neurons_CPU(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
+/// @brief Function to allocate memory for a SNN structure
+/// @param snn SNN network structure
+void deallocate_snn_str(GPU_SNN_t *snn);
 
-/// @brief Initialize synaptic arrays
-/// @param snn SNN structure to initialize synapses in
-/// @param topology structure with the values for initializing the synapses
-/// @param conf structure with configuration information
-void initialize_synapses_CPU(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
-
-/// @brief Connect the network following an input criteria, where, for each neuron, its input synapses are stored
-/// @param snn SNN structure
-/// @param data Structure containing helper values
-/// @param conf structure containing the configuration of the simulation
-void connect_network_input_criteria(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
-
-/// @brief Function to copy some SNN parameters for batch processing
+/// @brief Function to copy the required SNN parameters for enabling processing in batches
 /// @param snn SNN structure
 /// @param conf str with the configuration information
-void cpy_snn(GPU_SNN_t *snn, simulation_configuration_t *conf);
+void init_batch_snn(GPU_SNN_t *snn, simulation_configuration_t *conf);
+
+/// @brief Function to get the maximum delay value in the network
+/// @param snn SNN network structure
+/// @return Maximum delay value
+size_t get_max_delay(GPU_SNN_t *snn);
 
 /// @brief Function to get the number of bytes occuped by the SNN strcuture
 /// @param snn SNN structure
@@ -120,6 +97,11 @@ void print_network(GPU_SNN_t *snn);
 /// @param snn structure
 /// @param conf configuration of the simulation
 void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
+
+/// @brief Store the network in a file
+/// @param snn Structure that contains the network to be stored
+/// @param conf Structure with configuration information
+void store_network_in_file(GPU_SNN_t *snn, simulation_configuration_t *conf);
 
 
 #endif

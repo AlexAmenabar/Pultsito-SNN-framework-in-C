@@ -29,11 +29,16 @@ typedef struct GPU_results_t {
 } GPU_results_t;
 
 
-/// @brief Deallocate memory of the reults structure
-/// @param results Structure to deallocate
-void deallocate_results_str(GPU_results_t *results);
+/// @brief Function to initialize an array of results structs
+/// @param conf structure with the configuration info
+/// @param N number of neurons
+/// @param batch_size batch size of the simulation
+/// @param T time steps of the simulation 
+/// @param frq frequency to store the generated spikes
+/// @return Structure for storing the results
+GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results);
 
-/// @brief Function to initialize the batch results structure
+/// @brief Function to initialize (and allocate) the batch results structure
 /// @param conf structure with the configuration info
 /// @param N number of neurons
 /// @param batch_size batch size of the simulation
@@ -42,12 +47,16 @@ void deallocate_results_str(GPU_results_t *results);
 /// @return Structure for storing the results
 GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq);
 
-/// @brief Function to reinitialize the structure of the results for simulating another batchj
+/// @brief Function to reinitialize the structure of the results for simulating another batch
 /// @param results structure for storing the results of the batch simulation
 /// @param N number of neurons
 /// @param batch_size batch size to simulate
 /// @param T time steps of the simulation
 void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
+
+/// @brief Deallocate memory of the reults structure
+/// @param results Structure to deallocate
+void deallocate_results_str(GPU_results_t *results);
 
 /// @brief Function to accumulate the execution times from a results struct into another one
 /// @param results structure to accumulate results in
@@ -60,12 +69,6 @@ void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_resu
 /// @param T simulated time steps
 /// @return size in bytes
 double get_results_size(size_t N, size_t nS, size_t T);
-
-
-
-/// @brief Store the network in a file
-/// @param conf Structure with configuration information
-void store_network(simulation_configuration_t *conf);
 
 
 #endif

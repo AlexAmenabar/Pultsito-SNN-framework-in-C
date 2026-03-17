@@ -4,9 +4,15 @@
 #include <omp.h>
 
 
-#include "snn_library.h"
 #include "neuron_models/GPU_lif_neuron.cuh"
 #include "cuda/GPU_simulations.cuh"
+#include "cuda/cuda_simulations_conf.h"
+
+#include "networks/snn.h"
+#include "datasets/datasets.h"
+#include "simulations/simulations.h"
+#include "simulations/results.h"
+#include "config/config_loader.h"
 
 
 #define cudaCheckError(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -19,13 +25,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
     }
 }
 
-//__constant__ size_t N;
-//__constant__ size_t iN;
-//__constant__ size_t S;
-//__constant__ size_t T;
-//__constant__ size_t LT;
-//__constant__ size_t n_features; 
-
 __constant__ size_t learn;
 __constant__ size_t batch_size_per_block; // samples processed on each cuda block per neuron
 __constant__ size_t blocks_per_batch; // number of cuda blocks for processing all neuron batches
@@ -34,6 +33,299 @@ __constant__ size_t dev_batch_offset; // offset to the sample proccessed by each
 __constant__ size_t batch_size;
 __constant__ size_t thrN;
 
+
+extern "C" void simulate_batches_LIF_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, tmp_batch_cpu_t **gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset){
+    
+    size_t n_batches, r_samples, b, i, dev;
+    cudaError_t err;
+    size_t nDevices = cuda_info->nDevices;
+    
+
+    // compute the number of batches
+    n_batches = cpu_dataset->n_samples / conf->batch_size;
+    r_samples = cpu_dataset->n_samples % conf->batch_size;
+    // there are remaining sampels
+    if(r_samples > 0){
+
+        n_batches += 1; // last batch contains less samples
+    }
+
+    // copy constants to all gpu devices
+    for(dev = 0; dev<nDevices; dev++){
+        
+        cudaSetDevice(dev);
+        
+        err = cudaMemcpyToSymbol(learn, &conf->learn, sizeof(size_t));
+        err = cudaMemcpyToSymbol(batch_size, &conf->batch_size, sizeof(size_t));
+        err = cudaMemcpyToSymbol(batch_size_per_block, &cuda_info->batch_size_per_block, sizeof(size_t));
+        err = cudaMemcpyToSymbol(blocks_per_batch, &cuda_info->blocks_per_batch[dev], sizeof(size_t));
+        err = cudaMemcpyToSymbol(dev_batch_size, &cuda_info->dev_batch_size[dev], sizeof(size_t)); // how much samples simulates each device
+        err = cudaMemcpyToSymbol(dev_batch_offset, &cuda_info->dev_batch_offset[dev], sizeof(size_t)); // offset to the first sample simulated by the device in the batch
+        err = cudaMemcpyToSymbol(thrN, &conf->thrN, sizeof(size_t)); // offset to the first sample simulated by the device in the batch
+    }
+
+
+    // allocate memory for results structs (a struct per device)
+    GPU_results_t **cpu_results = (GPU_results_t**)calloc(nDevices, sizeof(GPU_results_t*));
+    GPU_results_t **cpu_batch_results = (GPU_results_t**)calloc(nDevices, sizeof(GPU_results_t*));
+        
+    // copy constant(s) to all gpu devices: batch size per device and batch offset
+    for(dev = 0; dev<nDevices; dev++){
+        
+        // initialize batch results for device
+        cpu_results[dev] = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, cuda_info->dev_batch_size[dev], 1, 0); 
+        cpu_batch_results[dev] = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, cuda_info->dev_batch_size[dev], 1, 0);
+    }
+    
+
+    // if it is executed in only one device
+    if(nDevices == 1){
+        
+        cudaSetDevice(0);
+
+        // loop over batches
+        for(b = 0; b<n_batches; b++){
+
+            // simulate batch
+            simulate_LIF_batch_single_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], gpu_tmp_batch[0], conf, cuda_info, b, cpu_snn, cpu_dataset, cpu_batch_results[0]);
+
+            // accumulate batch execution times in general results struct
+            acc_batch_execution_times(cpu_results[0], cpu_batch_results[0]);            
+        }
+    }
+
+    // TODO: multi GPU must be corrected
+    else{
+        
+        // simulate one batch and print
+        /*simulate_LIF_batch_multi_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, 0, cpu_snn, cpu_dataset, cpu_batch_results);
+        cpy_batch_results_GPU2CPU(cpu_results, gpu_results, cuda_info, cpu_snn->n_neurons, 1);
+        for(dev = 0; dev<cuda_info->nDevices; dev++){
+            
+            for(size_t batch = 0; batch<cuda_info->dev_batch_size[dev]; batch++){
+
+                for(size_t i = 0; i<cpu_snn->n_neurons; i++){
+
+                    printf("%d ", cpu_results[dev]->n_spks[i * cuda_info->dev_batch_size[dev] + batch]);
+                }
+                printf("\n");
+            }
+        }*/
+
+
+        // loop over batches
+        for(b = 0; b<n_batches; b++){
+
+            // simulate batch
+            simulate_LIF_batch_multi_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, b, cpu_snn, cpu_dataset, cpu_batch_results);
+
+            // accumulate batch execution times in general results struct
+            for(dev = 0; dev<nDevices; dev++)
+                acc_batch_execution_times(cpu_results[dev], cpu_batch_results[dev]);            
+        }
+
+
+        /*simulate_LIF_batch_multi_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, 0, cpu_snn, cpu_dataset, cpu_batch_results);
+        cpy_batch_results_GPU2CPU(cpu_results, gpu_results, cuda_info, cpu_snn->n_neurons, 1);
+        for(dev = 0; dev<cuda_info->nDevices; dev++){
+            
+            for(size_t batch = 0; batch<cuda_info->dev_batch_size[dev]; batch++){
+
+                for(size_t i = 0; i<cpu_snn->n_neurons; i++){
+
+                    printf("%d ", cpu_results[dev]->n_spks[i * cuda_info->dev_batch_size[dev] + batch]);
+                }
+                printf("\n");
+            }
+        }*/
+
+
+        for(dev = 1; dev<nDevices; dev++){
+
+            //cpu_results[0]->t += cpu_results[dev]->t;
+            cpu_results[0]->t_in += cpu_results[dev]->t_in;
+            cpu_results[0]->t_v += cpu_results[dev]->t_v;
+            cpu_results[0]->t_out += cpu_results[dev]->t_out;
+            cpu_results[0]->t_reinit += cpu_results[dev]->t_reinit;
+            cpu_results[0]->t_load += cpu_results[dev]->t_load;
+            cpu_results[0]->t_learn += cpu_results[dev]->t_learn;
+        }
+
+        // compute the mean
+        cpu_results[0]->t_in     /= nDevices;
+        cpu_results[0]->t_v      /= nDevices;
+        cpu_results[0]->t_out    /= nDevices;
+        cpu_results[0]->t_reinit /= nDevices;
+        cpu_results[0]->t_load   /= nDevices;
+        cpu_results[0]->t_learn  /= nDevices;
+    }
+
+
+    // print information in results struct
+    printf("   > Total execution time: %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                cpu_results[0]->t, cpu_results[0]->t / (float)n_batches, cpu_results[0]->t / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total in time:        %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                cpu_results[0]->t_in, cpu_results[0]->t_in / (float)n_batches, cpu_results[0]->t_in / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total v time:         %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                cpu_results[0]->t_v, cpu_results[0]->t_v / (float)n_batches, cpu_results[0]->t_v / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total out time:       %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                cpu_results[0]->t_out, cpu_results[0]->t_out / (float)n_batches, cpu_results[0]->t_out / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total reinit time:    %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                cpu_results[0]->t_reinit, cpu_results[0]->t_reinit / (float)n_batches, cpu_results[0]->t_reinit / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total load time:      %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                cpu_results[0]->t_load, cpu_results[0]->t_load / (float)n_batches, cpu_results[0]->t_load / (float)n_batches / (float)conf->time_steps);
+    printf("   > Total learn time:     %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
+                cpu_results[0]->t_learn, cpu_results[0]->t_learn / (float)n_batches, cpu_results[0]->t_learn / (float)n_batches / (float)conf->time_steps);
+}
+
+extern "C" void simulate_LIF_batch_multi_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, tmp_batch_cpu_t **gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t **cpu_results){
+
+    struct timespec start, end, start_learn, end_learn, start_gpu, end_gpu;
+    double et = 0.0, et_learn = 0.0, et_gpu = 0.0;
+    size_t dev, nDevices;
+    GPU_SNN_t **tmp_snn;
+    float **dw;
+
+    tmp_snn = cuda_info->tmp_snn;
+    dw = cuda_info->dw;
+    nDevices = cuda_info->nDevices;
+
+
+    // reinitialize results struct
+    for(dev = 0; dev<nDevices; dev++)
+        reinitialize_batch_results_cpu(cpu_results[dev], conf, cpu_snn->n_neurons, cuda_info->dev_batch_size[dev], 1);
+
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    // start the simulation using several devices. Each device is managed by a openMP thread
+    #pragma omp parallel num_threads(nDevices) private(dev, start_learn, end_learn, et_learn, start_gpu, end_gpu, et_gpu)
+    {        
+        // set the device dev as the current one for the thread
+        dev = (size_t)omp_get_thread_num();
+        cudaSetDevice(dev);
+
+        // define grid and block
+        dim3 grid_uw(cuda_info->n_blk_uw_x[dev], cuda_info->n_blk_uw_y[dev], cuda_info->n_blk_uw_z[dev]);
+        dim3 block_uw(cuda_info->n_thr_per_blk_uw_x[dev], cuda_info->n_thr_per_blk_uw_y[dev], cuda_info->n_thr_per_blk_uw_z[dev]);
+
+        // simulate batch using several devices
+        simulate_LIF_batch_GPU(gpu_snn[dev], gpu_dataset[dev], gpu_results[dev], gpu_tmp_batch[dev], conf, cuda_info, bidx, cpu_snn, cpu_dataset, cpu_results[dev], dev);
+
+        // wait until device tasks finished
+        cudaDeviceSynchronize();
+        
+        // if training
+        clock_gettime(CLOCK_MONOTONIC, &start_learn);
+        if(conf->learn == 1){
+
+            // acc all dw of the batch on the first
+            acc_weights_batch<<<grid_uw, block_uw>>>(gpu_snn[dev], cpu_snn->n_synapses);
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+            cudaDeviceSynchronize();
+
+            // wait until device tasks finished
+            cudaDeviceSynchronize();
+
+            // cpy weights to CPU
+            cudaMemcpy(tmp_snn[dev], gpu_snn[dev], sizeof(GPU_SNN_t), cudaMemcpyDeviceToHost); // cpy dw GPU2CPU
+            cudaMemcpy(dw[dev], tmp_snn[dev]->acc_dw, cpu_snn->n_synapses * sizeof(float), cudaMemcpyDeviceToHost); // cpy dw GPU2CPU
+
+            // wait until all threads obtained their weights
+            #pragma omp barrier
+            
+            // sum dw of different devices on device 0
+            if(dev == 0){
+                for(size_t s = 0; s<cpu_snn->n_synapses; s++){
+
+                    for(size_t d = 0; d<cuda_info->nDevices; d++){
+                            
+                        if(dev != d){
+
+                            dw[dev][s] += dw[d][s]; // sum weights of other devices
+                        }
+                    }
+                    
+                    // compute mean
+                    dw[dev][s] = dw[dev][s] / (float)(conf->batch_size);
+                }
+            }
+
+            #pragma omp barrier
+                
+            // cpy again to gpu
+            cudaMemcpy(tmp_snn[dev]->acc_dw, dw[0], cpu_snn->n_synapses * sizeof(float), cudaMemcpyHostToDevice); // cpy dw CPU2GPU
+            //cudaMemcpy(gpu_snn[dev], tmp_snn[dev], sizeof(GPU_SNN_t), cudaMemcpyHostToDevice); // cpy dw CPU2GPU
+
+            // update weights in GPU
+            update_weights_dev<<<grid_uw, block_uw>>>(gpu_snn[dev], cpu_snn->n_synapses);
+            cudaCheckError(cudaPeekAtLastError());  // check launch errors
+            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+            cudaDeviceSynchronize();
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &end_learn);
+        et_learn +=(end_learn.tv_sec - start_learn.tv_sec) + (end_learn.tv_nsec - start_learn.tv_nsec) / 1e9;
+
+
+        // store execution times
+        cpu_results[dev]->t_learn += et_learn;
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    // global batch execution time
+    et +=(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    cpu_results[0]->t = et;
+}
+
+extern "C" void simulate_LIF_batch_single_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, tmp_batch_cpu_t *gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t *cpu_results){
+
+    struct timespec start, end, start_learn, end_learn;
+    double et = 0.0, et_learn = 0.0;
+
+    // define grid and block
+    dim3 grid_uw(cuda_info->n_blk_uw_x[0], cuda_info->n_blk_uw_y[0], cuda_info->n_blk_uw_z[0]);
+    dim3 block_uw(cuda_info->n_thr_per_blk_uw_x[0], cuda_info->n_thr_per_blk_uw_y[0], cuda_info->n_thr_per_blk_uw_z[0]);
+
+
+    // reinitialize results struct
+    reinitialize_batch_results_cpu(cpu_results, conf, cpu_snn->n_neurons, conf->batch_size, 1);
+
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    // simulate batch
+    simulate_LIF_batch_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, bidx, cpu_snn, cpu_dataset, cpu_results, 0);
+
+    // update weights 
+    clock_gettime(CLOCK_MONOTONIC, &start_learn);
+    if(conf->learn){
+            
+        update_weights_batch<<<grid_uw, block_uw>>>(gpu_snn, cpu_snn->n_synapses);
+        cudaCheckError(cudaPeekAtLastError());  // check launch errors
+        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
+        cudaDeviceSynchronize();
+    }
+    clock_gettime(CLOCK_MONOTONIC, &end_learn);
+    et_learn +=(end_learn.tv_sec - start_learn.tv_sec) + (end_learn.tv_nsec - start_learn.tv_nsec) / 1e9;
+
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    et +=(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
+    // store execution times
+    cpu_results->t = et;
+    cpu_results->t_learn += et_learn;
+}
+
+
+
+
+/** GPU KERNELS */
 
 __global__ void initialize_neurons_batch(GPU_SNN_t *snn){
 
@@ -492,7 +784,7 @@ __global__ void process_input_currect_batch(GPU_SNN_t *gpu_snn, size_t iN, size_
 
     // tree-based sum
     //if(threadId < N_per_launch * thrN * dev_batch_size && neuron_index < N){
-
+/*
     char active = (threadId < N_per_launch * thrN * dev_batch_size && neuron_index < N);
 
 
@@ -821,27 +1113,6 @@ __global__ void update_weights_dev(GPU_SNN_t *gpu_snn, size_t S){
     }
 }
 
-
-__global__ void print_n_spikes(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t N, size_t batch_size){
-
-    // get thread id: iN * batch_size * T
-    size_t threadId = 
-        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
-        (blockDim.x * blockDim.y * blockDim.z) +
-        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
-
-
-    if(threadId < N * batch_size){
-
-        
-        size_t i = threadId / batch_size; // neuron index
-        size_t b = threadId % batch_size; // batch position
-
-        printf(" ThreadId %llu (i = %llu, b = %llu): %d\n", threadId, i, b, gpu_results->n_spks[threadId]);
-    }
-}
-
-
 extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, tmp_batch_cpu_t *gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t *cpu_results, size_t dev){
 
     
@@ -933,7 +1204,9 @@ extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_da
 
         for(size_t l = 0; l<cuda_info->n_neuron_launchs; l++){
 
-            process_input_currect_batch<<<grid_is, block_is, conf->thrN * cuda_info->batch_size_per_block * sizeof(float)>>>(gpu_snn, iN, N, lt, t, cuda_info->n_neurons_per_launch, l);
+            //process_input_currect_batch<<<grid_is, block_is, conf->thrN * cuda_info->batch_size_per_block * sizeof(float)>>>(gpu_snn, iN, N, lt, t, cuda_info->n_neurons_per_launch, l);
+            process_input_currect_batch_new<<<grid_is, block_is, conf->thrN * cuda_info->batch_size_per_block * sizeof(float)>>>(gpu_snn, iN, N, lt, t, cuda_info->n_neurons_per_launch, l);
+            
             cudaCheckError(cudaPeekAtLastError());  // check launch errors
             cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
             cudaDeviceSynchronize();   
@@ -1014,292 +1287,4 @@ extern "C" void simulate_LIF_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_da
     cpu_results->t_reinit = et_reinit;
     cpu_results->t_load = et_load;
     cpu_results->t_learn = et_learn;
-}
-
-
-extern "C" void simulate_LIF_batch_single_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_dataset, GPU_results_t *gpu_results, tmp_batch_cpu_t *gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t *cpu_results){
-
-    struct timespec start, end, start_learn, end_learn;
-    double et = 0.0, et_learn = 0.0;
-
-    // define grid and block
-    dim3 grid_uw(cuda_info->n_blk_uw_x[0], cuda_info->n_blk_uw_y[0], cuda_info->n_blk_uw_z[0]);
-    dim3 block_uw(cuda_info->n_thr_per_blk_uw_x[0], cuda_info->n_thr_per_blk_uw_y[0], cuda_info->n_thr_per_blk_uw_z[0]);
-
-
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    // simulate batch
-    simulate_LIF_batch_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, bidx, cpu_snn, cpu_dataset, cpu_results, 0);
-
-    // update weights 
-    clock_gettime(CLOCK_MONOTONIC, &start_learn);
-    if(conf->learn){
-            
-        update_weights_batch<<<grid_uw, block_uw>>>(gpu_snn, cpu_snn->n_synapses);
-        cudaCheckError(cudaPeekAtLastError());  // check launch errors
-        cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
-        cudaDeviceSynchronize();
-    }
-    clock_gettime(CLOCK_MONOTONIC, &end_learn);
-    et_learn +=(end_learn.tv_sec - start_learn.tv_sec) + (end_learn.tv_nsec - start_learn.tv_nsec) / 1e9;
-
-
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    et +=(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-
-    // store execution times
-    cpu_results->t = et;
-    cpu_results->t_learn += et_learn;
-}
-
-
-extern "C" void simulate_LIF_batch_multi_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, tmp_batch_cpu_t **gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, size_t bidx, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset, GPU_results_t **cpu_results){
-
-    struct timespec start, end, start_learn, end_learn, start_gpu, end_gpu;
-    double et = 0.0, et_learn = 0.0, et_gpu = 0.0;
-    size_t dev, nDevices;
-    GPU_SNN_t **tmp_snn;
-    float **dw;
-
-    tmp_snn = cuda_info->tmp_snn;
-    dw = cuda_info->dw;
-    nDevices = cuda_info->nDevices;
-
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    // start the simulation using several devices. Each device is managed by a openMP thread
-    #pragma omp parallel num_threads(nDevices) private(dev, start_learn, end_learn, et_learn, start_gpu, end_gpu, et_gpu)
-    {        
-        // set the device dev as the current one for the thread
-        dev = (size_t)omp_get_thread_num();
-        cudaSetDevice(dev);
-
-        // define grid and block
-        dim3 grid_uw(cuda_info->n_blk_uw_x[dev], cuda_info->n_blk_uw_y[dev], cuda_info->n_blk_uw_z[dev]);
-        dim3 block_uw(cuda_info->n_thr_per_blk_uw_x[dev], cuda_info->n_thr_per_blk_uw_y[dev], cuda_info->n_thr_per_blk_uw_z[dev]);
-
-        // simulate batch using several devices
-        simulate_LIF_batch_GPU(gpu_snn[dev], gpu_dataset[dev], gpu_results[dev], gpu_tmp_batch[dev], conf, cuda_info, bidx, cpu_snn, cpu_dataset, cpu_results[dev], dev);
-
-        // wait until device tasks finished
-        cudaDeviceSynchronize();
-        
-        // if training
-        clock_gettime(CLOCK_MONOTONIC, &start_learn);
-        if(conf->learn == 1){
-
-            // acc all dw of the batch on the first
-            acc_weights_batch<<<grid_uw, block_uw>>>(gpu_snn[dev], cpu_snn->n_synapses);
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
-            cudaDeviceSynchronize();
-
-            // wait until device tasks finished
-            cudaDeviceSynchronize();
-
-            // cpy weights to CPU
-            cudaMemcpy(tmp_snn[dev], gpu_snn[dev], sizeof(GPU_SNN_t), cudaMemcpyDeviceToHost); // cpy dw GPU2CPU
-            cudaMemcpy(dw[dev], tmp_snn[dev]->acc_dw, cpu_snn->n_synapses * sizeof(float), cudaMemcpyDeviceToHost); // cpy dw GPU2CPU
-
-            // wait until all threads obtained their weights
-            #pragma omp barrier
-            
-            // sum dw of different devices on device 0
-            if(dev == 0){
-                for(size_t s = 0; s<cpu_snn->n_synapses; s++){
-
-                    for(size_t d = 0; d<cuda_info->nDevices; d++){
-                            
-                        if(dev != d){
-
-                            dw[dev][s] += dw[d][s]; // sum weights of other devices
-                        }
-                    }
-                    
-                    // compute mean
-                    dw[dev][s] = dw[dev][s] / (float)(conf->batch_size);
-                }
-            }
-
-            #pragma omp barrier
-                
-            // cpy again to gpu
-            cudaMemcpy(tmp_snn[dev]->acc_dw, dw[0], cpu_snn->n_synapses * sizeof(float), cudaMemcpyHostToDevice); // cpy dw CPU2GPU
-            //cudaMemcpy(gpu_snn[dev], tmp_snn[dev], sizeof(GPU_SNN_t), cudaMemcpyHostToDevice); // cpy dw CPU2GPU
-
-            // update weights in GPU
-            update_weights_dev<<<grid_uw, block_uw>>>(gpu_snn[dev], cpu_snn->n_synapses);
-            cudaCheckError(cudaPeekAtLastError());  // check launch errors
-            cudaCheckError(cudaDeviceSynchronize());  // check runtime errors
-            cudaDeviceSynchronize();
-        }
-
-        clock_gettime(CLOCK_MONOTONIC, &end_learn);
-        et_learn +=(end_learn.tv_sec - start_learn.tv_sec) + (end_learn.tv_nsec - start_learn.tv_nsec) / 1e9;
-
-
-        // store execution times
-        cpu_results[dev]->t_learn += et_learn;
-    }
-
-    // global batch execution time
-    et +=(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    cpu_results[0]->t = et;
-}
-
-
-
-extern "C" void simulate_batches_LIF_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, GPU_results_t **gpu_results, tmp_batch_cpu_t **gpu_tmp_batch, simulation_configuration_t *conf, cuda_info_t *cuda_info, GPU_SNN_t *cpu_snn, GPU_dataset_t *cpu_dataset){
-    
-    size_t n_batches, r_samples, b, i, dev;
-    cudaError_t err;
-    size_t nDevices = cuda_info->nDevices;
-    
-    // compute number of batches
-    n_batches = cpu_dataset->n_samples / conf->batch_size;
-    r_samples = cpu_dataset->n_samples % conf->batch_size;
-    // there are remaining sampels
-    if(r_samples > 0){
-
-        n_batches += 1; // last batch contains less samples
-    }
-
-
-    // copy constant(s) to all gpu devices
-    for(dev = 0; dev<nDevices; dev++){
-        
-        cudaSetDevice(dev);
-        
-        err = cudaMemcpyToSymbol(learn, &conf->learn, sizeof(size_t));
-        err = cudaMemcpyToSymbol(batch_size, &conf->batch_size, sizeof(size_t));
-        err = cudaMemcpyToSymbol(batch_size_per_block, &cuda_info->batch_size_per_block, sizeof(size_t));
-        err = cudaMemcpyToSymbol(blocks_per_batch, &cuda_info->blocks_per_batch[dev], sizeof(size_t));
-        err = cudaMemcpyToSymbol(dev_batch_size, &cuda_info->dev_batch_size[dev], sizeof(size_t)); // how much samples simulates each device
-        err = cudaMemcpyToSymbol(dev_batch_offset, &cuda_info->dev_batch_offset[dev], sizeof(size_t)); // offset to the first sample simulated by the device in the batch
-        err = cudaMemcpyToSymbol(thrN, &conf->thrN, sizeof(size_t)); // offset to the first sample simulated by the device in the batch
-
-    }
-
-
-    // allocate memory for results structs (a struct per device)
-    GPU_results_t **cpu_results = (GPU_results_t**)calloc(nDevices, sizeof(GPU_results_t*));
-    GPU_results_t **cpu_batch_results = (GPU_results_t**)calloc(nDevices, sizeof(GPU_results_t*));
-        
-    // copy constant(s) to all gpu devices: batch size per device and batch offset
-    for(dev = 0; dev<nDevices; dev++){
-        
-        // initialize batch results for device
-        cpu_results[dev] = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, cuda_info->dev_batch_size[dev], 1); 
-        cpu_batch_results[dev] = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, cuda_info->dev_batch_size[dev], 1);
-    }
-    
-
-    // if it is executed in only one device
-    if(nDevices == 1){
-        
-        cudaSetDevice(0);
-
-        // loop over batches
-        for(b = 0; b<n_batches; b++){
-
-            // reinitialize results struct
-            reinitialize_batch_results_cpu(cpu_batch_results[0], conf, cpu_snn->n_neurons, conf->batch_size, 1);
-
-            // simulate batch
-            simulate_LIF_batch_single_GPU(gpu_snn[0], gpu_dataset[0], gpu_results[0], gpu_tmp_batch[0], conf, cuda_info, b, cpu_snn, cpu_dataset, cpu_batch_results[0]);
-
-            // accumulate batch execution times in general results struct
-            acc_batch_execution_times(cpu_results[0], cpu_batch_results[0]);            
-        }
-    }
-
-    // TODO: multi GPU must be corrected
-    else{
-        
-        // simulate one batch and print
-        /*simulate_LIF_batch_multi_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, 0, cpu_snn, cpu_dataset, cpu_batch_results);
-        cpy_batch_results_GPU2CPU(cpu_results, gpu_results, cuda_info, cpu_snn->n_neurons, 1);
-        for(dev = 0; dev<cuda_info->nDevices; dev++){
-            
-            for(size_t batch = 0; batch<cuda_info->dev_batch_size[dev]; batch++){
-
-                for(size_t i = 0; i<cpu_snn->n_neurons; i++){
-
-                    printf("%d ", cpu_results[dev]->n_spks[i * cuda_info->dev_batch_size[dev] + batch]);
-                }
-                printf("\n");
-            }
-        }*/
-
-
-        // loop over batches
-        for(b = 0; b<n_batches; b++){
-
-            // reinitialize results struct
-            for(dev = 0; dev<nDevices; dev++)
-                reinitialize_batch_results_cpu(cpu_batch_results[dev], conf, cpu_snn->n_neurons, cuda_info->dev_batch_size[dev], 1);
-
-            // simulate batch
-            simulate_LIF_batch_multi_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, b, cpu_snn, cpu_dataset, cpu_batch_results);
-
-            // accumulate batch execution times in general results struct
-            for(dev = 0; dev<nDevices; dev++)
-                acc_batch_execution_times(cpu_results[dev], cpu_batch_results[dev]);            
-        }
-
-
-        /*simulate_LIF_batch_multi_GPU(gpu_snn, gpu_dataset, gpu_results, gpu_tmp_batch, conf, cuda_info, 0, cpu_snn, cpu_dataset, cpu_batch_results);
-        cpy_batch_results_GPU2CPU(cpu_results, gpu_results, cuda_info, cpu_snn->n_neurons, 1);
-        for(dev = 0; dev<cuda_info->nDevices; dev++){
-            
-            for(size_t batch = 0; batch<cuda_info->dev_batch_size[dev]; batch++){
-
-                for(size_t i = 0; i<cpu_snn->n_neurons; i++){
-
-                    printf("%d ", cpu_results[dev]->n_spks[i * cuda_info->dev_batch_size[dev] + batch]);
-                }
-                printf("\n");
-            }
-        }*/
-
-
-        for(dev = 1; dev<nDevices; dev++){
-
-            //cpu_results[0]->t += cpu_results[dev]->t;
-            cpu_results[0]->t_in += cpu_results[dev]->t_in;
-            cpu_results[0]->t_v += cpu_results[dev]->t_v;
-            cpu_results[0]->t_out += cpu_results[dev]->t_out;
-            cpu_results[0]->t_reinit += cpu_results[dev]->t_reinit;
-            cpu_results[0]->t_load += cpu_results[dev]->t_load;
-            cpu_results[0]->t_learn += cpu_results[dev]->t_learn;
-        }
-
-        // compute the mean
-        cpu_results[0]->t_in     /= nDevices;
-        cpu_results[0]->t_v      /= nDevices;
-        cpu_results[0]->t_out    /= nDevices;
-        cpu_results[0]->t_reinit /= nDevices;
-        cpu_results[0]->t_load   /= nDevices;
-        cpu_results[0]->t_learn  /= nDevices;
-    }
-
-
-    // print information in results struct
-    printf("   > Total execution time: %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
-                cpu_results[0]->t, cpu_results[0]->t / (float)n_batches, cpu_results[0]->t / (float)n_batches / (float)conf->time_steps);
-    printf("   > Total in time:        %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
-                cpu_results[0]->t_in, cpu_results[0]->t_in / (float)n_batches, cpu_results[0]->t_in / (float)n_batches / (float)conf->time_steps);
-    printf("   > Total v time:         %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
-                cpu_results[0]->t_v, cpu_results[0]->t_v / (float)n_batches, cpu_results[0]->t_v / (float)n_batches / (float)conf->time_steps);
-    printf("   > Total out time:       %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
-                cpu_results[0]->t_out, cpu_results[0]->t_out / (float)n_batches, cpu_results[0]->t_out / (float)n_batches / (float)conf->time_steps);
-    printf("   > Total reinit time:    %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
-                cpu_results[0]->t_reinit, cpu_results[0]->t_reinit / (float)n_batches, cpu_results[0]->t_reinit / (float)n_batches / (float)conf->time_steps);
-    printf("   > Total load time:      %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
-                cpu_results[0]->t_load, cpu_results[0]->t_load / (float)n_batches, cpu_results[0]->t_load / (float)n_batches / (float)conf->time_steps);
-    printf("   > Total learn time:     %.3lf | Mean per batch %.3lf | Mean per time step %.3lf\n", 
-                cpu_results[0]->t_learn, cpu_results[0]->t_learn / (float)n_batches, cpu_results[0]->t_learn / (float)n_batches / (float)conf->time_steps);
 }

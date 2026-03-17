@@ -959,8 +959,6 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
         fprintf(f, "    input_neurons = %zu\n", topology->n_input);
         fprintf(f, "    output_neurons = %zu\n", topology->n_output_neurons);
         fprintf(f, "    synapsis = %zu\n", topology->n_synapses);
-        fprintf(f, "    input_synapsis = %zu\n", 0); // DEPRECATED
-        fprintf(f, "    output_synapsis = %zu\n", 0);
         fprintf(f, "    network_is_separated = %d\n\n", conf->output_is_separated);
 
         printf(" > General information stored!\n");

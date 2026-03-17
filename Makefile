@@ -40,6 +40,7 @@ SRC_DIR = src
 OBJ_DIR = build
 # Include header file diretory:
 INC_DIR = include
+PRIV_INC_DIR = src
 INC_DIR_LIBS = lib
 
 
@@ -63,6 +64,7 @@ $(OBJ_DIR)/main.o \
 $(OBJ_DIR)/config_loader.o \
 $(OBJ_DIR)/datasets.o \
 $(OBJ_DIR)/snn.o \
+$(OBJ_DIR)/neuron_models.o \
 $(OBJ_DIR)/lif_neuron.o \
 $(OBJ_DIR)/results.o \
 $(OBJ_DIR)/simulations.o \
@@ -73,7 +75,7 @@ $(OBJ_DIR)/toml.o \
 
 GPU_OBJS = \
 $(OBJ_DIR)/GPU_lif_neuron.o \
-$(OBJ_DIR)/cuda_helpers.o \
+$(OBJ_DIR)/cuda_utils.o \
 $(OBJ_DIR)/GPU_simulations.o \
 $(OBJ_DIR)/cuda_simulations_conf.o
 
@@ -111,25 +113,25 @@ $(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
 
 # Compile C source files to object files:
 $(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/config/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/datasets/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/networks/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/neuron_models/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/simulations/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
 
 $(OBJ_DIR)/%.o : $(SRC_DIR)/training_rules/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
 
 #libs
 $(OBJ_DIR)/%.o : $(INC_DIR_LIBS)/toml_c/%.c

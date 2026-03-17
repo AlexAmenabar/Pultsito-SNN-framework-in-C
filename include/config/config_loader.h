@@ -1,6 +1,8 @@
 #ifndef CONFIG_LOADER_H
 #define CONFIG_LOADER_H
 
+#include <stdio.h>
+
 /// @brief Structure to store all the configuration for the simulation
 typedef struct simulation_configuration_t {
 

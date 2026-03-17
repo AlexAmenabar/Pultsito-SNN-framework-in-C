@@ -9,7 +9,7 @@ typedef struct GPU_dataset_t GPU_dataset_t;
 typedef struct simulation_configuration_t simulation_configuration_t;
 
 /// @brief Structure that stores the information of the kernels to launch in CUDA
-typedef struct {
+typedef struct cuda_info_t {
 
     // devices data
     int multi_gpu_allowed; // wether multilple devices should be used
