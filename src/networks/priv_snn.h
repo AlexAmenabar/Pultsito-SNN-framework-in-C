@@ -1,6 +1,10 @@
 #ifndef PRIV_SNN_H
 #define PRIV_SNN_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct GPU_SNN_t GPU_SNN_t; // forward declaration
 typedef struct simulation_configuration_t simulation_configuration_t; // forward declaration
 typedef struct topology_t topology_t; // forward declaration
@@ -41,5 +45,8 @@ void initialize_synapses_CPU(GPU_SNN_t *snn, topology_t *topology, simulation_co
 /// @param conf structure containing the configuration of the simulation
 void connect_network_input_criteria(GPU_SNN_t *snn, topology_t *topology, simulation_configuration_t *conf);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif

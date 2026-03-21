@@ -1,11 +1,10 @@
 #include <stdio.h>
 #include <cuda_runtime.h>
 
-#include "cuda/cuda_simulations_conf.h"
+// public headers
+#include "cuda/cuda_simulations_conf.cuh"
 #include "cuda/cuda_utils.cuh"
 
-
-// function to get the memory available in the GPU
 extern "C" int get_memory_info(cuda_info_t *cuda_info, int dev) {
     
     size_t free_mem, total_mem;

@@ -1,6 +1,10 @@
 #ifndef SNN_H
 #define SNN_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct GPU_SNN_t GPU_SNN_t; // forward declaration
 typedef struct simulation_configuration_t simulation_configuration_t; // forward declaration
 typedef struct topology_t topology_t; // forward declaration
@@ -103,5 +107,9 @@ void print_networks(GPU_SNN_t *snn, simulation_configuration_t *conf);
 /// @param conf Structure with configuration information
 void store_network_in_file(GPU_SNN_t *snn, simulation_configuration_t *conf);
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

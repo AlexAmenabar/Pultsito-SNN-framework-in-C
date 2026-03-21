@@ -37,7 +37,7 @@ simulation_configuration_t* load_general_section_from_toml(simulation_configurat
     if(!cuda.ok)
         cuda.u.i = 0; // no cuda
     if(!multigpu.ok)
-        multigpu.u.i = 1; // no multigpu
+        multigpu.u.i = 1; // 1 GPU
     if(!learn.ok)
         learn.u.i = 0; // inference
     if(!batch_size.ok)

@@ -4,6 +4,7 @@
 // public headers
 #include "simulations/results.h"
 #include "config/config_loader.h"
+#include "utils.h"
 
 GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results){
 
@@ -71,6 +72,38 @@ void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configura
     results->t_reinit = 0.0; // network reinitialization
     results->t_load   = 0.0; // loading sample or batch in network
 }
+
+/* Storage */
+
+void store_number_of_spikes_array(GPU_results_t **results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t n_results){
+
+    size_t i;
+
+    for(i = 0; i<n_results; i++){
+
+        store_number_of_spikes(results[i], conf, N, batch_size);
+    }
+}
+
+void store_number_of_spikes(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size){
+
+    size_t i, b;
+    FILE *f;
+
+    // open file for storing the results
+    open_file_w(&f, conf->n_spikes_per_neuron_file);
+
+    for(b = 0; b<conf->batch_size; b++){
+
+        for(i = 0; i<N; i++){
+            fprintf(f, "%d ", results->n_spks[i * batch_size + b]);
+        }
+        fprintf(f, "\n");
+    }
+
+    fclose(f);
+}
+
 
 void deallocate_results_str(GPU_results_t *results){
 

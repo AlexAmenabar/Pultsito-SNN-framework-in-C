@@ -1,6 +1,10 @@
 #ifndef RESULTS_H
 #define RESULTS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct simulation_configuration_t simulation_configuration_t;
 
 /// @brief Structure to store results during simulation
@@ -53,7 +57,7 @@ GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, si
 /// @param batch_size batch size to simulate
 /// @param T time steps of the simulation
 void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
-
+     
 /// @brief Deallocate memory of the reults structure
 /// @param results Structure to deallocate
 void deallocate_results_str(GPU_results_t *results);
@@ -69,6 +73,25 @@ void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_resu
 /// @param T simulated time steps
 /// @return size in bytes
 double get_results_size(size_t N, size_t nS, size_t T);
+
+/// @brief Store the number of spikes stored in the array of results structures
+/// @param results Array of structures storing the results
+/// @param conf Structure that contains the configuration information
+/// @param N Number of neurons
+/// @param batch_size batch size
+/// @param n_results Number of elements in the array of results
+void store_number_of_spikes_array(GPU_results_t **results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t n_results);
+
+/// @brief Store the number of spikes stored in the structure of results
+/// @param results Structure storing the results
+/// @param conf Structure that contains the configuration information
+/// @param N Number of neurons
+/// @param batch_size batch size
+void store_number_of_spikes(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif

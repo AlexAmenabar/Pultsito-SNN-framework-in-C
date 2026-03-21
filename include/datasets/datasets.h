@@ -4,6 +4,10 @@
 /// TODO: chunks management
 /// TODO: include metadata of the dataset in the dataset file (number of samples...), currently they are indicated in the simulation configuration file
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// Forwarded declarations
 typedef struct simulation_configuration_t simulation_configuration_t;
 
@@ -47,6 +51,10 @@ double get_dataset_size(GPU_dataset_t *dataset);
 /// @brief Funtiong for printing the dataset
 /// @param dataset struct storing the dataset
 void print_dataset(GPU_dataset_t *dataset);
+
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif

@@ -2,6 +2,10 @@
 #define PRIV_NEURON_MODELS_H
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Forwared declarations
 typedef struct GPU_SNN_t GPU_SNN_t;
 typedef struct simulation_configuration_t simulation_configuration_t; 
@@ -73,5 +77,9 @@ void reinitialize_LIF_neurons_batch(GPU_SNN_t *snn, simulation_configuration_t *
 /// @param t position to get spikes in the spike matrix
 /// @param gt time step of the simulation
 void compute_LIF_V_batch(GPU_SNN_t *snn, simulation_configuration_t *conf, size_t t, size_t gt);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

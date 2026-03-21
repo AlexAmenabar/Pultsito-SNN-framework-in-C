@@ -1,6 +1,10 @@
 #ifndef PRIV_DATASETS_H
 #define PRIV_DATASETS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// Forwarded declarations
 typedef struct GPU_dataset_t GPU_dataset_t;
 typedef struct simulation_configuration_t simulation_configuration_t;
@@ -16,5 +20,9 @@ GPU_dataset_t* allocate_dataset_str(size_t n_samples, size_t n_features, size_t 
 /// @brief Deallocate struct for storing the dataset
 /// @param dataset dataset structure to be deallocated
 void deallocate_dataset_str(GPU_dataset_t *dataset);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

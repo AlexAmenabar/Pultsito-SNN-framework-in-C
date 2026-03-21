@@ -1,8 +1,16 @@
 #include "config/config_loader.h"
 #include "datasets/datasets.h"
 #include "networks/snn.h"
-#include "cuda/cuda_simulations_conf.h"
+#include "simulations/results.h"
+
+#include "cuda/cuda_simulations.cuh"
+#include "cuda/cuda_simulations_conf.cuh"
 #include "cuda/cuda_utils.cuh"
+#include "cuda/cuda_results.cuh"
+
+#include "cuda/priv_cuda_simulations.cuh"
+#include "cuda/neuron_models/priv_cuda_lif.cuh"
+#include "cuda/priv_cuda_results.cuh"
 
 // [CUDA]
 
@@ -12,45 +20,20 @@
 /// @return SNN structure initialized
 size_t get_number_of_devices(cuda_info_t *cuda_info, simulation_configuration_t *conf){
 
-    size_t n_max_devices;
+    size_t available_devices, nDevices;
 
-    // check wether multiGPU simulations are activated (0, no; 1: all devices; n > 1: number of devices)
-    cuda_info->multi_gpu_allowed = conf->multi_gpu >= 1;
-    
-    // compute the number of GPUs available for the simulation
-    if(conf->multi_gpu > 1){
+    available_devices = cuda_info->nDevices; // available devices
+    nDevices = conf->multi_gpu; // requested number of devices
 
-        n_max_devices = conf->multi_gpu; // the number of GPUs indicated in the configuration file
-    }
-    else if(cuda_info->multi_gpu_allowed == 1){ 
-
-        n_max_devices = cuda_info->nDevices; // use all GPUs available in the allocation
-    }
-    else{ 
-
-        n_max_devices = 1; // no multiGPU
-    }
-
-    // we cannot use more than the available devices, correct number if necessary
-    if(n_max_devices > cuda_info->nDevices){
-
-        n_max_devices = cuda_info->nDevices;
-        printf(" > There are no %zu devices available, %zu devices will be used.\n", n_max_devices, cuda_info->nDevices);
-        fflush(stdout);
-
-        if(n_max_devices == 0){
-            
-            printf(" >> No GPUs available!! Exitting!\n");
-            fflush(stdout);
-            exit(1);
-        }
-    }
+    // check whether requested devices are available, if not, correct
+    if(available_devices < nDevices)
+        nDevices = available_devices;
 
     // store the configured number of devices in the cuda information structure
-    cuda_info->nDevices = n_max_devices;
+    cuda_info->nDevices = nDevices;
 
     // return the number of devices
-    return n_max_devices;
+    return nDevices;
 }
 
 /// @brief Function to split the batch simulation between several GPUs
@@ -63,6 +46,8 @@ void split_batch_in_GPUs(cuda_info_t *cuda_info, simulation_configuration_t *con
 
     // store the number of devices
     nDevices = cuda_info->nDevices;
+    printf("number of devices = %zu\n", nDevices);
+    fflush(stdout);
     batch_size = conf->batch_size;
 
     // compute batch_size per device
@@ -140,7 +125,6 @@ void allocate_helper_structures_for_GPU_simulation(cuda_info_t *cuda_info, GPU_S
         cuda_info->tmp_snn[dev] = (GPU_SNN_t*)malloc(sizeof(GPU_SNN_t));
         cuda_info->dw[dev] = (float*)malloc(snn->n_synapses * sizeof(float));
     }
-
 }
 
 /// @brief Function configure the cuda grids and blocks for the kernels
@@ -239,6 +223,8 @@ void configure_cuda_grids(cuda_info_t *cuda_info, GPU_SNN_t *snn, simulation_con
         cuda_info->n_blk_uw_y[dev] = 1;
         cuda_info->n_blk_uw_z[dev] = 1;
 
+        printf(" Grids set\n");
+        fflush(stdout);
 
 
         // [TODO]: all the code below should be improved
@@ -368,19 +354,42 @@ void compute_input_synapses_subsets(cuda_info_t *cuda_info, GPU_SNN_t *snn, simu
     }
 }
 
+void copy_constants_to_devices(cuda_info_t *cuda_info, simulation_configuration_t *conf){
 
+    size_t dev;
+    size_t nDevices = cuda_info->nDevices;
+    cudaError_t err;
 
+    // copy constants to all gpu devices
+    for(dev = 0; dev<nDevices; dev++){
+        
+        cudaSetDevice(dev);
+        
+        err = cudaMemcpyToSymbol(learn, &conf->learn, sizeof(size_t));
+        err = cudaMemcpyToSymbol(batch_size, &conf->batch_size, sizeof(size_t));
+        err = cudaMemcpyToSymbol(batch_size_per_block, &cuda_info->batch_size_per_block, sizeof(size_t));
+        err = cudaMemcpyToSymbol(blocks_per_batch, &cuda_info->blocks_per_batch[dev], sizeof(size_t));
+        err = cudaMemcpyToSymbol(dev_batch_size, &cuda_info->dev_batch_size[dev], sizeof(size_t)); // how much samples simulates each device
+        err = cudaMemcpyToSymbol(dev_batch_offset, &cuda_info->dev_batch_offset[dev], sizeof(size_t)); // offset to the first sample simulated by the device in the batch
+        err = cudaMemcpyToSymbol(thrN, &conf->thrN, sizeof(size_t)); // offset to the first sample simulated by the device in the batch
+    }
+}
 
 
 // [TODO]: think about this function, very caotic
-void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf){
+cuda_info_t* configure_cuda_simulation(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf){
 
     size_t i, dev, off, nDevices, batch_size = conf->batch_size;;
     
+    // initialize cuda information structure
+    cuda_info_t *cuda_info = getGPUProperties();
+
     // store information in cuda info struct
     cuda_info->n_samples = dataset->n_samples; // store number of samples in the dataset
     cuda_info->time_steps = conf->time_steps; // time steps of the simulation
     cuda_info->batch_size = batch_size; // store batch size in cuda info
+    cuda_info->chunk_size = 10; // each 10 batches move
+
 
     // compute the number of devices available for the simulation
     nDevices = get_number_of_devices(cuda_info, conf);
@@ -388,23 +397,69 @@ void configure_cuda_simulation(cuda_info_t *cuda_info, GPU_SNN_t *snn, GPU_datas
     // compute the number of samples for each batch will simulate each device
     split_batch_in_GPUs(cuda_info, conf);
 
+    printf(" Checking GPU memory\n");
+    fflush(stdout);   
+    
     /* Get memory occupation in GPU: improve the part of n_networks */
     check_GPU_memory(cuda_info, snn, dataset, conf);
     
 
     // [TODO]: if there is no enough memory for copying the network batch_size times, use each copy several times
-    /*cuda_info->n_networks_per_dev = (size_t*)calloc(nDevices, sizeof(size_t)); // number of maximum networks per dev
+    cuda_info->n_networks_per_dev = (size_t*)calloc(nDevices, sizeof(size_t)); // number of maximum networks per dev
     for(i=0; i<cuda_info->nDevices; i++){
         
         cuda_info->n_networks_per_dev[i] = cuda_info->dev_batch_size[i];
-    }*/
+    }
 
+    printf(" Allocating helper structures\n");
+    fflush(stdout);   
+    
     // allocate memory for auxiliary structures for the GPU simulation
     allocate_helper_structures_for_GPU_simulation(cuda_info, snn);
 
 
+        printf(" Configuring cuda grids\n");
+    fflush(stdout);   
     // configure cuda grids and blocks for kernels
     configure_cuda_grids(cuda_info, snn, conf);
+
+
+    printf(" Copying constants\n");
+    fflush(stdout);    
+    // copy constants from the CPU to the GPUs
+    copy_constants_to_devices(cuda_info, conf);
+
+    printf(" Constants copied\n");
+    fflush(stdout);  
+
+    // set kernel pointer for neuron model
+    switch(conf->neuron_type){
+        
+        case 1:
+            set_LIF_cuda_kernels(cuda_info);
+            break;
+    }
+    printf(" Pointers set\n");
+    fflush(stdout);  
+    printf(" Initializing results structures...\n");
+    fflush(stdout);
+
+    // struct to store the results in multiple GPUs and then map to multiple CPUs
+    cuda_info->gpu_results = initialize_results_str_in_GPU(nDevices, snn->n_neurons, cuda_info);
+    cuda_info->intermedaite_cpu_results = initialize_results_str_in_CPU(nDevices, snn->n_neurons, cuda_info);
+
+    // TEMP
+    cuda_info->thrN = conf->thrN;
+    cuda_info->cpu_snn = snn;
+    cuda_info->cpu_dataset = dataset;
+
+
+    // return structure 
+    return cuda_info;
 }
 
+void deallocate_cuda_info_str(cuda_info_t *cuda_info){
 
+    printf(" TODO\n");
+
+}

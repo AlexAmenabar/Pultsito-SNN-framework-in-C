@@ -1,6 +1,11 @@
 #ifndef SIMULATIONS_H
 #define SIMULATIONS_H
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// Forwarded declarations
 typedef struct GPU_SNN_t GPU_SNN_t;
 typedef struct GPU_dataset_t GPU_dataset_t;
@@ -18,6 +23,7 @@ typedef struct tmp_batch_cpu_t {
 
 /* General simulation functions */
 
+/// [USAGE NOT RECOMMENDED]
 /// @brief Function for simulating a dataset in batches.
 /// @param snn stores the network to be simulated
 /// @param dataset stores the encoded dataset to simulate
@@ -46,6 +52,10 @@ void update_weights_cpu(GPU_SNN_t *snn, simulation_configuration_t *conf);
 /// @return size in bytes
 double get_tmp_batch_size(size_t iN, size_t nS, size_t T);
 
+
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif

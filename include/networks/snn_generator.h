@@ -60,6 +60,10 @@ Configuration file format:
 */
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// @brief Structure to store all the data relative to the generation configuration
 typedef struct generator_conf_t {
 
@@ -176,5 +180,9 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria);
 /// @brief Deallocate memory allocated by the topology structure
 /// @param topology Structure to deallocate
 void deallocate_topology_str(topology_t *topology);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -2,63 +2,47 @@
 # Build mode (default = CPU)
 # Use:
 #   make cuda
-#   make 
+#   make
 #   make avx512
 # ==================================================
+
 USE_CUDA ?= 0
 USE_AVX512 ?= 0
 
-# CUDA directory:
-CUDA_ROOT_DIR=/usr/local/cuda
+CUDA_ROOT_DIR = /usr/local/cuda
 
-LCC=g++ #compiler for linking C and C++ code (CPU and CUDA)
+# Compilers
+CC   = gcc
+CXX  = g++
+NVCC = nvcc
 
-# CC compiler options:
-CC=gcc
-#CC_FLAGS = -O3 -fopenmp
-CC_FLAGS= -g -O0 -fopenmp
-CC_LIBS=
+# Flags
+CC_FLAGS  = -g -O0 -fopenmp
+CXX_FLAGS = -g -O0 -fopenmp
 
-# NVCC compiler options:
-NVCC=nvcc
-NVCC_FLAGS= -O3 --ptxas-options=-v -Xcompiler "-DCUDA -fopenmp" # -fPIC
-NVCC_LIBS=
+NVCC_FLAGS = -O3 --ptxas-options=-v -rdc=true -Xcompiler "-fopenmp -DCUDA"
 
+# CUDA
+CUDA_INC_DIR  = -I$(CUDA_ROOT_DIR)/include
+CUDA_LIB_DIR  = -L$(CUDA_ROOT_DIR)/lib64
+CUDA_LIBS     = -lcudart
 
-# CUDA library directory:
-CUDA_LIB_DIR= -L$(CUDA_ROOT_DIR)/lib64
-# CUDA include directory:
-CUDA_INC_DIR= -I$(CUDA_ROOT_DIR)/include 
-# CUDA linking libraries:
-CUDA_LINK_LIBS= -lcudart
+# Project structure
+SRC_DIR       = src
+OBJ_DIR       = build
+BIN_DIR       = bin
+INC_DIR       = include
+PRIV_INC_DIR  = src
+INC_DIR_LIBS  = lib
 
-
-## Project file structure ##
-# Source file directory:
-SRC_DIR = src
-# Object file directory:
-OBJ_DIR = build
-# Include header file diretory:
-INC_DIR = include
-PRIV_INC_DIR = src
-INC_DIR_LIBS = lib
-
-
-
-## Make variables ##
-
-# Target executable name:
-BIN = bin
-EXE = 
-
+# Executable
 ifeq ($(USE_CUDA),1)
 	EXE = cuda_simulator
-else	
+else
 	EXE = cpu_simulator
 endif
 
-# Object files:
-# Used by both CPU and GPU
+# Common objects
 COMMON_OBJS = \
 $(OBJ_DIR)/main.o \
 $(OBJ_DIR)/config_loader.o \
@@ -71,98 +55,123 @@ $(OBJ_DIR)/simulations.o \
 $(OBJ_DIR)/stdp.o \
 $(OBJ_DIR)/utils.o \
 $(OBJ_DIR)/snn_generator.o \
-$(OBJ_DIR)/toml.o \
+$(OBJ_DIR)/toml.o
 
+# CUDA objects
 GPU_OBJS = \
-$(OBJ_DIR)/GPU_lif_neuron.o \
-$(OBJ_DIR)/cuda_utils.o \
-$(OBJ_DIR)/GPU_simulations.o \
-$(OBJ_DIR)/cuda_simulations_conf.o
+$(OBJ_DIR)/cuda_networks.o \
+$(OBJ_DIR)/cuda_datasets.o \
+$(OBJ_DIR)/cuda_results.o \
+$(OBJ_DIR)/cuda_simulations.o \
+$(OBJ_DIR)/cuda_simulations_conf.o \
+$(OBJ_DIR)/cuda_lif.o \
+$(OBJ_DIR)/cuda_utils.o
 
-
+# Select objects
 ifeq ($(USE_CUDA),1)
 	OBJS = $(COMMON_OBJS) $(GPU_OBJS)
-else	
+else
 	OBJS = $(COMMON_OBJS)
 endif
 
-
+# Extra flags
 ifeq ($(USE_CUDA),1)
 	CC_FLAGS += -DCUDA
-	CUDA_LINK = $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS)
+	CXX_FLAGS += -DCUDA
+	LINKER = $(NVCC)
+	LINK_FLAGS = $(NVCC_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LIBS) -Xcompiler -fopenmp
 else
-	CC_FLAGS += -ffast-math -fopenmp -funroll-loops -fprefetch-loop-arrays -flto -mtune=native
+	CC_FLAGS += -ffast-math -funroll-loops -fprefetch-loop-arrays -flto -mtune=native
+	CXX_FLAGS += -ffast-math -funroll-loops -fprefetch-loop-arrays -flto -mtune=native
+	LINKER = $(CXX)
+	LINK_FLAGS = -fopenmp -lm
 
 	ifeq ($(USE_AVX512),1)
 		CC_FLAGS += -DAVX512
+		CXX_FLAGS += -DAVX512
 	endif
-
-	CUDA_LINK =
 endif
 
+# ==================================================
+# Build rules
+# ==================================================
 
+all: $(BIN_DIR)/$(EXE)
 
-## Compile ##
-# Link c and CUDA compiled object files to target executable:
-$(BIN)/$(EXE) : $(OBJS)
-	$(LCC) $(CC_FLAGS) $(OBJS) -o $@ $(CUDA_LINK) -no-pie -lm -fopenmp
+# Link
+$(BIN_DIR)/$(EXE): $(OBJS)
+	mkdir -p $(BIN_DIR)
+	$(LINKER) $(OBJS) -o $@ $(LINK_FLAGS)
 
-# Compile main.c file to object files:
-$(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
-	$(CC) $(CC_FLAGS) -DREORDER -c $< -o $@ -I$(INC_DIR) -I$(INC_DIR_LIBS) 
+# ==================================================
+# C compilation
+# ==================================================
 
-# Compile C source files to object files:
-$(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
-
-$(OBJ_DIR)/%.o : $(SRC_DIR)/config/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
-
-$(OBJ_DIR)/%.o : $(SRC_DIR)/datasets/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
-
-$(OBJ_DIR)/%.o : $(SRC_DIR)/networks/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
-
-$(OBJ_DIR)/%.o : $(SRC_DIR)/neuron_models/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
-
-$(OBJ_DIR)/%.o : $(SRC_DIR)/simulations/%.c
-	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) 
-
-$(OBJ_DIR)/%.o : $(SRC_DIR)/training_rules/%.c
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	mkdir -p $(OBJ_DIR)
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
 
-#libs
-$(OBJ_DIR)/%.o : $(INC_DIR_LIBS)/toml_c/%.c
+$(OBJ_DIR)/%.o: $(SRC_DIR)/config/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/datasets/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/networks/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/neuron_models/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/simulations/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/training_rules/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+# External lib
+$(OBJ_DIR)/%.o: $(INC_DIR_LIBS)/toml_c/%.c
+	mkdir -p $(OBJ_DIR)
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR_LIBS)/toml_c
 
+# ==================================================
+# CUDA compilation
+# ==================================================
 
-# Compile CUDA source files to object files:
-$(OBJ_DIR)/%.o : $(SRC_DIR)/%.cu $(INC_DIR)/%.cuh
-	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ $(NVCC_LIBS)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu
+	mkdir -p $(OBJ_DIR)
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR)
 
-$(OBJ_DIR)/%.o : $(SRC_DIR)/neuron_models/%.cu 
-	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ $(NVCC_LIBS) -I$(INC_DIR)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/cuda/%.cu
+	mkdir -p $(OBJ_DIR)
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR)
 
-$(OBJ_DIR)/%.o : $(SRC_DIR)/cuda/%.cu 
-	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ $(NVCC_LIBS) -I$(INC_DIR)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/cuda/neuron_models/%.cu
+	mkdir -p $(OBJ_DIR)
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR)
 
+# ==================================================
+# Build modes
+# ==================================================
 
-
-# build options: GPU (cuda), CPU (not vectorized), vectorized (AVX512)
-gpu:
-	$(MAKE) USE_CUDA=1
-	$(MAKE) USE_AVX512=0
+cuda:
+	$(MAKE) USE_CUDA=1 USE_AVX512=0
 
 cpu:
-	$(MAKE) USE_CUDA=0
-	$(MAKE) USE_AVX512=0
+	$(MAKE) USE_CUDA=0 USE_AVX512=0
 
 avx512:
-	$(MAKE) USE_CUDA=0
-	$(MAKE) USE_AVX512=1
+	$(MAKE) USE_CUDA=0 USE_AVX512=1
 
-# Clean objects in object directory.
+# ==================================================
+# Clean
+# ==================================================
+
 clean:
-	$(RM) build/* *.o $(OBJS)
+	rm -rf $(OBJ_DIR)/*.o $(BIN_DIR)/*

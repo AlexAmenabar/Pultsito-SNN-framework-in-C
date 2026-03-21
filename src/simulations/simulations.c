@@ -208,7 +208,7 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
     // print execution data if required // [TODO]: move to function??
     //if(print_data == 1){
         // print execution times
-        printf(" > Finished in %lf! (s_rnt = %lf s_load = %lf s_in = %lf s_v = %lf s_out = %lf, s_tr = %lf)\n", 
+        /*printf(" > Finished in %lf! (s_rnt = %lf s_load = %lf s_in = %lf s_v = %lf s_out = %lf, s_tr = %lf)\n", 
             elapsed_time, et1, et_load, et2, et3, et4, et5);
         fflush(stdout);
 
@@ -222,7 +222,7 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
             }
             printf("\n");
         }
-        printf("\n");
+        printf("\n");*/
     //}
 }
 

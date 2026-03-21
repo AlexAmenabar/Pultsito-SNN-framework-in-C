@@ -1,6 +1,10 @@
 #ifndef PRIV_SIMULATIONS_H
 #define PRIV_SIMULATIONS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// Forwarded declarations
 typedef struct GPU_SNN_t GPU_SNN_t;
 typedef struct GPU_dataset_t GPU_dataset_t;
@@ -63,5 +67,8 @@ void print_weights_3D(GPU_SNN_t *snn, size_t B);
 
 void print_dw_3D(GPU_SNN_t *snn, size_t B);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif
