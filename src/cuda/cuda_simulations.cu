@@ -78,18 +78,11 @@ extern "C" void simulate_batch_GPU(GPU_results_t *cpu_results, GPU_SNN_t **gpu_s
     // nDevices > 1
     else{
 
-        printf(" Simulating batch...\n");
-        fflush(stdout);
         simulate_batch_multi_GPU(gpu_snn, gpu_dataset, gpu_tmp_batch, conf, cuda_info, bidx);
-        printf(" Batch simualted!\n");
-        fflush(stdout);
     }
 
     // deallocate tmp_batch memory
     deallocate_batch_matrix_in_GPU(gpu_tmp_batch, cuda_info);
-
-    printf(" Batch simulated\n");
-    fflush(stdout);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     et +=(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
@@ -191,8 +184,6 @@ extern "C" void simulate_batch_multi_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gp
     for(dev = 0; dev<nDevices; dev++)
         reinitialize_batch_results_cpu(cpu_results[dev], conf, cpu_snn->n_neurons, cuda_info->dev_batch_size[dev], 1);
 
-    printf(" Batch results reinitialized\n");
-    fflush(stdout);
 
     // start the simulation using several devices. Each device is managed by a openMP thread
     #pragma omp parallel num_threads(nDevices) private(dev)
@@ -204,19 +195,12 @@ extern "C" void simulate_batch_multi_GPU(GPU_SNN_t **gpu_snn, GPU_dataset_t **gp
         // run kernels
         run_simulation_batch_GPU(gpu_snn[dev], gpu_dataset[dev], gpu_tmp_batch[dev], conf, cuda_info, bidx, dev);
 
-        printf(" GPU code executed\n");
-        fflush(stdout);
-
         // wait until device tasks finished
         cudaDeviceSynchronize();
     }
-    printf(" Batch simualted\n");
-    fflush(stdout);
     
     // update weights
     update_weights_multi_GPU(gpu_snn, conf, cuda_info);
-    printf(" Weights updated\n");
-    fflush(stdout);
 }
 
 extern "C" void update_weights_multi_GPU(GPU_SNN_t **gpu_snn, simulation_configuration_t *conf, cuda_info_t *cuda_info){
@@ -349,14 +333,9 @@ extern "C" void run_simulation_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_
     dim3 grid_is(cuda_info->n_blk_is_x[dev], cuda_info->n_blk_is_y[dev], cuda_info->n_blk_is_z[dev]);
     dim3 block_is(cuda_info->n_thr_per_blk_is_x[dev], cuda_info->n_thr_per_blk_is_y[dev], cuda_info->n_thr_per_blk_is_z[dev]);
 
-    printf(" Reinitializing neurons initialized\n");
-    fflush(stdout);
-
     // (re)initialize neurons
     clock_gettime(CLOCK_MONOTONIC, &start_reinit);
     cuda_info->initialize_neurons_cuda(gpu_snn, cuda_info, dev);
-    printf(" Neurons initialized\n");
-    fflush(stdout);
 
     // (re)initialize synapses
     initialize_synapses_batch<<<grid_synapses, block_synapses>>>(gpu_snn);

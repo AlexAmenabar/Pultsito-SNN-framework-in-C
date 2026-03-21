@@ -396,9 +396,6 @@ cuda_info_t* configure_cuda_simulation(GPU_SNN_t *snn, GPU_dataset_t *dataset, s
 
     // compute the number of samples for each batch will simulate each device
     split_batch_in_GPUs(cuda_info, conf);
-
-    printf(" Checking GPU memory\n");
-    fflush(stdout);   
     
     /* Get memory occupation in GPU: improve the part of n_networks */
     check_GPU_memory(cuda_info, snn, dataset, conf);
@@ -410,27 +407,16 @@ cuda_info_t* configure_cuda_simulation(GPU_SNN_t *snn, GPU_dataset_t *dataset, s
         
         cuda_info->n_networks_per_dev[i] = cuda_info->dev_batch_size[i];
     }
-
-    printf(" Allocating helper structures\n");
-    fflush(stdout);   
-    
+ 
     // allocate memory for auxiliary structures for the GPU simulation
     allocate_helper_structures_for_GPU_simulation(cuda_info, snn);
 
 
-        printf(" Configuring cuda grids\n");
-    fflush(stdout);   
     // configure cuda grids and blocks for kernels
     configure_cuda_grids(cuda_info, snn, conf);
 
-
-    printf(" Copying constants\n");
-    fflush(stdout);    
     // copy constants from the CPU to the GPUs
     copy_constants_to_devices(cuda_info, conf);
-
-    printf(" Constants copied\n");
-    fflush(stdout);  
 
     // set kernel pointer for neuron model
     switch(conf->neuron_type){
@@ -439,10 +425,6 @@ cuda_info_t* configure_cuda_simulation(GPU_SNN_t *snn, GPU_dataset_t *dataset, s
             set_LIF_cuda_kernels(cuda_info);
             break;
     }
-    printf(" Pointers set\n");
-    fflush(stdout);  
-    printf(" Initializing results structures...\n");
-    fflush(stdout);
 
     // struct to store the results in multiple GPUs and then map to multiple CPUs
     cuda_info->gpu_results = initialize_results_str_in_GPU(nDevices, snn->n_neurons, cuda_info);

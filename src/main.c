@@ -139,18 +139,12 @@ int main(int argc, char *argv[]) {
 
     // move data to the GPU
     GPU_SNN_t **gpu_snn = cpy_SNN2GPU(cpu_snn, cuda_info, conf);
-    printf(" SNN copied to the GPU\n");
-    fflush(stdout);
 
     // move dataset to the GPU
     GPU_dataset_t **gpu_dataset = cpy_dataset2GPU(cpu_dataset, cuda_info);
-    printf(" Dataset copied to the GPU\n");
-    fflush(stdout);
 
     // initialize results structure
     GPU_results_t **results = initialize_batch_results_array(conf, cpu_snn->n_neurons, conf->batch_size, 1, 1, n_batches);
-    printf(" Results array initialized\n");
-    fflush(stdout);
 
     // call simulation
     for(b = 0; b<n_batches; b++){
@@ -165,8 +159,6 @@ int main(int argc, char *argv[]) {
         simulate_batch_GPU(results[b], gpu_snn, gpu_dataset, conf, cuda_info, b);
     }
 
-    printf(" Simulation finished\n");
-    fflush(stdout);
 
     store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);
 
