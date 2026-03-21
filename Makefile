@@ -20,7 +20,7 @@ NVCC = nvcc
 CC_FLAGS  = -g -O0 -fopenmp
 CXX_FLAGS = -g -O0 -fopenmp
 
-NVCC_FLAGS = -O3 --ptxas-options=-v -rdc=true -Xcompiler "-fopenmp -DCUDA"
+NVCC_FLAGS = -g -O0 --ptxas-options=-v -rdc=true -Xcompiler "-fopenmp -DCUDA"
 
 # CUDA
 CUDA_INC_DIR  = -I$(CUDA_ROOT_DIR)/include

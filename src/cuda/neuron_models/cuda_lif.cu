@@ -32,8 +32,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 void set_LIF_cuda_kernels(cuda_info_t *cuda_info){
 
     // CPU-GPU communication
-    //cuda_info->allocate_neuron_memory_cuda = &allocate_LIF_memory_cuda;
-    //cuda_info->cpy_neurons_CPU2GPU_cuda = &cpy_LIF_memory_cuda;
+    cuda_info->allocate_neuron_memory_cuda = &allocate_LIF_memory_cuda;
+    cuda_info->cpy_neurons_CPU2GPU_cuda = &cpy_LIF_memory_cuda;
 
     // kernel wrappers
     cuda_info->initialize_neurons_cuda = &wrap_initialize_LIF_neurons_batch_kernel;

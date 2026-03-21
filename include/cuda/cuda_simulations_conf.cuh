@@ -57,8 +57,8 @@ typedef struct cuda_info_t {
     size_t thrN;
 
     // Function pointers
-    //void (*allocate_neuron_memory_cuda)(GPU_SNN_t *d_snn, size_t N, size_t batch);
-    //void (*cpy_neurons_CPU2GPU_cuda)(GPU_SNN_t *d_snn, GPU_SNN_t *h_snn, size_t N);
+    void (*allocate_neuron_memory_cuda)(GPU_SNN_t *d_snn, size_t N, size_t batch);
+    void (*cpy_neurons_CPU2GPU_cuda)(GPU_SNN_t *d_snn, GPU_SNN_t *h_snn, size_t N);
 
     void (*initialize_neurons_cuda)(GPU_SNN_t *snn, cuda_info_t *cuda_info, size_t dev);
     void (*process_input_current_cuda)(GPU_SNN_t *gpu_snn, size_t iN, size_t N, size_t t, size_t gt, cuda_info_t *cuda_info, size_t dev);

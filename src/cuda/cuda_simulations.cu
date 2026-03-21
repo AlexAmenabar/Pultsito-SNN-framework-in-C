@@ -479,6 +479,7 @@ extern "C" tmp_batch_cpu_t** allocate_batch_matrix_in_GPU(size_t nDevices, size_
     tmp_batch = (tmp_batch_cpu_t*)calloc(1, sizeof(tmp_batch_cpu_t));
     d_tmp_batch = (tmp_batch_cpu_t**)calloc(nDevices, sizeof(tmp_batch_cpu_t*));
 
+
     // loop over devices
     for(dev = 0; dev < nDevices; dev++){
     
@@ -488,6 +489,8 @@ extern "C" tmp_batch_cpu_t** allocate_batch_matrix_in_GPU(size_t nDevices, size_
         // batch size per dev
         dev_batch_size = cuda_info->dev_batch_size[dev];
 
+        printf(" In allocate batch matrix: iN = %zu, dev_batch = %zu, T = %zu\n", iN, dev_batch_size, T);
+        
         // allocate memory to store the number of spikes
         err = cudaMalloc(&(tmp_batch->spikes), iN * dev_batch_size * T * sizeof(char));
         if (err != cudaSuccess) 

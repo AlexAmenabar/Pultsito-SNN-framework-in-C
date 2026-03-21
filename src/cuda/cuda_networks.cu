@@ -38,7 +38,9 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         dev_batch_size = cuda_info->dev_batch_size[dev];
 
         /* Allocate memory */
-        //cuda_info->allocate_neuron_memory_cuda(tmp_gpu_snn, N, dev_batch_size);
+        cuda_info->allocate_neuron_memory_cuda(tmp_gpu_snn, N, dev_batch_size);
+
+        /*printf(" N = %zu, iN = %zu, dev_batch_size = %zu, S = %zu, LT = %zu\n", N, iN, dev_batch_size, S, LT);
 
         err = cudaMalloc(&(tmp_gpu_snn->v), N * dev_batch_size * sizeof(float)); 
         if (err != cudaSuccess) 
@@ -66,7 +68,7 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         
         err = cudaMalloc(&(tmp_gpu_snn->res), N * sizeof(int)); 
         if (err != cudaSuccess) 
-            printf("res allocation failed: %s\n", cudaGetErrorString(err));
+            printf("res allocation failed: %s\n", cudaGetErrorString(err));*/
 
 
         // general neuron properties
@@ -150,11 +152,11 @@ extern "C" GPU_SNN_t** cpy_SNN2GPU(GPU_SNN_t *cpu_snn, cuda_info_t *cuda_info, s
         
         // cpy not batched arrays, and then use them to initialize batched data
         
-        //cuda_info->cpy_neurons_CPU2GPU_cuda(tmp_gpu_snn, cpu_snn, N);
-        cudaMemcpy(tmp_gpu_snn->v_thresh, cpu_snn->v_thresh, N * sizeof(float), cudaMemcpyHostToDevice); // copy neurons information
+        cuda_info->cpy_neurons_CPU2GPU_cuda(tmp_gpu_snn, cpu_snn, N);
+        /*cudaMemcpy(tmp_gpu_snn->v_thresh, cpu_snn->v_thresh, N * sizeof(float), cudaMemcpyHostToDevice); // copy neurons information
         cudaMemcpy(tmp_gpu_snn->v_rest, cpu_snn->v_rest, N * sizeof(float), cudaMemcpyHostToDevice); // copy neurons information
         cudaMemcpy(tmp_gpu_snn->r_period, cpu_snn->r_period, N * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
-        cudaMemcpy(tmp_gpu_snn->res, cpu_snn->res, N * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information
+        cudaMemcpy(tmp_gpu_snn->res, cpu_snn->res, N * sizeof(int), cudaMemcpyHostToDevice); // copy neurons information*/
 
         cudaMemcpy(tmp_gpu_snn->n_neuron_input_synapses, cpu_snn->n_neuron_input_synapses, N * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information
         cudaMemcpy(tmp_gpu_snn->neuron_input_synapses_offset, cpu_snn->neuron_input_synapses_offset, N * sizeof(size_t), cudaMemcpyHostToDevice); // copy neurons information

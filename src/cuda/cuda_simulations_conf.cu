@@ -379,7 +379,7 @@ void copy_constants_to_devices(cuda_info_t *cuda_info, simulation_configuration_
 // [TODO]: think about this function, very caotic
 cuda_info_t* configure_cuda_simulation(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configuration_t *conf){
 
-    size_t i, dev, off, nDevices, batch_size = conf->batch_size;;
+    size_t i, dev, off, nDevices, batch_size = conf->batch_size;
     
     // initialize cuda information structure
     cuda_info_t *cuda_info = getGPUProperties();
