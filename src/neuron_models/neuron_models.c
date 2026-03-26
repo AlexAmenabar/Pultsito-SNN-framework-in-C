@@ -379,14 +379,23 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                         // r_period_remain = r_period for those that fired
                         vRefPer = _mm256_mask_mov_epi32(vRefPer, fire_mask, vRef); // store r_period where the neuron fired
                         
-                        // load, update and store generated spikes
-                        __m256i vNSpikes = _mm256_loadu_epi32(&(results->n_spks[b_neuron]));
-                        vNSpikes = _mm256_mask_add_epi32(vNSpikes, fire_mask, vNSpikes, _mm256_set1_epi32(1));
-                        _mm256_storeu_epi32(&(results->n_spks[b_neuron]), vNSpikes);
+                        if(conf->store_n_spikes){
+                            
+                            // load, update and store generated spikes
+                            __m256i vNSpikes = _mm256_loadu_epi32(&(results->n_spks[b_neuron]));
+                            vNSpikes = _mm256_mask_add_epi32(vNSpikes, fire_mask, vNSpikes, _mm256_set1_epi32(1));
+                            _mm256_storeu_epi32(&(results->n_spks[b_neuron]), vNSpikes);
+                        }
+                        if(conf->store_generated_spikes){
+                            
+                            __m256i vgntSpikes = _mm256_loadu_epi32(&(results->gnt_spks[gt * B * N + b_neuron])); 
+                            vgntSpikes = _mm256_mask_add_epi32(vgntSpikes, fire_mask, vgntSpikes, _mm256_set1_epi32(1));
+                            _mm256_storeu_epi32(&(results->gnt_spks[gt * B * N + b_neuron]), vgntSpikes); 
+                        }
+
 
                         // store generated spikes in matrix (64 bits)
                         _mm256_mask_storeu_epi8(&(snn->spk_matrix[batch_idx]), fire_mask, _mm256_set1_epi8(1));
-
 
                         // if TB-STDP is used, store which neurons fired
                         if(conf->learn){
@@ -447,12 +456,24 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                         // r_period_remain = r_period for those that fired
                         vRefPer = _mm512_mask_mov_epi32(vRefPer, fire_mask, vRef); // store r_period where the neuron fired, r_remain = r_period
 
-                        // load, update and store generated spikes
-                        __m512i vNSpikes = _mm512_loadu_si512(&(results->n_spks[b_neuron])); 
-                        vNSpikes = _mm512_mask_add_epi32(vNSpikes, fire_mask, vNSpikes, _mm512_set1_epi32(1));
-                        _mm512_storeu_si512(&(results->n_spks[b_neuron]), vNSpikes); 
 
+                        // // // // // // // // // // // // 
                         // store generated spikes in matrix
+                        if(conf->store_n_spikes){
+                            
+                            __m512i vNSpikes = _mm512_loadu_si512(&(results->n_spks[b_neuron])); 
+                            vNSpikes = _mm512_mask_add_epi32(vNSpikes, fire_mask, vNSpikes, _mm512_set1_epi32(1));
+                            _mm512_storeu_si512(&(results->n_spks[b_neuron]), vNSpikes); 
+                        }
+                        if(conf->store_generated_spikes){
+                            
+                            __m512i vgntSpikes = _mm512_loadu_si512(&(results->gnt_spks[gt * B * N + b_neuron])); 
+                            vgntSpikes = _mm512_mask_add_epi32(vgntSpikes, fire_mask, vgntSpikes, _mm512_set1_epi32(1));
+                            _mm512_storeu_si512(&(results->gnt_spks[gt * B * N + b_neuron]), vgntSpikes); 
+                        }
+                        // // // // // // // // // // // //
+
+                        // store spikes in the spike matrix
                         _mm512_mask_storeu_epi8(&(snn->spk_matrix[batch_idx]), fire_mask, _mm512_set1_epi8(1));
 
                         // if TB-STDP is used, store which neurons fired
@@ -494,7 +515,16 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                     snn->r_period_remain[g_neuron_index + b] = snn->r_period[neuron_index];
                     snn->v[g_neuron_index + b] = snn->v_rest[neuron_index]; // reinit v_rest
 
-                    results->n_spks[g_neuron_index + b] += 1;
+
+                    // [results management]: in the future use an array of function pointers // 
+                    // // // // // // // // // // // // // // // // // //
+                    if(conf->store_n_spikes)
+                        results->n_spks[g_neuron_index + b] += 1;
+                    
+                    if(conf->store_generated_spikes)
+                        results->gnt_spks[gt * N * B + g_neuron_index + b] = 1;
+                    // // // // // // // // // // // // // // // // // //
+
 
                     // store that the neuron fired for TB-STDP and update the trace
                     if(conf->learn){

@@ -6,8 +6,9 @@
 #include <time.h>
 #include <string.h>
 #include <malloc.h>
+#include <stddef.h>
 
-#include <toml_c/toml.h>
+#include "toml_c/toml.h"
 #include "networks/snn_generator.h"
 
 

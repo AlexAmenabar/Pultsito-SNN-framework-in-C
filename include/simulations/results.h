@@ -89,6 +89,9 @@ void store_number_of_spikes_array(GPU_results_t **results, simulation_configurat
 /// @param batch_size batch size
 void store_number_of_spikes(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size);
 
+void store_generated_spikes_array(GPU_results_t **results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t n_results);
+void store_generated_spikes(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
+
 #ifdef __cplusplus
 }
 #endif

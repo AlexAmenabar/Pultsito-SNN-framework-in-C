@@ -63,7 +63,7 @@ typedef struct cuda_info_t {
     void (*initialize_neurons_cuda)(GPU_SNN_t *snn, cuda_info_t *cuda_info, size_t dev);
     void (*process_input_current_cuda)(GPU_SNN_t *gpu_snn, size_t iN, size_t N, size_t t, size_t gt, cuda_info_t *cuda_info, size_t dev);
     void (*process_dynamics_cuda)(GPU_SNN_t *gpu_snn, size_t N, cuda_info_t *cuda_info, size_t dev);
-    void (*process_firing_cuda)(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, cuda_info_t *cuda_info, size_t dev);
+    void (*process_firing_cuda)(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt, cuda_info_t *cuda_info, size_t dev);
     
     // helpers for weight updating
     size_t chunk_size; // chunk size used to manage how batches to process before moving to the CPU

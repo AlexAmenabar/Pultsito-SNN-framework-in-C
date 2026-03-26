@@ -117,7 +117,7 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
     size_t i, t, lt;
 
     // reinitialize results struct
-    reinitialize_batch_results_cpu(results, conf, snn->n_neurons, conf->batch_size, 1);
+    reinitialize_batch_results_cpu(results, conf, snn->n_neurons, conf->batch_size, conf->time_steps);
 
     clock_gettime(CLOCK_MONOTONIC, &start);
 

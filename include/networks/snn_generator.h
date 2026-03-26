@@ -1,6 +1,8 @@
 #ifndef SNN_GENERATOR_H
 #define SNN_GENERATOR_H
 
+#include <stddef.h>
+
 /*
 Configuration file format:
 

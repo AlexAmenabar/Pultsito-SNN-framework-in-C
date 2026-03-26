@@ -37,7 +37,7 @@ __constant__ size_t dev_batch_size; // batch size proccessed by each device
 __constant__ size_t dev_batch_offset; // offset to the sample proccessed by each device
 __constant__ size_t batch_size;
 __constant__ size_t thrN;
-
+__constant__ size_t time_steps;
 
 
 extern "C" void simulate_batches_GPU(GPU_results_t **cpu_results, GPU_SNN_t **gpu_snn, GPU_dataset_t **gpu_dataset, simulation_configuration_t *conf, cuda_info_t *cuda_info){
@@ -91,13 +91,13 @@ extern "C" void simulate_batch_GPU(GPU_results_t *cpu_results, GPU_SNN_t **gpu_s
     // if only 1 device, copy directly
     if(cuda_info->nDevices == 1){
 
-        cpy_batch_results_struct_GPU2CPU(cpu_results, cuda_info->gpu_results[0], cuda_info, cuda_info->cpu_snn->n_neurons, conf->time_steps);
+        cpy_batch_results_GPU2CPU(cpu_results, cuda_info->gpu_results[0], cuda_info, conf, cuda_info->cpu_snn->n_neurons, 0);
     }
     // if more than 1 devices, copy and accumulate
     else{
 
         // accumulate results from several devices into one
-        cpy_batch_results_GPU2CPU(cpu_results, cuda_info->gpu_results, cuda_info, cuda_info->cpu_snn->n_neurons, conf->time_steps);
+        cpy_batch_results_multiGPU2CPU(cpu_results, cuda_info->gpu_results, cuda_info, conf, cuda_info->cpu_snn->n_neurons);
 
         // get the device that needed more time and store in the first results structure
         double max = 0;
@@ -420,10 +420,27 @@ extern "C" void run_simulation_batch_GPU(GPU_SNN_t *gpu_snn, GPU_dataset_t *gpu_
         // compute firing
         clock_gettime(CLOCK_MONOTONIC, &start_out);
 
-        cuda_info->process_firing_cuda(gpu_snn, gpu_results, iN, N, lt, cuda_info, dev);
+        cuda_info->process_firing_cuda(gpu_snn, gpu_results, iN, N, lt, t, cuda_info, dev);
 
         clock_gettime(CLOCK_MONOTONIC, &end_out);
         et_out +=(end_out.tv_sec - start_out.tv_sec) + (end_out.tv_nsec - start_out.tv_nsec) / 1e9;
+
+
+        // store results if required
+        if(conf->store_n_spikes){
+
+            update_n_spikes_cuda<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, lt, t);
+            cudaCheckError(cudaPeekAtLastError()); 
+            cudaCheckError(cudaDeviceSynchronize());  
+            cudaDeviceSynchronize();
+        }
+        if(conf->store_generated_spikes){
+            
+            store_generated_spikes_cuda<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, lt, t);
+            cudaCheckError(cudaPeekAtLastError()); 
+            cudaCheckError(cudaDeviceSynchronize());  
+            cudaDeviceSynchronize();
+        }
 
 
         // compute learning step if training
@@ -880,5 +897,60 @@ __global__ void update_weights_dev(GPU_SNN_t *gpu_snn, size_t S){
             gpu_snn->dw[g_synapse_index + b] = 0.0;
             gpu_snn->w[g_synapse_index + b] = gpu_snn->init_w[synapse_index];
         }   
+    }
+}
+
+
+/* Rresults */
+__global__ void update_n_spikes_cuda(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * dev_batch_size){
+
+        size_t i = threadId / dev_batch_size; // neuron index
+        size_t b = threadId % dev_batch_size; // batch position
+
+        size_t neuron_index = i;
+        size_t g_neuron_index = i * dev_batch_size;
+        
+        // compute index to write in the spk matrix
+        // [T * B * (iN + N)]
+        size_t idx = (iN + N) * dev_batch_size * t + dev_batch_size * (iN + neuron_index); // index of the first neuron in the spike matrix in time step t
+        
+        // if conditions would be necessary (or move to another kernel??? probably better)
+        gpu_results->n_spks[g_neuron_index + b] += gpu_snn->spk_matrix[idx + b];
+    }
+}
+
+__global__ void store_generated_spikes_cuda(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt){
+
+    // get thread id: iN * batch_size * T
+    size_t threadId = 
+        (blockIdx.x  + gridDim.x  * blockIdx.y + gridDim.x * gridDim.y * blockIdx.z) *
+        (blockDim.x * blockDim.y * blockDim.z) +
+        (threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z);
+
+
+    if(threadId < N * dev_batch_size){
+
+        size_t i = threadId / dev_batch_size; // neuron index
+        size_t b = threadId % dev_batch_size; // batch position
+
+        size_t neuron_index = i;
+        size_t g_neuron_index = i * dev_batch_size;
+        
+        // compute index to write in the spk matrix
+        // [T * B * (iN + N)]
+        size_t idx = (iN + N) * dev_batch_size * t + dev_batch_size * (iN + neuron_index); // index of the first neuron in the spike matrix in time step t
+        
+        // if conditions would be necessary (or move to another kernel??? probably better)
+        gpu_results->gnt_spks[gt * N * dev_batch_size + g_neuron_index + b] = gpu_snn->spk_matrix[idx + b];
+
     }
 }

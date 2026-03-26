@@ -97,9 +97,6 @@ int main(int argc, char *argv[]) {
     //deallocate_memory();
     // called when simulation finishes
 
-
-    // [CPU]
-
     size_t n_batches, r_samples;
     size_t b;
 
@@ -109,11 +106,14 @@ int main(int argc, char *argv[]) {
     
     n_batches = r_samples > 0 ? n_batches + 1 : n_batches; // one more batch if there are remaining samples
 
+    // [CPU]
+#ifndef CUDA
+
     // copy non-constant snn data for parallel batch simulation
-    /*init_batch_snn(cpu_snn, conf);
+    init_batch_snn(cpu_snn, conf);
 
     // initialize struct to store batch results
-    GPU_results_t **results = initialize_batch_results_array(conf, cpu_snn->n_neurons, conf->batch_size, 1, 1, n_batches);
+    GPU_results_t **results = initialize_batch_results_array(conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, 1, n_batches);
 
     // loop over batches and simulate
     for(b = 0; b<n_batches; b++){
@@ -128,8 +128,7 @@ int main(int argc, char *argv[]) {
         simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0);
     }
 
-    store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);*/
-
+#else
 
     // [GPU]
     // init cuda_info
@@ -158,9 +157,10 @@ int main(int argc, char *argv[]) {
         // simulate batch
         simulate_batch_GPU(results[b], gpu_snn, gpu_dataset, conf, cuda_info, b);
     }
-
+#endif
 
     store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);
+    store_generated_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, n_batches);
 
 
     return 0;

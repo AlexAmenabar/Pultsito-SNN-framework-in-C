@@ -27,16 +27,19 @@ GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, si
     GPU_results_t *results = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
 
     // allocate memory for storing the number of spikes // [TODO]: if...
-    //if(conf->store_n_spikes)
+    if(conf->store_n_spikes){
+    
         results->n_spks = (int*)calloc(N * batch_size, sizeof(int));
+    }
 
-    /*if(conf->store_generated_spikes){
+    if(conf->store_generated_spikes){
 
+        frq = 1;
         results->gnt_freq = (int)(frq);
         size_t steps = T / frq; // count spikes during steps time steps
 
-        results->gnt_spks = (int*)calloc(N * steps * batch_size, sizeof(int));
-    }*/
+        results->gnt_spks = (int*)calloc(N * T * batch_size, sizeof(int));
+    }
 
     // initialize execution times
     results->t = 0.0; // total execution time
@@ -59,7 +62,17 @@ void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configura
         
         for(size_t j = 0; j<batch_size; j++){
 
-            results->n_spks[i * batch_size + j] = 0;
+            if(conf->store_n_spikes){
+                results->n_spks[i * batch_size + j] = 0;
+            }
+            
+            if(conf->store_generated_spikes){
+            
+                for(size_t t = 0; t<T;t++){
+
+                    results->gnt_spks[t * batch_size * N + i * batch_size + j] = 0;
+                }
+            }
         }
     }
 
@@ -104,6 +117,44 @@ void store_number_of_spikes(GPU_results_t *results, simulation_configuration_t *
     fclose(f);
 }
 
+void store_generated_spikes_array(GPU_results_t **results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t n_results){
+
+    size_t i;
+
+    for(i = 0; i<n_results; i++){
+
+        store_generated_spikes(results[i], conf, N, batch_size, T);
+    }
+}
+
+void store_generated_spikes(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T){
+
+    size_t i, b, t;
+    FILE *f;
+
+    // open file for storing the results
+    open_file_w(&f, conf->generated_spikes_file);
+
+    for(b = 0; b<batch_size; b++){
+            
+        for(i = 0; i<N; i++){
+
+            for(t = 0; t<T; t++){
+            
+                if(results->gnt_spks[t * batch_size * N + i * batch_size + b] == 1){
+                    fprintf(f, "|");
+                }
+                else{
+                    fprintf(f, " ");
+                }
+            }
+            fprintf(f, "\n");        
+        }
+        fprintf(f, "\n");
+    }
+
+    fclose(f);
+}
 
 void deallocate_results_str(GPU_results_t *results){
 

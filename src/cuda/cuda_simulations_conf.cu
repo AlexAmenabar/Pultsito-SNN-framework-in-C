@@ -372,6 +372,7 @@ void copy_constants_to_devices(cuda_info_t *cuda_info, simulation_configuration_
         err = cudaMemcpyToSymbol(dev_batch_size, &cuda_info->dev_batch_size[dev], sizeof(size_t)); // how much samples simulates each device
         err = cudaMemcpyToSymbol(dev_batch_offset, &cuda_info->dev_batch_offset[dev], sizeof(size_t)); // offset to the first sample simulated by the device in the batch
         err = cudaMemcpyToSymbol(thrN, &conf->thrN, sizeof(size_t)); // offset to the first sample simulated by the device in the batch
+        err = cudaMemcpyToSymbol(time_steps, &conf->time_steps, sizeof(size_t)); // offset to the first sample simulated by the device in the batch
     }
 }
 
@@ -427,8 +428,8 @@ cuda_info_t* configure_cuda_simulation(GPU_SNN_t *snn, GPU_dataset_t *dataset, s
     }
 
     // struct to store the results in multiple GPUs and then map to multiple CPUs
-    cuda_info->gpu_results = initialize_results_str_in_GPU(nDevices, snn->n_neurons, cuda_info);
-    cuda_info->intermedaite_cpu_results = initialize_results_str_in_CPU(nDevices, snn->n_neurons, cuda_info);
+    cuda_info->gpu_results = initialize_results_str_in_GPU(nDevices, snn->n_neurons, cuda_info, conf);
+    cuda_info->intermedaite_cpu_results = initialize_results_str_in_CPU(nDevices, snn->n_neurons, cuda_info, conf);
 
     // TEMP
     cuda_info->thrN = conf->thrN;

@@ -17,6 +17,7 @@ extern __constant__ size_t dev_batch_size; // batch size proccessed by each devi
 extern __constant__ size_t dev_batch_offset; // offset to the sample proccessed by each device
 extern __constant__ size_t batch_size;
 extern __constant__ size_t thrN;
+extern __constant__ size_t time_steps;
 #endif
 
 
@@ -50,6 +51,9 @@ __global__ void trace_based_STDP_batch(GPU_SNN_t *gpu_snn, size_t S);
 __global__ void update_weights_batch(GPU_SNN_t *gpu_snn, size_t S);
 __global__ void acc_weights_batch(GPU_SNN_t *gpu_snn, size_t S);
 __global__ void update_weights_dev(GPU_SNN_t *gpu_snn, size_t S);
+
+__global__ void update_n_spikes_cuda(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt);
+__global__ void store_generated_spikes_cuda(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt);
 
 #ifdef __cplusplus
 }

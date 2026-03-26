@@ -87,8 +87,11 @@ else
 	LINK_FLAGS = -fopenmp -lm
 
 	ifeq ($(USE_AVX512),1)
-		CC_FLAGS += -DAVX512
-		CXX_FLAGS += -DAVX512
+		CC_FLAGS  += -DAVX512 -mavx512f -mavx512bw -mavx512vl -mfma -march=skylake-avx512
+		CXX_FLAGS += -DAVX512 -mavx512f -mavx512bw -mavx512vl -mfma -march=skylake-avx512
+	else
+		CC_FLAGS  += -mavx2 -mfma
+		CXX_FLAGS += -mavx2 -mfma
 	endif
 endif
 

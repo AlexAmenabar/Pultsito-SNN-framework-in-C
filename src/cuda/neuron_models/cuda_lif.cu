@@ -497,7 +497,7 @@ __global__ void process_V_batch(GPU_SNN_t *gpu_snn, size_t N){
     }
 }
 
-__global__ void process_firing_batch(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t){
+__global__ void process_firing_batch(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt){
 
     // get thread id: iN * batch_size * T
     size_t threadId = 
@@ -530,7 +530,10 @@ __global__ void process_firing_batch(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_resu
             gpu_snn->r_period_remain[g_neuron_index + b] = gpu_snn->r_period[neuron_index];
             gpu_snn->v[g_neuron_index + b] = gpu_snn->v_rest[neuron_index]; // reinit v_rest
 
-            gpu_results->n_spks[g_neuron_index + b] += 1;
+
+            // if conditions would be necessary (or move to another kernel??? probably better)
+            //gpu_results->n_spks[g_neuron_index + b] += 1;
+            //gpu_results->gnt_spks[gt * N * batch_size + g_neuron_index + b];
 
             // store that the neuron fired for TB-STDP and update the trace
             if(learn){
@@ -588,12 +591,12 @@ void wrap_process_V_batch_kernel(GPU_SNN_t *gpu_snn, size_t N, cuda_info_t *cuda
     cudaDeviceSynchronize();   
 }
 
-void wrap_process_firing_batch_kernel(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, cuda_info_t *cuda_info, size_t dev){
+void wrap_process_firing_batch_kernel(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt, cuda_info_t *cuda_info, size_t dev){
     
     dim3 grid_neurons(cuda_info->n_blk_neurons_x[dev], cuda_info->n_blk_neurons_y[dev], cuda_info->n_blk_neurons_z[dev]);
     dim3 block_neurons(cuda_info->n_thr_per_blk_neurons_x[dev], cuda_info->n_thr_per_blk_neurons_y[dev], cuda_info->n_thr_per_blk_neurons_z[dev]);
 
-    process_firing_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, t);
+    process_firing_batch<<<grid_neurons, block_neurons>>>(gpu_snn, gpu_results, iN, N, t, gt);
     cudaError_t err = cudaGetLastError();
     cudaCheckError(cudaPeekAtLastError());  // check launch errors
     cudaCheckError(cudaDeviceSynchronize());  // check runtime errors

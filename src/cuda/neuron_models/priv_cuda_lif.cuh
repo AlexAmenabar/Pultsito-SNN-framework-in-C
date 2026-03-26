@@ -22,7 +22,7 @@ void cpy_LIF_memory_cuda(GPU_SNN_t *d_snn, GPU_SNN_t *h_snn, size_t N);
 void wrap_initialize_LIF_neurons_batch_kernel(GPU_SNN_t *gpu_snn, cuda_info_t *cuda_info, size_t dev);
 void wrap_process_input_current_batch_kernel(GPU_SNN_t *gpu_snn, size_t iN, size_t N, size_t t, size_t gt, cuda_info_t *cuda_info, size_t dev);
 void wrap_process_V_batch_kernel(GPU_SNN_t *gpu_snn, size_t N, cuda_info_t *cuda_info, size_t dev);
-void wrap_process_firing_batch_kernel(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, cuda_info_t *cuda_info, size_t dev);
+void wrap_process_firing_batch_kernel(GPU_SNN_t *gpu_snn, GPU_results_t *gpu_results, size_t iN, size_t N, size_t t, size_t gt, cuda_info_t *cuda_info, size_t dev);
 
 #ifdef __cplusplus
 }
