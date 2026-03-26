@@ -82,13 +82,16 @@ extern "C" GPU_results_t** initialize_results_str_in_CPU(size_t nDevices, size_t
         dev_batch_size = cuda_info->dev_batch_size[dev];
 
         // allocate memory to store the number of spikes
-        h_results[dev] = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
+        /*h_results[dev] = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
 
         if(conf->store_n_spikes)
             h_results[dev]->n_spks = (int*)calloc(n * dev_batch_size, sizeof(int));
 
         if(conf->store_generated_spikes)
-            h_results[dev]->gnt_spks = (int*)calloc(n * dev_batch_size * time_steps, sizeof(int));
+            h_results[dev]->gnt_spks = (int*)calloc(n * dev_batch_size * time_steps, sizeof(int));*/
+
+        h_results[dev] = initialize_batch_results_cpu(conf, n, dev_batch_size, time_steps, 1);
+
     }
     
     return h_results;
@@ -143,8 +146,12 @@ extern "C" void cpy_batch_results_multiGPU2CPU(GPU_results_t *cpu_results, GPU_r
         // get batch size and offset of the device
         dev_batch_size = cuda_info->dev_batch_size[dev];
         dev_batch_offset = cuda_info->dev_batch_offset[dev];
-        cpu_results_per_dev->n_spks = (int*)calloc(N * dev_batch_size, sizeof(int));
-        cpu_results_per_dev->gnt_spks = (int*)calloc(N * dev_batch_size * time_steps, sizeof(int));
+
+        if(conf->store_n_spikes)
+            cpu_results_per_dev->n_spks = (int*)calloc(N * dev_batch_size, sizeof(int));
+        
+        if(conf->store_generated_spikes)
+            cpu_results_per_dev->gnt_spks = (int*)calloc(N * dev_batch_size * time_steps, sizeof(int));
 
         // copy internal GPU pointers to the CPU
         cudaMemcpy(tmp_results, gpu_results[dev], sizeof(GPU_results_t), cudaMemcpyDeviceToHost);
